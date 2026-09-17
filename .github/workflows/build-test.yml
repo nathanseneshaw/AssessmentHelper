@@ -1,0 +1,56 @@
+name: Build and Test
+
+on: [push, pull_request]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting
+        working-directory: ./frontend
+        run: bun run format
+
+      - name: Run linter
+        working-directory: ./frontend
+        run: bun run lint
+
+      - name: Typecheck
+        working-directory: ./frontend
+        run: bun run typecheck
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: bun run build
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          java-version: '25'
+          distribution: 'oracle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Check formatting
+        working-directory: ./backend
+        run: ./gradlew spotlessCheck
+
+      - name: Build and Test backend
+        working-directory: ./backend
+        run: ./gradlew build
