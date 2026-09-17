@@ -45,6 +45,7 @@ body::before {
   *,
   ::before,
   ::after {
+    /* biome-ignore lint/complexity/noImportantStyles: must override every animation for reduced-motion users */
     animation: none !important;
   }
 }

@@ -1,7 +1,14 @@
-import { useRef, type FormEvent } from "react";
+import type { FormEvent } from "react";
+import { useRef } from "react";
 
 export function APITester() {
   const responseInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const setResponse = (value: string) => {
+    if (responseInputRef.current) {
+      responseInputRef.current.value = value;
+    }
+  };
 
   const testEndpoint = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -15,9 +22,9 @@ export function APITester() {
       const res = await fetch(url, { method });
 
       const data = await res.json();
-      responseInputRef.current!.value = JSON.stringify(data, null, 2);
+      setResponse(JSON.stringify(data, null, 2));
     } catch (error) {
-      responseInputRef.current!.value = String(error);
+      setResponse(String(error));
     }
   };
 
