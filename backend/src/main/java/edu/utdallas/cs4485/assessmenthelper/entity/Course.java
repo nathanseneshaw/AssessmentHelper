@@ -11,5 +11,4 @@ public record Course(
         String courseCode,
         String courseNumber,
         String courseName,
-        String courseLevel) {
-}
+        String courseLevel) {}

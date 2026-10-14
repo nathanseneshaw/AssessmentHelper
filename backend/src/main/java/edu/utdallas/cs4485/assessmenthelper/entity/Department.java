@@ -4,8 +4,4 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
 
 @Table("department")
-public record Department(
-        @Id Integer departmentId,
-        String departmentName,
-        String departmentCode) {
-}
+public record Department(@Id Integer departmentId, String departmentName, String departmentCode) {}

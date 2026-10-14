@@ -1,8 +1,8 @@
 package edu.utdallas.cs4485.assessmenthelper.entity;
 
+import java.time.LocalDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
-import java.time.LocalDate;
 
 /** Foreign keys are plain ids: departmentId -> department, professorRank -> evaluation_policy. */
 @Table("professor")
@@ -14,5 +14,4 @@ public record Professor(
         String lastName,
         String email,
         LocalDate hireDate,
-        Boolean activeStatus) {
-}
+        Boolean activeStatus) {}

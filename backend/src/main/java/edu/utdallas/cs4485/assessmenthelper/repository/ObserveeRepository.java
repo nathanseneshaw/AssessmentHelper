@@ -3,5 +3,4 @@ package edu.utdallas.cs4485.assessmenthelper.repository;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
 import org.springframework.data.repository.ListCrudRepository;
 
-public interface ObserveeRepository extends ListCrudRepository<Observee, Integer> {
-}
+public interface ObserveeRepository extends ListCrudRepository<Observee, Integer> {}

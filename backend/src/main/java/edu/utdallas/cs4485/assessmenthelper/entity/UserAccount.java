@@ -12,5 +12,4 @@ public record UserAccount(
         String username,
         String email,
         String passwordHash,
-        @Column("is_active") Boolean active) {
-}
+        @Column("is_active") Boolean active) {}

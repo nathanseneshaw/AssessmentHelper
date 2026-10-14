@@ -1,9 +1,9 @@
 package edu.utdallas.cs4485.assessmenthelper.entity;
 
+import java.time.LocalDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.Table;
-import java.time.LocalDate;
 
 /**
  * The rank name is the primary key and is assigned by hand, so the version field is how
@@ -16,5 +16,4 @@ public record EvaluationPolicy(
         Boolean activeStatus,
         LocalDate madeDate,
         LocalDate effectiveDate,
-        @Version Long version) {
-}
+        @Version Long version) {}

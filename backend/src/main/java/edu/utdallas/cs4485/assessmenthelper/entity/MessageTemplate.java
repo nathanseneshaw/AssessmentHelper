@@ -5,10 +5,4 @@ import org.springframework.data.relational.core.mapping.Table;
 
 @Table("message_template")
 public record MessageTemplate(
-        @Id Integer templateId,
-        String name,
-        String subject,
-        String body,
-        String templateType,
-        Boolean activeStatus) {
-}
+        @Id Integer templateId, String name, String subject, String body, String templateType, Boolean activeStatus) {}

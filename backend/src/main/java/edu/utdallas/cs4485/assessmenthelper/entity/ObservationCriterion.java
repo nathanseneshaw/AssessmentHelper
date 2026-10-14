@@ -13,5 +13,4 @@ public record ObservationCriterion(
         Boolean required,
         Integer displayOrder,
         Integer ratingMin,
-        Integer ratingMax) {
-}
+        Integer ratingMax) {}
