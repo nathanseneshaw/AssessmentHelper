@@ -4,7 +4,7 @@ React frontend (`frontend/`, run with Bun) and Spring Boot backend (`backend/`, 
 
 ## Prerequisites
 
-- [Bun](https://bun.sh)
+- [Bun](https://bun.sh) 1.4.0 or newer
 - [JDK 25](https://adoptium.net/)
 
 ## Setup
