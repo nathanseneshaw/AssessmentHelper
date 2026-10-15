@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import { type AuthUser, mockLogin } from "../auth/mockAuth";
 
 interface LoginPageProps {
@@ -6,6 +6,8 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -46,6 +48,11 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
     // Stop submission if validation fails
     if (hasError) {
+      if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        emailRef.current?.focus();
+      } else {
+        passwordRef.current?.focus();
+      }
       return;
     }
 
@@ -73,141 +80,190 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-100 px-4 text-slate-900">
-      <section className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg">
-        <h1 className="text-3xl font-bold text-center">Assessment Helper</h1>
-
-        <p className="mt-2 text-center text-slate-500">
-          Faculty & Assessment Committee Portal
-        </p>
-
-        <form
-          onSubmit={handleSubmit}
-          noValidate
-          aria-busy={isSubmitting}
-          className="mt-8 space-y-5"
-        >
-          {/* Email field */}
-          <div>
-            <label htmlFor="email" className="block mb-2 font-medium">
-              Email
-            </label>
-
-            <input
-              id="email"
-              type="email"
-              autoComplete="username"
-              required
-              disabled={isSubmitting}
-              value={email}
-              onChange={(event) => {
-                setEmail(event.target.value);
-                setEmailError("");
-                setAuthError("");
-                setMessage("");
-              }}
-              placeholder="Enter your email"
-              aria-invalid={Boolean(emailError)}
-              aria-describedby={emailError ? "email-error" : undefined}
-              className="w-full rounded-lg border border-slate-300 p-3"
-            />
-
-            {emailError && (
-              <p
-                id="email-error"
-                role="alert"
-                className="mt-1 text-sm text-red-600"
-              >
-                {emailError}
-              </p>
-            )}
+    <main className="flex min-h-dvh flex-col items-center justify-center px-4 py-8 text-neutral-900 sm:px-6 sm:py-12">
+      <section
+        aria-labelledby="login-title"
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl shadow-neutral-900/5"
+      >
+        <div className="h-1.5 bg-utd-orange" />
+        <div className="p-5 sm:p-8">
+          <div
+            aria-hidden="true"
+            className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-utd-green-light text-lg font-bold text-utd-green-dark"
+          >
+            UTD
           </div>
+          <p className="mb-3 text-center text-sm font-semibold text-utd-green">
+            The University of Texas at Dallas
+          </p>
+          <p className="text-center text-xs font-semibold uppercase tracking-widest text-utd-green">
+            Faculty & Assessment Committee
+          </p>
+          <h1
+            id="login-title"
+            className="mt-3 text-center text-2xl font-bold tracking-tight text-utd-green sm:text-3xl"
+          >
+            Assessment Helper
+          </h1>
 
-          {/* Password field */}
-          <div>
-            <label htmlFor="password" className="block mb-2 font-medium">
-              Password
-            </label>
+          <p className="mt-2 text-center text-sm leading-6 text-neutral-600">
+            Sign in to your assessment workspace.
+          </p>
 
-            <div className="relative">
+          <form
+            onSubmit={handleSubmit}
+            noValidate
+            aria-busy={isSubmitting}
+            className="mt-8 space-y-5"
+          >
+            {/* Email field */}
+            <div>
+              <label htmlFor="email" className="block mb-2 font-medium">
+                Email
+              </label>
+
               <input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
+                id="email"
+                ref={emailRef}
+                name="email"
+                type="email"
+                autoCapitalize="none"
+                spellCheck={false}
+                autoComplete="username"
                 required
                 disabled={isSubmitting}
-                value={password}
+                value={email}
                 onChange={(event) => {
-                  setPassword(event.target.value);
-                  setPasswordError("");
+                  setEmail(event.target.value);
+                  setEmailError("");
                   setAuthError("");
                   setMessage("");
                 }}
-                placeholder="Enter your password"
-                aria-invalid={Boolean(passwordError)}
-                aria-describedby={passwordError ? "password-error" : undefined}
-                className="w-full rounded-lg border border-slate-300 p-3 pr-16"
+                placeholder="Enter your email"
+                aria-invalid={Boolean(emailError)}
+                aria-describedby={emailError ? "email-error" : undefined}
+                className="w-full min-w-0 rounded-lg border border-neutral-300 bg-white p-3 text-base transition-colors placeholder:text-neutral-400 hover:border-neutral-400 focus:border-utd-green aria-invalid:border-red-600 disabled:bg-neutral-50 disabled:text-neutral-500"
               />
 
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-blue-700 hover:underline"
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
+              {emailError && (
+                <p
+                  id="email-error"
+                  role="alert"
+                  className="mt-1 text-sm text-red-600"
+                >
+                  {emailError}
+                </p>
+              )}
             </div>
 
-            {passwordError && (
+            {/* Password field */}
+            <div>
+              <label htmlFor="password" className="block mb-2 font-medium">
+                Password
+              </label>
+
+              <div className="relative">
+                <input
+                  id="password"
+                  ref={passwordRef}
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  disabled={isSubmitting}
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setPasswordError("");
+                    setAuthError("");
+                    setMessage("");
+                  }}
+                  placeholder="Enter your password"
+                  aria-invalid={Boolean(passwordError)}
+                  aria-describedby={
+                    passwordError ? "password-error" : undefined
+                  }
+                  className="w-full min-w-0 rounded-lg border border-neutral-300 bg-white p-3 pr-20 text-base transition-colors placeholder:text-neutral-400 hover:border-neutral-400 focus:border-utd-green aria-invalid:border-red-600 disabled:bg-neutral-50 disabled:text-neutral-500"
+                />
+
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-pressed={showPassword}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-1 top-1/2 min-h-11 min-w-16 -tranneutral-y-1/2 rounded-md px-2 text-sm font-semibold text-utd-green hover:bg-utd-green-light disabled:opacity-60"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+
+              {passwordError && (
+                <p
+                  id="password-error"
+                  role="alert"
+                  className="mt-1 text-sm text-red-600"
+                >
+                  {passwordError}
+                </p>
+              )}
+            </div>
+
+            {/* Sign-in button */}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="min-h-12 w-full rounded-lg bg-utd-green p-3 font-semibold text-white shadow-sm transition-colors hover:bg-utd-green-dark disabled:cursor-wait disabled:opacity-60"
+            >
+              {isSubmitting ? "Signing in…" : "Sign In"}
+            </button>
+
+            {authError && (
               <p
-                id="password-error"
                 role="alert"
-                className="mt-1 text-sm text-red-600"
+                className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800"
               >
-                {passwordError}
+                {authError}
               </p>
             )}
-          </div>
 
-          {/* Sign-in button */}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-lg bg-blue-700 p-3 font-semibold text-white hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60"
-          >
-            {isSubmitting ? "Signing in…" : "Sign In"}
-          </button>
-
-          {authError && (
-            <p role="alert" className="text-center text-sm text-red-600">
-              {authError}
-            </p>
-          )}
-
-          {/* Mock authentication status */}
-          {message && (
-            <p role="status" className="text-center text-sm text-slate-600">
-              {message}
-            </p>
-          )}
-        </form>
-        <aside
-          className="mt-6 rounded-lg bg-slate-50 p-3 text-sm text-slate-600"
-          aria-label="Demo accounts"
-        >
-          <p className="font-semibold">Demo sign-in only</p>
-          <p className="mt-2 break-words">
-            Faculty: faculty@utdallas.edu / Faculty123!
-          </p>
-          <p className="mt-1 break-words">
-            AC member: ac@utdallas.edu / Committee123!
-          </p>
-          <p className="mt-2">
-            Use these sample accounts. Sign-in resets on refresh.
-          </p>
-        </aside>
+            {/* Mock authentication status */}
+            {message && (
+              <p role="status" className="text-center text-sm text-neutral-600">
+                {message}
+              </p>
+            )}
+          </form>
+          <details className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50 text-sm text-neutral-600">
+            <summary className="min-h-11 cursor-pointer rounded-xl px-4 py-3 font-semibold text-neutral-800">
+              Demo accounts
+            </summary>
+            <div className="space-y-3 px-4 pb-4 leading-6">
+              <p>Use a sample account to explore the portal.</p>
+              <div>
+                <p className="font-semibold text-neutral-800">Faculty</p>
+                <p className="break-all">faculty@utdallas.edu</p>
+                <p>
+                  Password: <code>Faculty123!</code>
+                </p>
+              </div>
+              <div>
+                <p className="font-semibold text-neutral-800">
+                  Assessment Committee
+                </p>
+                <p className="break-all">ac@utdallas.edu</p>
+                <p>
+                  Password: <code>Committee123!</code>
+                </p>
+              </div>
+              <p>Demo sign-in only. Sign-in resets on refresh.</p>
+            </div>
+          </details>
+        </div>
       </section>
+      <p className="mt-6 text-center text-xs leading-5 text-neutral-500">
+        Assessment Helper · CS 4485 Project
+      </p>
     </main>
   );
 }
