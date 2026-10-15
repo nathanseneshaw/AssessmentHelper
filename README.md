@@ -49,8 +49,8 @@ The login page currently uses local demo accounts; the backend does not need to 
 | Faculty | `faculty@utdallas.edu` | `Faculty123!` |
 | Assessment Committee | `ac@utdallas.edu` | `Committee123!` |
 
-Sign-in simulates a short request delay and rejects other credentials. Email matching ignores case and surrounding spaces; passwords must match exactly. Successful sign-in currently displays the user's role without navigating to a dashboard. It does not persist a session across refreshes.
+Sign-in simulates a short request and rejects other credentials. Email matching ignores case and surrounding spaces, but passwords must match exactly. Successful sign-in displays the Faculty Dashboard or Assessment Committee Dashboard based on the user's role. Both dashboards are placeholders with a Sign Out button that returns to a fresh login form. The current view is managed by React state; it does not change the URL or persist a session across refreshes.
 
-`frontend/src/auth/mockAuth.ts` contains the demo service and shared user/role types. `LoginPage` exposes an optional `onLogin(user)` callback for dashboard navigation. These accounts are for frontend development only and must be replaced with backend authentication before real use.
+`frontend/src/auth/mockAuth.ts` contains the demo service and shared user/role types. `App` uses the `LoginPage` callback `onLogin(user)` to keep the authenticated user in memory and render `DashboardPage`. These accounts and frontend role checks are for frontend development only; real authentication and permission enforcement must be provided by the backend before real use.
 
 Run the mock authentication tests from `frontend/` with `bun test src/auth/mockAuth.test.ts`.
