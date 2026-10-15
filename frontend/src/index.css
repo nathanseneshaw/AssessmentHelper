@@ -1,19 +1,45 @@
 @import "tailwindcss";
 
 @theme {
-  --color-cream: #f7f6f1;
-  --color-ink: #1f2421;
-  --color-brand-green: #135a32;
-  --color-brand-orange: #e74913;
-  --color-mist: #e8f2e8;
-  --color-peach: #fcf0e3;
-  --color-line: #dbdbd1;
-  --color-btn-gray: #636b66;
-  --color-btn-light: #d9d9d9;
+  --color-utd-green: #154734;
+  --color-utd-green-dark: #103828;
+  --color-utd-green-light: #eef4f0;
+  --color-utd-orange: #e87500;
 }
 
 @layer base {
+  :root {
+    font-family: Arial, Helvetica, sans-serif;
+    font-synthesis: none;
+    color-scheme: light;
+  }
+
   body {
-    @apply m-0 min-h-screen bg-cream font-sans text-ink;
+    margin: 0;
+    min-height: 100vh;
+    background: #f5f5f5;
+    color: #171717;
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100vh;
+  }
+
+  :where(button, input, summary):focus-visible {
+    outline: 3px solid #154734;
+    outline-offset: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    /* Override utility classes when the user requests reduced motion. */
+    /* biome-ignore lint/complexity/noImportantStyles: accessibility preference must override animation utilities */
+    animation: none !important;
+    /* biome-ignore lint/complexity/noImportantStyles: accessibility preference must override transition utilities */
+    transition: none !important;
   }
 }

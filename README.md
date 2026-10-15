@@ -39,3 +39,18 @@ cd backend
 The backend asks for a login. The username is `user` and the password is printed in the console when it starts.
 
 On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
+
+## Frontend mock sign-in
+
+The login page currently uses local demo accounts; the backend does not need to be running.
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Faculty | `faculty@utdallas.edu` | `Faculty123!` |
+| Assessment Committee | `ac@utdallas.edu` | `Committee123!` |
+
+Sign-in simulates a short request and rejects other credentials. Email matching ignores case and surrounding spaces, but passwords must match exactly. Successful sign-in displays the Faculty Dashboard or Assessment Committee Dashboard based on the user's role. Both dashboards are temporary dashboards with a Sign Out button that returns to a fresh login form. Current view does not change the URL or persist a session across refreshes.
+
+`frontend/src/auth/mockAuth.ts` contains the demo service and shared user/role types. `App` uses the `LoginPage` callback `onLogin(user)` to keep the authenticated user in memory and render `DashboardPage`. These accounts and frontend role checks are for frontend development only. Real authentication and permission enforcement must be provided by the backend before real use.
+
+Run the mock authentication tests from `frontend/` with `bun test src/auth/mockAuth.test.ts`.

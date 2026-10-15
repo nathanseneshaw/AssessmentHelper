@@ -1,7 +1,7 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { APITester } from "./APITester";
-import { AuthProvider, useAuth } from "./auth/AuthContext";
-import { RequireRole } from "./auth/RequireRole";
+import { useState } from "react";
+import type { AuthUser } from "./auth/mockAuth";
+import { DashboardPage } from "./pages/DashboardPage";
+import { LoginPage } from "./pages/LoginPage";
 import "./index.css";
 import { AppLayout } from "./layouts/AppLayout";
 import { HOME_PATH } from "./navConfig";
@@ -24,63 +24,14 @@ import { FacultyObservers } from "./pages/faculty/Observers";
 import { Login } from "./pages/Login";
 import { NotFound } from "./pages/NotFound";
 
-function RootRedirect() {
-  const { user } = useAuth();
-  return <Navigate to={user ? HOME_PATH[user.role] : "/login"} replace />;
-}
-
 export function App() {
-  return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route path="/" element={<RootRedirect />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/forbidden" element={<Forbidden />} />
-          <Route path="/dev/api-tester" element={<APITester />} />
+  const [user, setUser] = useState<AuthUser | null>(null);
 
-          <Route element={<RequireRole allow="ac" />}>
-            <Route path="/ac" element={<AppLayout />}>
-              <Route index element={<AcOverview />} />
-              <Route path="evaluations" element={<AcFacultyEvaluations />} />
-              <Route path="signups" element={<AcSignups />} />
-              <Route path="matching" element={<AcObserverMatching />} />
-              <Route path="observations" element={<AcObservations />} />
-              <Route path="form-template" element={<AcFormTemplate />} />
-              <Route path="reports" element={<AcReports />} />
-              <Route path="*" element={<NotFound />} />
-            </Route>
-          </Route>
+  if (!user) {
+    return <LoginPage onLogin={setUser} />;
+  }
 
-          <Route element={<RequireRole allow="professor" />}>
-            <Route element={<AppLayout />}>
-              <Route path="/faculty" element={<FacultyDashboard />}>
-                <Route path="signup" element={<FacultyEvaluationSignup />} />
-                <Route path="observers" element={<FacultyObservers />} />
-                <Route path="history" element={<FacultyHistory />} />
-                <Route
-                  path="observations/me"
-                  element={<FacultyObservationsForMe />}
-                />
-                <Route
-                  path="observations/others"
-                  element={<FacultyObservationsForOthers />}
-                />
-                <Route
-                  path="observations/:id"
-                  element={<FacultyObservationDetails />}
-                />
-                <Route path="feedback" element={<FacultyFeedback />} />
-              </Route>
-              <Route path="/faculty/*" element={<NotFound />} />
-            </Route>
-          </Route>
-
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
-  );
+  return <DashboardPage user={user} onSignOut={() => setUser(null)} />;
 }
 
 export default App;
