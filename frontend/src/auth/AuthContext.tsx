@@ -8,16 +8,11 @@ export interface User {
 
 interface AuthValue {
   user: User | null;
-  login: (role: Role) => void;
+  login: (user: User) => void;
   logout: () => void;
 }
 
-const STORAGE_KEY = "assessment-helper-demo-user";
-
-const DEMO_USERS: Record<Role, User> = {
-  ac: { role: "ac", name: "AC Member" },
-  professor: { role: "professor", name: "Professor 1" },
-};
+export const STORAGE_KEY = "assessment-helper-demo-user";
 
 function loadUser(): User | null {
   try {
@@ -33,8 +28,7 @@ const AuthContext = createContext<AuthValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(loadUser);
 
-  const login = (role: Role) => {
-    const next = DEMO_USERS[role];
+  const login = (next: User) => {
     setUser(next);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   };

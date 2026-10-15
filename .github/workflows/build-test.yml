@@ -29,6 +29,10 @@ jobs:
         working-directory: ./frontend
         run: bun run typecheck
 
+      - name: Run tests
+        working-directory: ./frontend
+        run: bun test
+
       - name: Build frontend
         working-directory: ./frontend
         run: bun run build
