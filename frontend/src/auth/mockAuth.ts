@@ -11,7 +11,7 @@ export type LoginResult =
   | { success: true; user: AuthUser }
   | { success: false; error: string };
 
-// Demo credentials only. Replace this service with backend authentication later.
+// Demo credentials
 const accounts = [
   {
     id: "demo-faculty",

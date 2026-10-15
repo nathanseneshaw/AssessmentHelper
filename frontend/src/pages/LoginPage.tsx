@@ -107,7 +107,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           </h1>
 
           <p className="mt-2 text-center text-sm leading-6 text-neutral-600">
-            Sign in to your assessment workspace.
+            Sign in to the assessment workspace.
           </p>
 
           <form
@@ -192,7 +192,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   onClick={() => setShowPassword(!showPassword)}
                   aria-pressed={showPassword}
                   aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute right-1 top-1/2 min-h-11 min-w-16 -tranneutral-y-1/2 rounded-md px-2 text-sm font-semibold text-utd-green hover:bg-utd-green-light disabled:opacity-60"
+                  className="absolute right-1 top-1/2 min-h-11 min-w-16 -translate-y-1/2 rounded-md px-2 text-sm font-semibold text-utd-green hover:bg-utd-green-light disabled:opacity-60"
                 >
                   {showPassword ? "Hide" : "Show"}
                 </button>
@@ -239,7 +239,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               Demo accounts
             </summary>
             <div className="space-y-3 px-4 pb-4 leading-6">
-              <p>Use a sample account to explore the portal.</p>
+              <p>Sample accounts:</p>
               <div>
                 <p className="font-semibold text-neutral-800">Faculty</p>
                 <p className="break-all">faculty@utdallas.edu</p>
@@ -256,14 +256,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   Password: <code>Committee123!</code>
                 </p>
               </div>
-              <p>Demo sign-in only. Sign-in resets on refresh.</p>
             </div>
           </details>
         </div>
       </section>
-      <p className="mt-6 text-center text-xs leading-5 text-neutral-500">
-        Assessment Helper · CS 4485 Project
-      </p>
     </main>
   );
 }
