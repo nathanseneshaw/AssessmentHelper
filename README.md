@@ -36,7 +36,7 @@ cd backend
 ./gradlew bootRun
 ```
 
-The backend asks for a login. The username is `user` and the password is printed in the console when it starts.
+While the backend is running, the API documentation is at http://localhost:8080/swagger-ui.html and the H2 database console is at http://localhost:8080/h2-console. The database URL to enter in the console is printed in the startup log.
 
 On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
