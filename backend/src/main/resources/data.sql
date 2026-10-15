@@ -6,8 +6,8 @@ INSERT INTO department (department_name, department_code) VALUES ('Computer Scie
 -- professor_rank is the primary key of this table
 INSERT INTO evaluation_policy (professor_rank, evaluation_interval_years, active_status, made_date, effective_date, version) VALUES
     ('ASSISTANT', 1, TRUE, '2026-01-01', '2026-01-01', 0),
-    ('ASSOCIATE', 3, TRUE, '2026-01-01', '2026-01-01', 0),
-    ('FULL',      5, TRUE, '2026-01-01', '2026-01-01', 0);
+    ('ASSOCIATE', 2, TRUE, '2026-01-01', '2026-01-01', 0),
+    ('FULL',      2, TRUE, '2026-01-01', '2026-01-01', 0);
 
 INSERT INTO professor (department_id, professor_rank, first_name, last_name, email, hire_date, active_status) VALUES
     (1, 'FULL',      'Alice', 'Nguyen',   'alice.nguyen@univ.edu',   '2008-08-15', TRUE),
@@ -17,43 +17,54 @@ INSERT INTO professor (department_id, professor_rank, first_name, last_name, ema
 INSERT INTO user_account (professor_id, username, email, password_hash, is_active) VALUES
     (1, 'anguyen', 'alice.nguyen@univ.edu', '{noop}changeme', TRUE);
 
-INSERT INTO semester (term, academic_year, start_date, end_date) VALUES ('Fall', 2026, '2026-08-24', '2026-12-11');
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Fall',   2026, '2026-08-24', '2026-12-11'),
+    ('Spring', 2025, '2025-01-13', '2025-05-09');
 
 INSERT INTO course (department_id, course_code, course_number, course_name, course_level) VALUES
     (1, 'CS', '101', 'Intro to Programming', 'UNDERGRADUATE');
 
 INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location) VALUES
-    (1, 1, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204');
+    (1, 1, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
+    (1, 2, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204');
 
-INSERT INTO teaching_history (professor_id, section_id) VALUES (2, 1);
+INSERT INTO teaching_history (professor_id, section_id) VALUES (2, 1), (2, 2);
 
 INSERT INTO evaluation_cycle (semester_id, signup_deadline, observation_deadline, feedback_deadline, status) VALUES
-    (1, '2026-09-15', '2026-11-15', '2026-12-01', 'OPEN');
+    (1, '2026-09-15', '2026-11-15', '2026-12-01', 'OPEN'),
+    (2, '2025-02-01', '2025-04-15', '2025-05-01', 'CLOSED');
 
-INSERT INTO observer (professor_id, cycle_id, active_status) VALUES (1, 1, TRUE);
+INSERT INTO observer (professor_id, cycle_id, active_status) VALUES (1, 1, TRUE), (1, 2, TRUE);
 
-INSERT INTO observee (professor_id, cycle_id, status) VALUES (2, 1, 'ACTIVE');
+INSERT INTO observee (professor_id, cycle_id, status) VALUES (2, 1, 'ACTIVE'), (2, 2, 'COMPLETED');
 
-INSERT INTO evaluation_signup (observee_id, section_id, signup_date, status) VALUES (1, 1, '2026-09-01', 'MATCHED');
+INSERT INTO evaluation_signup (observee_id, section_id, signup_date, status) VALUES
+    (1, 1, '2026-09-01', 'MATCHED'),
+    (2, 2, '2025-01-27', 'COMPLETED');
 
 INSERT INTO observer_match (signup_id, observer_id, generated_date, match_status) VALUES (1, 1, '2026-09-16', 'PROPOSED');
 
-INSERT INTO observer_request (signup_id, observer_id, request_date, expiration_date, status) VALUES
-    (1, 1, '2026-09-16 09:00:00', '2026-09-23 09:00:00', 'PENDING');
+INSERT INTO observer_request (signup_id, observer_id, request_date, expiration_date, response_date, status) VALUES
+    (1, 1, '2026-09-16 09:00:00', '2026-09-23 09:00:00', NULL, 'PENDING'),
+    (2, 2, '2025-02-03 09:00:00', '2025-02-10 09:00:00', '2025-02-04 14:30:00', 'CONFIRMED');
 
 INSERT INTO observer_request_time (request_id, proposed_date, start_time, end_time, status) VALUES
     (1, '2026-10-14', '10:00:00', '10:50:00', 'PROPOSED');
 
 INSERT INTO observation_template (created_by, template_name, version, created_date, active_status) VALUES
-    (1, 'Standard Classroom Observation', 1, '2026-08-01', TRUE);
+    (1, 'Standard Classroom Observation', 1, '2025-01-06', TRUE);
 
 INSERT INTO observation_criterion (template_id, criterion_text, question_type, required, display_order, rating_min, rating_max) VALUES
     (1, 'Clarity of learning objectives', 'RATING', TRUE, 1, 1, 5),
     (1, 'Student engagement',             'RATING', TRUE, 2, 1, 5),
     (1, 'Additional comments',            'TEXT',   TRUE, 3, NULL, NULL);
 
-INSERT INTO observation (signup_id, observer_id, template_id, observation_date, start_time, status, observee_signed, observer_signed) VALUES
-    (1, 1, 1, '2026-10-14', '10:00:00', 'SCHEDULED', FALSE, FALSE);
+INSERT INTO observation (signup_id, observer_id, template_id, observation_date, start_time, status, observee_signed, observer_signed, observee_signed_at, observer_signed_at, completed_at) VALUES
+    (1, 1, 1, '2026-10-14', '10:00:00', 'SCHEDULED', FALSE, FALSE, NULL, NULL, NULL),
+    (2, 2, 1, '2025-03-10', '10:00:00', 'COMPLETED', TRUE,  TRUE,  '2025-03-14 16:00:00', '2025-03-12 11:00:00', '2025-03-14 16:00:00');
 
 INSERT INTO observation_response (observation_id, criterion_id, rating, comments) VALUES
-    (1, 1, 4, 'Objectives were stated and revisited at the end.');
+    (1, 1, 4,    'Objectives were stated and revisited at the end.'),
+    (2, 1, 5,    'Each segment opened with a clear goal.'),
+    (2, 2, 4,    'Most students took part in the pair exercise.'),
+    (2, 3, NULL, 'Consider leaving more time for questions at the end.');
