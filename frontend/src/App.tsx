@@ -1,35 +1,85 @@
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { APITester } from "./APITester";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { RequireRole } from "./auth/RequireRole";
 import "./index.css";
+import { AppLayout } from "./layouts/AppLayout";
+import { HOME_PATH } from "./navConfig";
+import { AcFacultyEvaluations } from "./pages/ac/FacultyEvaluations";
+import { AcFormTemplate } from "./pages/ac/FormTemplate";
+import { AcObservations } from "./pages/ac/Observations";
+import { AcObserverMatching } from "./pages/ac/ObserverMatching";
+import { AcOverview } from "./pages/ac/Overview";
+import { AcReports } from "./pages/ac/Reports";
+import { AcSignups } from "./pages/ac/Signups";
+import { Forbidden } from "./pages/Forbidden";
+import { FacultyDashboard } from "./pages/faculty/Dashboard";
+import { FacultyEvaluationSignup } from "./pages/faculty/EvaluationSignup";
+import { FacultyFeedback } from "./pages/faculty/Feedback";
+import { FacultyHistory } from "./pages/faculty/History";
+import { FacultyObservationDetails } from "./pages/faculty/ObservationDetails";
+import { FacultyObservationsForMe } from "./pages/faculty/ObservationsForMe";
+import { FacultyObservationsForOthers } from "./pages/faculty/ObservationsForOthers";
+import { FacultyObservers } from "./pages/faculty/Observers";
+import { Login } from "./pages/Login";
+import { NotFound } from "./pages/NotFound";
 
-import logo from "./logo.svg";
-import reactLogo from "./react.svg";
+function RootRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={user ? HOME_PATH[user.role] : "/login"} replace />;
+}
 
 export function App() {
   return (
-    <div className="max-w-7xl mx-auto p-8 text-center relative z-10">
-      <div className="flex justify-center items-center gap-8 mb-8">
-        <img
-          src={logo}
-          alt="Bun Logo"
-          className="h-24 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#646cffaa] scale-120"
-        />
-        <img
-          src={reactLogo}
-          alt="React Logo"
-          className="h-24 p-6 transition-all duration-300 hover:drop-shadow-[0_0_2em_#61dafbaa] animate-[spin_20s_linear_infinite]"
-        />
-      </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/forbidden" element={<Forbidden />} />
+          <Route path="/dev/api-tester" element={<APITester />} />
 
-      <h1 className="text-5xl font-bold my-4 leading-tight">Bun + React</h1>
-      <p>
-        Edit{" "}
-        <code className="bg-[#1a1a1a] px-2 py-1 rounded font-mono">
-          src/App.tsx
-        </code>{" "}
-        and save to test HMR
-      </p>
-      <APITester />
-    </div>
+          <Route element={<RequireRole allow="ac" />}>
+            <Route path="/ac" element={<AppLayout />}>
+              <Route index element={<AcOverview />} />
+              <Route path="evaluations" element={<AcFacultyEvaluations />} />
+              <Route path="signups" element={<AcSignups />} />
+              <Route path="matching" element={<AcObserverMatching />} />
+              <Route path="observations" element={<AcObservations />} />
+              <Route path="form-template" element={<AcFormTemplate />} />
+              <Route path="reports" element={<AcReports />} />
+              <Route path="*" element={<NotFound />} />
+            </Route>
+          </Route>
+
+          <Route element={<RequireRole allow="professor" />}>
+            <Route element={<AppLayout />}>
+              <Route path="/faculty" element={<FacultyDashboard />}>
+                <Route path="signup" element={<FacultyEvaluationSignup />} />
+                <Route path="observers" element={<FacultyObservers />} />
+                <Route path="history" element={<FacultyHistory />} />
+                <Route
+                  path="observations/me"
+                  element={<FacultyObservationsForMe />}
+                />
+                <Route
+                  path="observations/others"
+                  element={<FacultyObservationsForOthers />}
+                />
+                <Route
+                  path="observations/:id"
+                  element={<FacultyObservationDetails />}
+                />
+                <Route path="feedback" element={<FacultyFeedback />} />
+              </Route>
+              <Route path="/faculty/*" element={<NotFound />} />
+            </Route>
+          </Route>
+
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
