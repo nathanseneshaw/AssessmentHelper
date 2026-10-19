@@ -6,16 +6,21 @@
   --color-utd-green-light: #eef4f0;
   --color-utd-orange: #e87500;
 
-  /* Used by AppLayout and the AC and faculty pages. */
+  /* Used by AppLayout and the AC and faculty pages. Values are sampled from the Figma mockups. */
   --color-cream: #f7f6f1;
   --color-ink: #1f2421;
-  --color-brand-green: #135a32;
-  --color-brand-orange: #e74913;
-  --color-mist: #e8f2e8;
+  --color-muted: #626b66; /* secondary text: subtitles, tabs, labels, notes */
+  --color-brand-green: #265a31;
+  --color-brand-orange: #d84a03;
+  --color-brand-red: #a22f23;
+  --color-mist: #e9f2e8;
   --color-peach: #fcf0e3;
   --color-line: #dbdbd1;
   --color-btn-gray: #636b66;
   --color-btn-light: #d9d9d9;
+
+  /* Loaded in index.html. The signed-in pages use it to match the Figma designs. */
+  --font-inter: "Inter", Arial, Helvetica, sans-serif;
 }
 
 @layer base {
