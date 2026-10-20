@@ -51,15 +51,6 @@ and does not complete the evaluation. Due and overdue share the same scheduling
 calculation and current-cycle notification history. The due API is
 `GET /api/due-evaluations`, with notifications posted to
 `/api/due-evaluations/{cycleId}/professors/{professorId}/notifications`.
-Demo professor Carol Carol is due in Fall 2026 based on her October 2024 hire
-date and two-year associate professor interval; Bob Bob remains overdue.
-The demo dataset has 25 professors: in Fall 2026, 10 are due, 10 are overdue,
-and 5 have upcoming evaluations. Names and emails are fictional. New professors
-without completed evaluation history use their hire dates for scheduling.
-Nine of the ten overdue professors have completed evaluation history: Bob,
-Maya, Noah, Olivia, Paul, Quinn, Rose, Sam, and Tara. Their subsequent evaluation
-is outstanding. Historical cycles and observations cover Spring 2023, Fall 2023,
-Spring 2024, and Spring 2025; Alice remains the overdue hire-date fallback example.
 
 Start both the backend and frontend, then open the Assessment Committee overview.
 The overdue card loads actual faculty data; **View All** opens the overdue list.
