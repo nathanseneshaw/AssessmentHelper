@@ -6,9 +6,9 @@ export interface NavItem {
   end?: boolean;
 }
 
-export const BREADCRUMB: Record<Role, string> = {
-  ac: "Assessment Helper / Assessment Committee",
-  professor: "Assessment Helper",
+export const BREADCRUMB: Record<Role, string[]> = {
+  ac: ["Assessment Helper", "Assessment Committee"],
+  professor: ["Assessment Helper"],
 };
 
 export const HOME_PATH: Record<Role, string> = {

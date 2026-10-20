@@ -1,3 +1,5 @@
+import { PageHeader } from "./PageHeader";
+
 export function PageStub({
   title,
   subtitle,
@@ -9,9 +11,8 @@ export function PageStub({
 }) {
   return (
     <section>
-      <h1 className="font-bold text-3xl">{title}</h1>
-      {subtitle && <p className="mt-1 text-ink/60">{subtitle}</p>}
-      <div className="mt-6 rounded-lg border border-line border-dashed bg-white p-8 text-ink/60">
+      <PageHeader title={title} subtitle={subtitle} />
+      <div className="mt-8 rounded-lg border border-line border-dashed bg-white p-8 text-muted">
         Not built yet
       </div>
     </section>

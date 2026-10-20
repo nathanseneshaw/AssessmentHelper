@@ -139,14 +139,26 @@ describe("assessment committee", () => {
 
   test("every nav tab opens a page", async () => {
     renderAt("/ac", "ac");
-    const nav = await screen.findByRole("navigation", { name: "Main" });
+    await screen.findByRole("navigation", { name: "Main" });
 
     for (const item of NAV_ITEMS.ac) {
+      // Each page renders its own tabs, so look them up again after every click.
+      const nav = screen.getByRole("navigation", { name: "Main" });
       fireEvent.click(within(nav).getByRole("link", { name: item.label }));
       expect(currentPath()).toBe(item.to);
       expect(screen.queryByText("Page not found")).toBeNull();
       expect(screen.getByRole("heading", { level: 1 })).toBeDefined();
     }
+  });
+
+  test.each([
+    ["View all overdue evaluations", "/ac/evaluations"],
+    ["View all faculty due for evaluation", "/ac/evaluations"],
+    ["Resolve Matches", "/ac/matching"],
+  ])("the overview's %s link opens %s", async (name, path) => {
+    renderAt("/ac", "ac");
+    fireEvent.click(await screen.findByRole("link", { name }));
+    expect(currentPath()).toBe(path);
   });
 
   test("faculty pages are off limits", async () => {
