@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { ActionButton } from "../../components/ActionButton";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
+import { OverdueEvaluations } from "./OverdueEvaluations";
+import { getOverdueQueue, type OverdueQueue } from "./overdueApi";
 
 const kpiGroups: { title: string; grid: string; kpis: Kpi[] }[] = [
   {
@@ -15,13 +17,12 @@ const kpiGroups: { title: string; grid: string; kpis: Kpi[] }[] = [
       },
       {
         label: "Overdue Evaluations",
-        value: "8",
+        value: "—",
         note: "Requires committee attention",
         alert: true,
         action: {
           label: "View All",
           ariaLabel: "View all overdue evaluations",
-          to: "/ac/evaluations",
         },
       },
     ],
@@ -136,9 +137,64 @@ function ListRow({ cells, status }: { cells: string[]; status: ReactNode }) {
 }
 
 export function AcOverview() {
+  const [queue, setQueue] = useState<OverdueQueue | null>(null);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const [reload, setReload] = useState(0);
+  // Retry deliberately reruns the request even though the request URL is unchanged.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is an explicit retry trigger.
+  useEffect(() => {
+    const controller = new AbortController();
+    setError("");
+    getOverdueQueue(controller.signal)
+      .then(setQueue)
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "Unable to load overdue evaluations.",
+          );
+      });
+    return () => controller.abort();
+  }, [reload]);
   return (
     <div>
-      <PageHeader title="Assessment Committee Dashboard" subtitle="Fall 2026" />
+      <PageHeader
+        title="Assessment Committee Dashboard"
+        subtitle={queue?.cycleLabel ?? "Assessment overview"}
+      />
+      {error && (
+        <p role="alert" className="mt-4 text-sm text-brand-red">
+          {error}{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => setReload((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </p>
+      )}
+      {open && queue && (
+        <OverdueEvaluations
+          queue={queue}
+          onClose={() => setOpen(false)}
+          onNotified={(professorId, sentAt) =>
+            setQueue(
+              (previous) =>
+                previous && {
+                  ...previous,
+                  faculty: previous.faculty.map((person) =>
+                    person.professorId === professorId
+                      ? { ...person, lastNotifiedAt: sentAt }
+                      : person,
+                  ),
+                },
+            )
+          }
+        />
+      )}
 
       <div className="mt-7.5 grid gap-x-10 gap-y-8.5 xl:grid-cols-[minmax(0,40rem)_minmax(0,1fr)]">
         {kpiGroups.map((group) => (
@@ -148,7 +204,28 @@ export function AcOverview() {
             </h2>
             <div className={`grid gap-4 ${group.grid}`}>
               {group.kpis.map((kpi) => (
-                <KpiCard key={kpi.label} kpi={kpi} />
+                <KpiCard
+                  key={kpi.label}
+                  kpi={
+                    kpi.label === "Overdue Evaluations"
+                      ? {
+                          ...kpi,
+                          value: queue ? String(queue.count) : "—",
+                          note: error
+                            ? "Unable to load overdue evaluations"
+                            : queue
+                              ? kpi.note
+                              : "Loading overdue evaluations…",
+                          action: {
+                            label: "View All",
+                            ariaLabel: "View all overdue evaluations",
+                            disabled: !queue || Boolean(error),
+                            onClick: () => setOpen(true),
+                          },
+                        }
+                      : kpi
+                  }
+                />
               ))}
             </div>
           </section>

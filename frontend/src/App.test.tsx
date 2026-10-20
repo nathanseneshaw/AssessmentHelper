@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   cleanup,
   fireEvent,
@@ -9,6 +9,21 @@ import {
 import { App } from "./App";
 import { STORAGE_KEY } from "./auth/AuthContext";
 import { NAV_ITEMS, type Role } from "./navConfig";
+
+const originalFetch = globalThis.fetch;
+beforeEach(() => {
+  globalThis.fetch = mock(async () =>
+    Response.json({
+      cycleId: 1,
+      cycleLabel: "Fall 2026",
+      count: 0,
+      faculty: [],
+    }),
+  ) as unknown as typeof fetch;
+});
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 const AC_PAGES = [
   ["/ac", "Assessment Committee Dashboard"],
@@ -152,7 +167,6 @@ describe("assessment committee", () => {
   });
 
   test.each([
-    ["View all overdue evaluations", "/ac/evaluations"],
     ["View all faculty due for evaluation", "/ac/evaluations"],
     ["Resolve Matches", "/ac/matching"],
   ])("the overview's %s link opens %s", async (name, path) => {

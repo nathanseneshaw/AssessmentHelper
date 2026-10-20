@@ -40,6 +40,30 @@ While the backend is running, the API documentation is at http://localhost:8080/
 
 On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
+## Overdue evaluation notifications
+
+Start both the backend and frontend, then open the Assessment Committee overview.
+The overdue card loads actual faculty data; **View All** opens the overdue list.
+**Notify** and **Follow Up** open personalized, editable email templates. Sending
+simulates delivery and saves the recipient, edited subject/body, and timestamp;
+it never contacts an email provider. A notification does not clear the overdue count.
+
+The backend selects the semester containing today's date in America/Chicago.
+Active assistants have annual evaluations; associate/full professors use their
+two-year policies. Scheduling starts at the latest observation `completedAt` for
+an observee marked `COMPLETED`, or at hire date when there is no completion.
+A current-semester recurrence takes priority over a previously missed evaluation.
+Missing/ambiguous semester or cycle configuration and missing completion dates
+produce an actionable error instead of a fabricated count.
+
+Each backend startup creates a fresh in-memory H2 database and loads the default
+demo records from `data.sql`. Restarting the backend resets data and notification
+statuses, including during development hot restarts. Notifications persist across
+browser refreshes and are shared by committee users while the backend is running.
+Previously created files in `backend/data/` are no longer used. The frontend proxies overdue API requests to
+`http://localhost:8080`; set `BACKEND_URL` on the Bun server to use another backend.
+The existing mock sign-in and permissive backend API security remain demo-only.
+
 ## Frontend mock sign-in
 
 The login page currently uses local demo accounts; the backend does not need to be running.
