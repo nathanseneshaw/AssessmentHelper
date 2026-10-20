@@ -40,6 +40,8 @@ While the backend is running, the API documentation is at http://localhost:8080/
 
 On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
+The frontend sends API requests to the backend at http://localhost:8080. To use a different address, set `BUN_PUBLIC_API_URL` when starting or building the frontend, for example `BUN_PUBLIC_API_URL=http://localhost:9090 bun run dev`. The backend only accepts browser requests from the origins listed in `app.cors.allowed-origins` in `backend/src/main/resources/application.properties`, which is `http://localhost:3000` by default. If the frontend runs at a different address, add it there or set the `APP_CORS_ALLOWED_ORIGINS` environment variable when starting the backend.
+
 ## Frontend mock sign-in
 
 The login page currently uses local demo accounts; the backend does not need to be running.
