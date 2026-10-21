@@ -1,12 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
+  type EvaluationKind,
   type NotificationEmail,
   notificationTemplate,
   type OverdueFaculty,
   type OverdueQueue,
   rankLabel,
   sendNotification,
-} from "./overdueApi";
+} from "../../api/evaluationEligibility";
 
 const secondary =
   "rounded-md border border-line bg-[#f7f6f2] px-6 py-2 text-sm hover:bg-mist disabled:opacity-50";
@@ -17,7 +18,9 @@ export function OverdueEvaluations({
   queue,
   onClose,
   onNotified,
+  kind = "overdue",
 }: {
+  kind?: EvaluationKind;
   queue: OverdueQueue;
   onClose: () => void;
   onNotified: (professorId: number, sentAt: string) => void;
@@ -74,6 +77,7 @@ export function OverdueEvaluations({
         queue.cycleId,
         faculty.professorId,
         email,
+        kind,
       );
       onNotified(faculty.professorId, result.sentAt);
       setSent(true);
@@ -99,7 +103,7 @@ export function OverdueEvaluations({
           else onClose();
         }
       }}
-      className={`fixed inset-0 m-auto max-h-[90vh] w-[calc(100%-2rem)] overflow-y-auto rounded-xl border border-line bg-white p-6 text-ink shadow-xl backdrop:bg-ink/40 ${sent ? "max-w-md" : faculty ? "max-w-xl" : "max-w-3xl"}`}
+      className={`fixed inset-0 m-auto max-h-[90vh] w-[calc(100%-2rem)] overflow-y-auto rounded-xl border border-line bg-white p-6 text-ink shadow-xl backdrop:bg-ink/40 ${sent ? "max-w-md" : faculty ? "max-w-xl" : "max-w-2xl"}`}
     >
       {sent ? (
         <>
@@ -108,9 +112,6 @@ export function OverdueEvaluations({
           </h2>
           <p role="status" className="mt-3 text-sm">
             The evaluation notification has been sent.
-          </p>
-          <p className="mt-2 text-xs text-muted">
-            Simulated delivery to {faculty?.email}. No email was actually sent.
           </p>
           <div className="mt-10 flex justify-end">
             <button
@@ -189,9 +190,6 @@ export function OverdueEvaluations({
                 className="resize-y rounded-lg border border-line p-3 text-ink"
               />
             </label>
-            <p className="text-xs text-muted">
-              Email delivery is simulated. Notification history will be saved.
-            </p>
             {error && (
               <p role="alert" className="text-sm text-brand-red">
                 {error}
@@ -215,32 +213,31 @@ export function OverdueEvaluations({
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 id={titleId} className="font-bold text-xl">
-                Faculty Overdue for Evaluation
+                Faculty {kind === "due" ? "Due" : "Overdue"} for Evaluation
               </h2>
               <p className="mt-1 text-sm text-muted">
-                {queue.cycleLabel} evaluation cycle • {queue.count} faculty
-                overdue
+                {`${queue.cycleLabel} evaluation cycle • ${queue.count} faculty ${kind}`}
               </p>
             </div>
             <button type="button" onClick={onClose} className={secondary}>
               Close
             </button>
           </div>
-          <div className="mt-6 overflow-x-auto border-t border-line pt-4">
+          <div className="mt-6 max-h-[min(50vh,24rem)] overflow-auto border-t border-line">
             <table className="w-full whitespace-nowrap text-left text-sm">
-              <thead className="text-xs text-muted">
+              <thead className="sticky top-0 z-10 bg-white text-xs text-muted">
                 <tr>
                   {[
                     "Faculty",
                     "Rank",
-                    "Last Evaluation Cycle",
+                    kind === "due" ? "Next Due" : "Last Evaluation Cycle",
                     "Status",
                     "Notify",
                   ].map((heading) => (
                     <th
                       key={heading}
                       scope="col"
-                      className="px-2 pb-3 font-normal"
+                      className="px-2 py-3 font-normal"
                     >
                       {heading}
                     </th>
@@ -252,7 +249,11 @@ export function OverdueEvaluations({
                   <tr key={person.professorId} className="even:bg-[#f7f6f2]">
                     <td className="px-2 py-3 font-semibold">{person.name}</td>
                     <td className="px-2 py-3">{rankLabel(person.rank)}</td>
-                    <td className="px-2 py-3">{person.lastEvaluationCycle}</td>
+                    <td className="px-2 py-3">
+                      {kind === "due"
+                        ? queue.cycleLabel
+                        : person.lastEvaluationCycle}
+                    </td>
                     <td
                       className={`px-2 py-3 ${person.lastNotifiedAt ? "text-green-600" : "text-brand-orange"}`}
                       title={
@@ -261,7 +262,11 @@ export function OverdueEvaluations({
                           : undefined
                       }
                     >
-                      {person.lastNotifiedAt ? "Notified" : "Overdue"}
+                      {person.lastNotifiedAt
+                        ? "Notified"
+                        : kind === "due"
+                          ? "Due"
+                          : "Overdue"}
                     </td>
                     <td className="px-2 py-3">
                       <button
@@ -273,7 +278,11 @@ export function OverdueEvaluations({
                           returnFocus.current = person.professorId;
                           setFaculty(person);
                           setEmail(
-                            notificationTemplate(person, queue.cycleLabel),
+                            notificationTemplate(
+                              person,
+                              queue.cycleLabel,
+                              kind,
+                            ),
                           );
                           setError("");
                         }}
@@ -287,7 +296,7 @@ export function OverdueEvaluations({
             </table>
             {queue.faculty.length === 0 && (
               <p className="py-10 text-center text-muted">
-                No faculty are overdue for evaluation.
+                No faculty are {kind} for evaluation.
               </p>
             )}
           </div>

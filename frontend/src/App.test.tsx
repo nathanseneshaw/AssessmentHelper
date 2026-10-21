@@ -166,14 +166,14 @@ describe("assessment committee", () => {
     }
   });
 
-  test.each([
-    ["View all faculty due for evaluation", "/ac/evaluations"],
-    ["Resolve Matches", "/ac/matching"],
-  ])("the overview's %s link opens %s", async (name, path) => {
-    renderAt("/ac", "ac");
-    fireEvent.click(await screen.findByRole("link", { name }));
-    expect(currentPath()).toBe(path);
-  });
+  test.each([["Resolve Matches", "/ac/matching"]])(
+    "the overview's %s link opens %s",
+    async (name, path) => {
+      renderAt("/ac", "ac");
+      fireEvent.click(await screen.findByRole("link", { name }));
+      expect(currentPath()).toBe(path);
+    },
+  );
 
   test("faculty pages are off limits", async () => {
     renderAt("/faculty", "ac");

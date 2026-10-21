@@ -8,9 +8,13 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { API_URL } from "../../api/client";
+import {
+  notificationTemplate,
+  type OverdueQueue,
+} from "../../api/evaluationEligibility";
 import { AuthProvider } from "../../auth/AuthContext";
 import { AcOverview } from "./Overview";
-import { notificationTemplate, type OverdueQueue } from "./overdueApi";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -26,6 +30,7 @@ const queue: OverdueQueue = {
     {
       professorId: 1,
       name: "Alice Nguyen",
+      lastName: "Nguyen",
       rank: "FULL",
       email: "alice@utdallas.edu",
       lastEvaluationCycle: "Spring 2023",
@@ -36,6 +41,7 @@ const queue: OverdueQueue = {
     {
       professorId: 2,
       name: "Bob Martinez",
+      lastName: "Martinez",
       rank: "ASSISTANT",
       email: "bob@utdallas.edu",
       lastEvaluationCycle: "Spring 2025",
@@ -65,7 +71,7 @@ function sampleFaculty(index: number) {
 test("personalizes rank, interval, name, history, and follow-up", () => {
   const alice = notificationTemplate(sampleFaculty(0), queue.cycleLabel);
   const bob = notificationTemplate(sampleFaculty(1), queue.cycleLabel);
-  expect(alice.body).toContain("Alice Nguyen");
+  expect(alice.body).toContain("Dear Professor Nguyen,");
   expect(alice.body).toContain("every 2 years");
   expect(bob.body).toContain("every year");
   expect(bob.recipient).toBe("bob@utdallas.edu");
@@ -161,9 +167,9 @@ test("failed send keeps draft and overdue status", async () => {
 
 test("shows load error and retries without displaying a fabricated count", async () => {
   let attempts = 0;
-  globalThis.fetch = mock(async () =>
-    ++attempts === 1
-      ? Response.json({ message: "Backend unavailable" }, { status: 503 })
+  globalThis.fetch = mock(async (input: unknown) =>
+    String(input).endsWith("/overdue-evaluations") && ++attempts === 1
+      ? Response.json({ detail: "Backend unavailable" }, { status: 503 })
       : Response.json({ ...queue, count: 0, faculty: [] }),
   ) as unknown as typeof fetch;
   openDashboard();
@@ -179,4 +185,84 @@ test("shows load error and retries without displaying a fabricated count", async
   expect(
     screen.getByText("No faculty are overdue for evaluation."),
   ).toBeDefined();
+});
+
+test("due overlay personalizes an editable email, saves to the due endpoint, and retains its count", async () => {
+  let savedUrl = "";
+  let savedBody: Record<string, string> | undefined;
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      savedUrl = String(input);
+      savedBody = JSON.parse(String(init.body));
+      return Response.json({ sentAt: "2026-10-21T10:00:00" });
+    }
+    return Response.json(
+      String(input).endsWith("/due-evaluations")
+        ? queue
+        : { ...queue, count: 0, faculty: [] },
+    );
+  }) as unknown as typeof fetch;
+  openDashboard();
+  const open = screen.getByRole("button", {
+    name: "View all faculty due for evaluation",
+  });
+  await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(open);
+  const dialog = screen.getByRole("dialog", {
+    name: "Faculty Due for Evaluation",
+  });
+  expect(
+    within(dialog).getByRole("columnheader", { name: "Next Due" }),
+  ).toBeDefined();
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Notify Alice Nguyen" }),
+  );
+  expect((screen.getByLabelText("Subject") as HTMLInputElement).value).toBe(
+    "Faculty Evaluation Due - Fall 2026",
+  );
+  expect(
+    (screen.getByLabelText("Message") as HTMLTextAreaElement).value,
+  ).toContain("Dear Professor Nguyen,");
+  fireEvent.change(screen.getByLabelText("Subject"), {
+    target: { value: "Your evaluation is due" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send Email" }));
+  await screen.findByRole("heading", { name: "Email Sent" });
+  expect(savedUrl).toBe(
+    `${API_URL}/api/due-evaluations/1/professors/1/notifications`,
+  );
+  expect(savedBody?.recipient).toBe("alice@utdallas.edu");
+  expect(savedBody?.subject).toBe("Your evaluation is due");
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  expect(
+    screen.getByText("Fall 2026 evaluation cycle • 2 faculty due"),
+  ).toBeDefined();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Follow up with Alice Nguyen" }),
+  );
+  expect(
+    (screen.getByLabelText("Subject") as HTMLInputElement).value,
+  ).toStartWith("Follow Up: Faculty Evaluation Due");
+});
+
+test("due load failures can be retried independently and empty due results are explicit", async () => {
+  let dueRequests = 0;
+  globalThis.fetch = mock(async (input: unknown) =>
+    String(input).endsWith("/due-evaluations") && ++dueRequests === 1
+      ? Response.json({ detail: "Due service unavailable" }, { status: 503 })
+      : Response.json({ ...queue, count: 0, faculty: [] }),
+  ) as unknown as typeof fetch;
+  openDashboard();
+  await screen.findByRole("alert");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "View all faculty due for evaluation",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry due evaluations" }),
+  );
+  await screen.findByText("No faculty are due this cycle.");
 });
