@@ -48,16 +48,46 @@ class EvaluationEligibilityIntegrationTests {
     private EvaluationEligibilityService service;
 
     @Test
-    void seededProfessorsProduceTenDueTenOverdueAndFiveUpcoming() throws Exception {
+    void seededProfessorsProduceEighteenDueEightOverdueAndFourUpcoming() throws Exception {
         assertThat(db.queryForObject("SELECT COUNT(*) FROM professor", Integer.class))
-                .isEqualTo(25);
+                .isEqualTo(30);
         var due = service.findDue();
         var overdue = service.findOverdue();
-        assertThat(due.count()).isEqualTo(10);
-        assertThat(overdue.count()).isEqualTo(10);
+        assertThat(due.count()).isEqualTo(18);
+        assertThat(overdue.count()).isEqualTo(8);
+        assertThat(overdue.faculty().stream()
+                        .filter(p -> p.professorId() == 2)
+                        .findFirst()
+                        .orElseThrow()
+                        .nextDueSemester())
+                .isEqualTo("Spring 2026");
+        var all = service.findAll();
+        assertThat(all.count()).isEqualTo(30);
+        assertThat(all.faculty())
+                .allSatisfy(
+                        professor -> assertThat(professor.nextDueSemester()).matches("(Spring|Summer|Fall) \\d{4}"));
+        assertThat(all.faculty().stream()
+                        .filter(p -> p.lastName().equals("Victor"))
+                        .findFirst()
+                        .orElseThrow()
+                        .nextDueSemester())
+                .isEqualTo("Spring 2028");
+        assertThat(all.faculty().stream().filter(p -> p.lastEvaluationCycle().equals("Never evaluated")))
+                .extracting(EvaluationEligibilityService.Faculty::lastName)
+                .containsExactly("Xavier");
+        assertThat(all.faculty().stream().filter(p -> p.status().equals("Due")))
+                .containsExactlyElementsOf(due.faculty());
+        assertThat(all.faculty().stream().filter(p -> p.status().equals("Overdue")))
+                .containsExactlyElementsOf(overdue.faculty());
+        assertThat(all.faculty().stream().filter(p -> p.status().equals("Upcoming")))
+                .hasSize(4);
+        mvc.perform(get("/api/evaluation-eligibility"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(30))
+                .andExpect(jsonPath("$.faculty.length()").value(30));
         assertThat(overdue.faculty().stream()
                         .filter(professor -> !professor.lastEvaluationCycle().equals("Never evaluated")))
-                .hasSize(9);
+                .hasSize(8);
         assertThat(due.faculty())
                 .extracting(EvaluationEligibilityService.Faculty::professorId)
                 .doesNotContainAnyElementsOf(overdue.faculty().stream()
@@ -71,12 +101,12 @@ class EvaluationEligibilityIntegrationTests {
                 .contains("Bob");
         mvc.perform(get("/api/due-evaluations"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(10))
-                .andExpect(jsonPath("$.faculty.length()").value(10))
+                .andExpect(jsonPath("$.count").value(18))
+                .andExpect(jsonPath("$.faculty.length()").value(18))
                 .andExpect(jsonPath("$.cycleLabel").value("Fall 2026"));
         mvc.perform(get("/api/overdue-evaluations"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(10));
+                .andExpect(jsonPath("$.count").value(8));
     }
 
     @Test
@@ -107,8 +137,8 @@ class EvaluationEligibilityIntegrationTests {
                         Integer.class,
                         "Dear Professor Carol, please sign up."))
                 .isEqualTo(2);
-        assertThat(service.findDue().count()).isEqualTo(10);
-        assertThat(service.findOverdue().count()).isEqualTo(10);
+        assertThat(service.findDue().count()).isEqualTo(18);
+        assertThat(service.findOverdue().count()).isEqualTo(8);
         assertThat(service.findDue().faculty().stream()
                         .filter(p -> p.professorId() == 3)
                         .findFirst()
@@ -155,7 +185,7 @@ class EvaluationEligibilityIntegrationTests {
                 "UPDATE observation SET status = 'COMPLETED', completed_at = TIMESTAMP '2026-10-20 10:00:00' WHERE signup_id = 1");
         mvc.perform(get("/api/overdue-evaluations"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(9));
+                .andExpect(jsonPath("$.count").value(7));
         assertThat(service.findDue().faculty())
                 .extracting(EvaluationEligibilityService.Faculty::professorId)
                 .doesNotContain(2);
@@ -167,8 +197,8 @@ class EvaluationEligibilityIntegrationTests {
     @Test
     void inactiveFacultyAreExcludedAndMissingCycleConfigurationIsReported() throws Exception {
         db.update("UPDATE professor SET active_status = FALSE WHERE professor_id IN (2, 3)");
-        assertThat(service.findDue().count()).isEqualTo(9);
-        assertThat(service.findOverdue().count()).isEqualTo(9);
+        assertThat(service.findDue().count()).isEqualTo(17);
+        assertThat(service.findOverdue().count()).isEqualTo(7);
         db.update(
                 "UPDATE semester SET start_date = DATE '2027-08-24', end_date = DATE '2027-12-11' WHERE semester_id = 1");
         mvc.perform(get("/api/due-evaluations"))

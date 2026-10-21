@@ -44,6 +44,13 @@ The shared frontend API client sends requests to the backend at http://localhost
 
 ## Overdue evaluation notifications
 
+The Faculty Evaluations page loads all active faculty from
+`GET /api/evaluation-eligibility`. Due This Term, Overdue, and rank filters use
+the same server-calculated classifications as the dashboard overlays; All
+Faculty also includes upcoming evaluations.
+The queue previews four matching professors on the page. View All opens the
+complete filtered list in an overlay with vertical scrolling and fixed column headers.
+
 The **Faculty Due for Evaluation** dashboard panel also uses calculated faculty
 data. **View All** opens the due overlay with the next due semester, personalized
 editable notifications, confirmation, and follow-up actions. Sending is simulated

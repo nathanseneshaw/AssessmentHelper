@@ -72,8 +72,10 @@ public class EvaluationEligibilityService {
             String email,
             String lastEvaluationCycle,
             LocalDate nextDueDate,
+            String nextDueSemester,
             int intervalYears,
-            LocalDateTime lastNotifiedAt) {}
+            LocalDateTime lastNotifiedAt,
+            String status) {}
 
     public record Queue(Integer cycleId, String cycleLabel, int count, List<Faculty> faculty) {}
 
@@ -89,8 +91,13 @@ public class EvaluationEligibilityService {
         return findQueue(true);
     }
 
+    @Transactional(readOnly = true)
+    public Queue findAll() {
+        return findQueue(null);
+    }
+
     /** Both queues use one calculation so due always takes precedence over overdue. */
-    private Queue findQueue(boolean due) {
+    private Queue findQueue(Boolean due) {
         LocalDate today = LocalDate.now(clock);
         List<Professor> activeProfessors = professors.findAll().stream()
                 .filter(professor -> Boolean.TRUE.equals(professor.activeStatus()))
@@ -173,7 +180,18 @@ public class EvaluationEligibilityService {
                 recurrence = anchor.plusYears(years);
             }
             boolean dueThisCycle = !recurrence.isAfter(semester.endDate());
-            if (due ? dueThisCycle : firstDue.isBefore(semester.startDate()) && !dueThisCycle) {
+            boolean overdue = firstDue.isBefore(semester.startDate()) && !dueThisCycle;
+            if (due == null || (due ? dueThisCycle : overdue)) {
+                LocalDate dueDate = dueThisCycle ? recurrence : firstDue;
+                String dueSemester = semesterMap.values().stream()
+                        .filter(s -> s.startDate() != null
+                                && s.endDate() != null
+                                && !dueDate.isBefore(s.startDate())
+                                && !dueDate.isAfter(s.endDate()))
+                        .sorted(Comparator.comparing(Semester::startDate).thenComparing(Semester::semesterId))
+                        .map(EvaluationEligibilityService::label)
+                        .findFirst()
+                        .orElse(dueDate.toString());
                 faculty.add(new Faculty(
                         professor.professorId(),
                         professor.firstName() + " " + professor.lastName(),
@@ -181,9 +199,11 @@ public class EvaluationEligibilityService {
                         professor.professorRank(),
                         professor.email(),
                         lastCycle.getOrDefault(professor.professorId(), "Never evaluated"),
-                        due ? recurrence : firstDue,
+                        dueDate,
+                        dueSemester,
                         interval,
-                        notifiedAt.get(professor.professorId())));
+                        notifiedAt.get(professor.professorId()),
+                        dueThisCycle ? "Due" : overdue ? "Overdue" : "Upcoming"));
             }
         }
         faculty.sort(Comparator.comparing(Faculty::name).thenComparing(Faculty::professorId));
