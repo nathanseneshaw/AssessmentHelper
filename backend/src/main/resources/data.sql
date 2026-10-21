@@ -68,3 +68,60 @@ INSERT INTO observation_response (observation_id, criterion_id, rating, comments
     (2, 1, 5,    'Each segment opened with a clear goal.'),
     (2, 2, 4,    'Most students took part in the pair exercise.'),
     (2, 3, NULL, 'Consider leaving more time for questions at the end.');
+
+-- Observer candidates demo (GET /api/observer-candidates).
+-- More CS courses, professors and Fall 2026 sections (semester 1) so the candidate list has something to choose from.
+-- Try courseNumber=3345&sectionNumber=001&professorName=Priya Raman (CS 3345.001, TR 10:00-11:15):
+--   eligible:  David Chen (4348, MW), Maria Lopez (3345, MW at the same time), Sarah Kim (6363, TR starting at 11:15),
+--              Emily Davis (3345, W evening), Robert Taylor (4348, MW), Aisha Patel (4348 online, 1337 TR ending at 9:45)
+--   excluded:  James Wilson (TR 10:30 overlaps), Michael Brown (only 1000/2000 level), Thomas Anderson (inactive),
+--              Bob Martinez (only CS 101), Alice Nguyen (teaches nothing this semester)
+-- Six professors qualify, so each request returns a random five of them.
+
+-- Course ids 2-6
+INSERT INTO course (department_id, course_code, course_number, course_name, course_level) VALUES
+    (1, 'CS', '1337', 'Computer Science I',                                                'UNDERGRADUATE'),
+    (1, 'CS', '2336', 'Computer Science II',                                               'UNDERGRADUATE'),
+    (1, 'CS', '3345', 'Data Structures and Introduction to Algorithmic Analysis',          'UNDERGRADUATE'),
+    (1, 'CS', '4348', 'Operating Systems Concepts',                                        'UNDERGRADUATE'),
+    (1, 'CS', '6363', 'Design and Analysis of Computer Algorithms',                        'GRADUATE');
+
+-- Professor ids 3-12
+INSERT INTO professor (department_id, professor_rank, first_name, last_name, email, hire_date, active_status) VALUES
+    (1, 'ASSOCIATE', 'Priya',   'Raman',    'priya.raman@utdallas.edu',     '2015-08-15', TRUE),
+    (1, 'FULL',      'David',   'Chen',     'david.chen@utdallas.edu',      '2004-08-15', TRUE),
+    (1, 'ASSISTANT', 'Maria',   'Lopez',    'maria.lopez@utdallas.edu',     '2023-08-15', TRUE),
+    (1, 'ASSOCIATE', 'James',   'Wilson',   'james.wilson@utdallas.edu',    '2014-08-15', TRUE),
+    (1, 'FULL',      'Sarah',   'Kim',      'sarah.kim@utdallas.edu',       '2006-08-15', TRUE),
+    (1, 'ASSISTANT', 'Michael', 'Brown',    'michael.brown@utdallas.edu',   '2022-08-15', TRUE),
+    (1, 'ASSOCIATE', 'Emily',   'Davis',    'emily.davis@utdallas.edu',     '2016-08-15', TRUE),
+    (1, 'FULL',      'Robert',  'Taylor',   'robert.taylor@utdallas.edu',   '2001-08-15', TRUE),
+    (1, 'ASSISTANT', 'Aisha',   'Patel',    'aisha.patel@utdallas.edu',     '2024-08-15', TRUE),
+    (1, 'FULL',      'Thomas',  'Anderson', 'thomas.anderson@utdallas.edu', '1998-08-15', FALSE);
+
+-- Section ids 3-14, all in Fall 2026
+INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location) VALUES
+    (4, 1, '001', 'TR',  '10:00:00', '11:15:00', 'ECSS 2.410'),
+    (5, 1, '001', 'MW',  '13:00:00', '14:15:00', 'ECSS 2.306'),
+    (4, 1, '002', 'MW',  '10:00:00', '11:15:00', 'ECSS 2.415'),
+    (5, 1, '002', 'TR',  '10:30:00', '11:45:00', 'ECSS 2.412'),
+    (6, 1, '001', 'TR',  '11:15:00', '12:30:00', 'ECSS 2.203'),
+    (2, 1, '001', 'MWF', '09:00:00', '09:50:00', 'SCI 1.210'),
+    (3, 1, '001', 'TR',  '14:30:00', '15:45:00', 'ECSS 2.311'),
+    (4, 1, '003', 'W',   '19:00:00', '21:45:00', 'ECSS 2.410'),
+    (5, 1, '003', 'MW',  '16:00:00', '17:15:00', 'ECSS 2.306'),
+    (5, 1, '501', NULL,  NULL,       NULL,       'Online'),
+    (2, 1, '002', 'TR',  '08:30:00', '09:45:00', 'SCI 1.220'),
+    (5, 1, '004', 'F',   '10:00:00', '12:45:00', 'ECSS 2.412');
+
+INSERT INTO teaching_history (professor_id, section_id) VALUES
+    (3, 3),             -- Priya Raman:     CS 3345.001
+    (4, 4),             -- David Chen:      CS 4348.001
+    (5, 5),             -- Maria Lopez:     CS 3345.002
+    (6, 6),             -- James Wilson:    CS 4348.002
+    (7, 7),             -- Sarah Kim:       CS 6363.001
+    (8, 8), (8, 9),     -- Michael Brown:   CS 1337.001, CS 2336.001
+    (9, 10),            -- Emily Davis:     CS 3345.003
+    (10, 11),           -- Robert Taylor:   CS 4348.003
+    (11, 12), (11, 13), -- Aisha Patel:     CS 4348.501, CS 1337.002
+    (12, 14);           -- Thomas Anderson: CS 4348.004
