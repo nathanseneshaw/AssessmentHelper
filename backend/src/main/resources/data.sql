@@ -94,3 +94,71 @@ INSERT INTO observation_response (observation_id, criterion_id, rating, comments
     (2, 1, 5,    'Each segment opened with a clear goal.'),
     (2, 2, 4,    'Most students took part in the pair exercise.'),
     (2, 3, NULL, 'Consider leaving more time for questions at the end.');
+
+-- Completed history for eight additional overdue professors. Their next required
+-- evaluation is still outstanding in Fall 2026; the original demo IDs stay stable.
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Spring', 2024, '2024-01-08', '2024-05-10'),
+    ('Spring', 2023, '2023-01-09', '2023-05-12'),
+    ('Fall',   2023, '2023-08-21', '2023-12-08');
+
+INSERT INTO evaluation_cycle (semester_id, signup_deadline, observation_deadline, feedback_deadline, status) VALUES
+    (3, '2024-02-01', '2024-04-15', '2024-05-01', 'CLOSED'),
+    (4, '2023-02-01', '2023-04-25', '2023-05-01', 'CLOSED'),
+    (5, '2023-09-15', '2023-11-15', '2023-12-01', 'CLOSED');
+
+INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location) VALUES
+    (1, 3, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
+    (1, 4, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
+    (1, 5, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204');
+
+INSERT INTO observer (professor_id, cycle_id, active_status) VALUES
+    (1, 3, TRUE), (1, 4, TRUE), (1, 5, TRUE);
+
+-- Professor IDs 13-20: Maya, Noah, Olivia, Paul, Quinn, Rose, Sam, Tara.
+INSERT INTO observee (professor_id, cycle_id, status) VALUES
+    (13, 2, 'COMPLETED'), (14, 3, 'COMPLETED'),
+    (15, 4, 'COMPLETED'), (16, 2, 'COMPLETED'),
+    (17, 3, 'COMPLETED'), (18, 3, 'COMPLETED'),
+    (19, 2, 'COMPLETED'), (20, 5, 'COMPLETED');
+
+INSERT INTO teaching_history (professor_id, section_id) VALUES
+    (13, 2), (14, 3), (15, 4), (16, 2),
+    (17, 3), (18, 3), (19, 2), (20, 5);
+
+INSERT INTO evaluation_signup (observee_id, section_id, signup_date, status) VALUES
+    (3, 2, '2025-03-01', 'COMPLETED'),
+    (4, 3, '2024-03-01', 'COMPLETED'),
+    (5, 4, '2023-04-11', 'COMPLETED'),
+    (6, 2, '2025-02-01', 'COMPLETED'),
+    (7, 3, '2024-03-01', 'COMPLETED'),
+    (8, 3, '2024-02-20', 'COMPLETED'),
+    (9, 2, '2025-04-21', 'COMPLETED'),
+    (10, 5, '2023-10-20', 'COMPLETED');
+
+-- A historical template that predates these completed observations.
+INSERT INTO observation_template (created_by, template_name, version, created_date, active_status) VALUES
+    (1, 'Historical Classroom Observation', 1, '2023-01-01', FALSE);
+
+INSERT INTO observation_criterion (template_id, criterion_text, question_type, required, display_order, rating_min, rating_max) VALUES
+    (2, 'Overall teaching effectiveness', 'RATING', TRUE, 1, 1, 5);
+
+INSERT INTO observation (signup_id, observer_id, template_id, observation_date, start_time, status, observee_signed, observer_signed, observee_signed_at, observer_signed_at, completed_at) VALUES
+    (3, 2, 2, '2025-03-20', '10:00:00', 'COMPLETED', TRUE, TRUE, '2025-03-20 16:00:00', '2025-03-20 15:00:00', '2025-03-20 16:00:00'),
+    (4, 3, 2, '2024-03-15', '10:00:00', 'COMPLETED', TRUE, TRUE, '2024-03-15 16:00:00', '2024-03-15 15:00:00', '2024-03-15 16:00:00'),
+    (5, 4, 2, '2023-04-20', '10:00:00', 'COMPLETED', TRUE, TRUE, '2023-04-20 16:00:00', '2023-04-20 15:00:00', '2023-04-20 16:00:00'),
+    (6, 2, 2, '2025-02-20', '10:00:00', 'COMPLETED', TRUE, TRUE, '2025-02-20 16:00:00', '2025-02-20 15:00:00', '2025-02-20 16:00:00'),
+    (7, 3, 2, '2024-03-20', '10:00:00', 'COMPLETED', TRUE, TRUE, '2024-03-20 16:00:00', '2024-03-20 15:00:00', '2024-03-20 16:00:00'),
+    (8, 3, 2, '2024-03-05', '10:00:00', 'COMPLETED', TRUE, TRUE, '2024-03-05 16:00:00', '2024-03-05 15:00:00', '2024-03-05 16:00:00'),
+    (9, 2, 2, '2025-05-01', '10:00:00', 'COMPLETED', TRUE, TRUE, '2025-05-01 16:00:00', '2025-05-01 15:00:00', '2025-05-01 16:00:00'),
+    (10, 5, 2, '2023-11-10', '10:00:00', 'COMPLETED', TRUE, TRUE, '2023-11-10 16:00:00', '2023-11-10 15:00:00', '2023-11-10 16:00:00');
+
+INSERT INTO observation_response (observation_id, criterion_id, rating, comments) VALUES
+    (3, 4, 4, 'Completed evaluation for Maya.'),
+    (4, 4, 5, 'Completed evaluation for Noah.'),
+    (5, 4, 4, 'Completed evaluation for Olivia.'),
+    (6, 4, 4, 'Completed evaluation for Paul.'),
+    (7, 4, 5, 'Completed evaluation for Quinn.'),
+    (8, 4, 4, 'Completed evaluation for Rose.'),
+    (9, 4, 5, 'Completed evaluation for Sam.'),
+    (10, 4, 4, 'Completed evaluation for Tara.');

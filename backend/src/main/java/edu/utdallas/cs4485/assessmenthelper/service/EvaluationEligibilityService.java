@@ -202,7 +202,8 @@ public class EvaluationEligibilityService {
 
     private EvaluationNotification notifyProfessor(Integer cycleId, Integer professorId, Email email, boolean due) {
         Queue queue = findQueue(due);
-        if (!queue.cycleId().equals(cycleId)) throw conflict("The evaluation cycle changed. Refresh the overdue list.");
+        if (!queue.cycleId().equals(cycleId))
+            throw conflict("The evaluation cycle changed. Refresh the evaluation list.");
         Faculty faculty = queue.faculty().stream()
                 .filter(p -> p.professorId().equals(professorId))
                 .findFirst()

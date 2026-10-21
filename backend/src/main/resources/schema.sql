@@ -1,4 +1,4 @@
--- Database schema for the Assessment Helper (26 tables).
+-- Database schema for the Assessment Helper (27 tables).
 -- Spring Data JDBC does not create tables, so Spring Boot runs this file at startup.
 -- Tables are listed so that every foreign key points at a table created earlier.
 
