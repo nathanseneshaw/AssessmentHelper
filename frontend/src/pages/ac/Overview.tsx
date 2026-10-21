@@ -1,7 +1,14 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import {
+  getDueQueue,
+  getOverdueQueue,
+  type OverdueQueue,
+  rankLabel,
+} from "../../api/evaluationEligibility";
 import { ActionButton } from "../../components/ActionButton";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
+import { OverdueEvaluations } from "./OverdueEvaluations";
 
 const kpiGroups: { title: string; grid: string; kpis: Kpi[] }[] = [
   {
@@ -15,13 +22,12 @@ const kpiGroups: { title: string; grid: string; kpis: Kpi[] }[] = [
       },
       {
         label: "Overdue Evaluations",
-        value: "8",
+        value: "—",
         note: "Requires committee attention",
         alert: true,
         action: {
           label: "View All",
           ariaLabel: "View all overdue evaluations",
-          to: "/ac/evaluations",
         },
       },
     ],
@@ -78,17 +84,6 @@ const kpiGroups: { title: string; grid: string; kpis: Kpi[] }[] = [
   },
 ];
 
-const facultyDue = [
-  {
-    name: "Professor 1",
-    rank: "Assistant Professor",
-    term: "Fall 2026",
-    dueNow: true,
-  },
-  { name: "Professor 2", rank: "Associate Professor", term: "Spring 2027" },
-  { name: "Professor 3", rank: "Full Professor", term: "Spring 2027" },
-];
-
 const unmatchedFaculty = [
   { name: "Professor 4", department: "Computer Science", candidates: 0 },
   { name: "Professor 5", department: "Computer Science", candidates: 0 },
@@ -136,9 +131,98 @@ function ListRow({ cells, status }: { cells: string[]; status: ReactNode }) {
 }
 
 export function AcOverview() {
+  const [queue, setQueue] = useState<OverdueQueue | null>(null);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [dueQueue, setDueQueue] = useState<OverdueQueue | null>(null);
+  const [dueError, setDueError] = useState("");
+  const [dueOpen, setDueOpen] = useState(false);
+  // Retry deliberately reruns the request even though the request URL is unchanged.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is an explicit retry trigger.
+  useEffect(() => {
+    const controller = new AbortController();
+    setError("");
+    setDueError("");
+    getDueQueue(controller.signal)
+      .then(setDueQueue)
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setDueError(
+            cause instanceof Error
+              ? cause.message
+              : "Unable to load due evaluations.",
+          );
+      });
+    getOverdueQueue(controller.signal)
+      .then(setQueue)
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "Unable to load overdue evaluations.",
+          );
+      });
+    return () => controller.abort();
+  }, [reload]);
   return (
     <div>
-      <PageHeader title="Assessment Committee Dashboard" subtitle="Fall 2026" />
+      <PageHeader
+        title="Assessment Committee Dashboard"
+        subtitle={queue?.cycleLabel ?? "Assessment overview"}
+      />
+      {error && (
+        <p role="alert" className="mt-4 text-sm text-brand-red">
+          {error}{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => setReload((value) => value + 1)}
+          >
+            Retry
+          </button>
+        </p>
+      )}
+      {open && queue && (
+        <OverdueEvaluations
+          queue={queue}
+          onClose={() => setOpen(false)}
+          onNotified={(professorId, sentAt) =>
+            setQueue(
+              (previous) =>
+                previous && {
+                  ...previous,
+                  faculty: previous.faculty.map((person) =>
+                    person.professorId === professorId
+                      ? { ...person, lastNotifiedAt: sentAt }
+                      : person,
+                  ),
+                },
+            )
+          }
+        />
+      )}
+      {dueOpen && dueQueue && (
+        <OverdueEvaluations
+          kind="due"
+          queue={dueQueue}
+          onClose={() => setDueOpen(false)}
+          onNotified={(professorId, sentAt) =>
+            setDueQueue(
+              (previous) =>
+                previous && {
+                  ...previous,
+                  faculty: previous.faculty.map((person) =>
+                    person.professorId === professorId
+                      ? { ...person, lastNotifiedAt: sentAt }
+                      : person,
+                  ),
+                },
+            )
+          }
+        />
+      )}
 
       <div className="mt-7.5 grid gap-x-10 gap-y-8.5 xl:grid-cols-[minmax(0,40rem)_minmax(0,1fr)]">
         {kpiGroups.map((group) => (
@@ -148,7 +232,28 @@ export function AcOverview() {
             </h2>
             <div className={`grid gap-4 ${group.grid}`}>
               {group.kpis.map((kpi) => (
-                <KpiCard key={kpi.label} kpi={kpi} />
+                <KpiCard
+                  key={kpi.label}
+                  kpi={
+                    kpi.label === "Overdue Evaluations"
+                      ? {
+                          ...kpi,
+                          value: queue ? String(queue.count) : "—",
+                          note: error
+                            ? "Unable to load overdue evaluations"
+                            : queue
+                              ? kpi.note
+                              : "Loading overdue evaluations…",
+                          action: {
+                            label: "View All",
+                            ariaLabel: "View all overdue evaluations",
+                            disabled: !queue || Boolean(error),
+                            onClick: () => setOpen(true),
+                          },
+                        }
+                      : kpi
+                  }
+                />
               ))}
             </div>
           </section>
@@ -160,31 +265,49 @@ export function AcOverview() {
           title="Faculty Due for Evaluation"
           subtitle="Upcoming evaluation deadlines"
           action={
-            <ActionButton
-              tone="green"
-              to="/ac/evaluations"
-              ariaLabel="View all faculty due for evaluation"
-              className="min-w-39.5"
+            <button
+              type="button"
+              disabled={!dueQueue || Boolean(dueError)}
+              onClick={() => setDueOpen(true)}
+              aria-label="View all faculty due for evaluation"
+              className="min-w-39.5 rounded-lg bg-brand-green px-5 py-3.25 text-white hover:opacity-90 disabled:opacity-50"
             >
               View All
-            </ActionButton>
+            </button>
           }
         >
-          {facultyDue.map((item) => (
-            <ListRow
-              key={item.name}
-              cells={[item.name, item.rank]}
-              status={
-                <span
-                  className={
-                    item.dueNow ? "text-brand-orange" : "text-brand-green"
+          {dueError ? (
+            <li role="alert" className="text-sm text-brand-red">
+              {dueError}{" "}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => setReload((value) => value + 1)}
+              >
+                Retry due evaluations
+              </button>
+            </li>
+          ) : !dueQueue ? (
+            <li className="text-sm text-muted">Loading due evaluations…</li>
+          ) : dueQueue.count === 0 ? (
+            <li className="text-sm text-muted">
+              No faculty are due this cycle.
+            </li>
+          ) : null}
+          {!dueError &&
+            dueQueue?.faculty
+              .slice(0, 3)
+              .map((item) => (
+                <ListRow
+                  key={item.professorId}
+                  cells={[item.name, rankLabel(item.rank)]}
+                  status={
+                    <span className="text-brand-orange">
+                      {dueQueue.cycleLabel}
+                    </span>
                   }
-                >
-                  {item.term}
-                </span>
-              }
-            />
-          ))}
+                />
+              ))}
         </ListPanel>
 
         <ListPanel
