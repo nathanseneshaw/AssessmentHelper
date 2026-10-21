@@ -1,5 +1,4 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { APITester } from "./APITester";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { RequireRole } from "./auth/RequireRole";
 import "./index.css";
@@ -37,7 +36,6 @@ export function App() {
           <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<Login />} />
           <Route path="/forbidden" element={<Forbidden />} />
-          <Route path="/dev/api-tester" element={<APITester />} />
 
           <Route element={<RequireRole allow="ac" />}>
             <Route path="/ac" element={<AppLayout />}>

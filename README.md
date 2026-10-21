@@ -40,6 +40,8 @@ While the backend is running, the API documentation is at http://localhost:8080/
 
 On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
+The shared frontend API client sends requests to the backend at http://localhost:8080. To use a different address, set `BUN_PUBLIC_API_URL` when starting or building the frontend, for example `BUN_PUBLIC_API_URL=http://localhost:9090 bun run dev`. The backend only accepts browser requests from the origins listed in `app.cors.allowed-origins` in `backend/src/main/resources/application.properties`, which is `http://localhost:3000` by default. If the frontend runs at a different address, add it there or set the `APP_CORS_ALLOWED_ORIGINS` environment variable when starting the backend.
+
 ## Overdue evaluation notifications
 
 Start both the backend and frontend, then open the Assessment Committee overview.
@@ -60,7 +62,7 @@ Each backend startup creates a fresh in-memory H2 database and loads the default
 demo records from `data.sql`. Restarting the backend resets data and notification
 statuses, including during development hot restarts. Notifications persist across
 browser refreshes and are shared by committee users while the backend is running.
-Previously created files in `backend/data/` are no longer used. The frontend proxies overdue API requests to
+Previously created files in `backend/data/` are no longer used. The overdue feature currently uses a separate Bun server proxy, which forwards overdue API requests to
 `http://localhost:8080`; set `BACKEND_URL` on the Bun server to use another backend.
 The existing mock sign-in and permissive backend API security remain demo-only.
 
