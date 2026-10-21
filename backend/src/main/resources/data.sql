@@ -13,22 +13,163 @@ INSERT INTO professor (department_id, professor_rank, first_name, last_name, ema
     (1, 'FULL',      'Alice', 'Nguyen',   'alice.nguyen@univ.edu',   '2008-08-15', TRUE),
     (1, 'ASSISTANT', 'Bob',   'Martinez', 'bob.martinez@univ.edu',   '2024-08-15', TRUE);
 
+-- CS faculty copied from the UTD Nebula API: everyone with a faculty title who teaches one of the
+-- courses below between Fall 2025 and Spring 2027. Rank comes from the title. Lecturers have no
+-- matching evaluation policy, so their rank is NULL. Nebula has no hire dates.
+INSERT INTO professor (department_id, professor_rank, first_name, last_name, email, hire_date, active_status) VALUES
+    (1, 'ASSOCIATE', 'Sridhar',      'Alagar',       'sridhar@utdallas.edu',             NULL, TRUE),
+    (1, 'FULL',      'Sergey',       'Bereg',        'besp@utdallas.edu',                NULL, TRUE),
+    (1, 'ASSISTANT', 'Sruthi',       'Chappidi',     'sruthi.chappidi@utdallas.edu',     NULL, TRUE),
+    (1, 'FULL',      'Bhadrachalam', 'Chitturi',     'chalam@utdallas.edu',              NULL, TRUE),
+    (1, 'FULL',      'John',         'Cole',         'jxc064000@utdallas.edu',           NULL, TRUE),
+    (1, 'FULL',      'Yvo',          'Desmedt',      'ygd120030@utdallas.edu',           NULL, TRUE),
+    (1, 'ASSOCIATE', 'Serdar',       'Erbatur',      'serdar.erbatur@utdallas.edu',      NULL, TRUE),
+    (1, NULL,        'Ranran',       'Feng',         'rxf090020@utdallas.edu',           NULL, TRUE),
+    (1, 'ASSOCIATE', 'Omar',         'Hamdy',        'omar.hamdy@utdallas.edu',          NULL, TRUE),
+    (1, 'FULL',      'Dung',         'Huynh',        'dung.huynh@utdallas.edu',          NULL, TRUE),
+    (1, NULL,        'Shyam',        'Karrah',       'skarrah@utdallas.edu',             NULL, TRUE),
+    (1, 'ASSISTANT', 'Richard',      'Min',          'richard.min@utdallas.edu',         NULL, TRUE),
+    (1, 'FULL',      'Neeraj',       'Mittal',       'nxm020100@utdallas.edu',           NULL, TRUE),
+    (1, 'ASSOCIATE', 'Priya',        'Narayanasami', 'priyan@utdallas.edu',              NULL, TRUE),
+    (1, 'ASSISTANT', 'Andrew',       'Nemec',        'andrew.nemec@utdallas.edu',        NULL, TRUE),
+    (1, NULL,        'Nhut',         'Nguyen',       'nhutnn@utdallas.edu',              NULL, TRUE),
+    (1, NULL,        'Erik',         'Peterson',     'erik.peterson@utdallas.edu',       NULL, TRUE),
+    (1, 'FULL',      'Ravi',         'Prakash',      'ravip@utdallas.edu',               NULL, TRUE),
+    (1, 'ASSOCIATE', 'Benjamin',     'Raichel',      'benjamin.raichel@utdallas.edu',    NULL, TRUE),
+    (1, 'ASSISTANT', 'Brian',        'Ricks',        'absolutefunk@utdallas.edu',        NULL, TRUE),
+    (1, NULL,        'Sadi',         'Seker',        'sadi.seker@utdallas.edu',          NULL, TRUE),
+    (1, 'ASSOCIATE', 'Jason',        'Smith',        'smith@utdallas.edu',               NULL, TRUE),
+    (1, 'ASSISTANT', 'Srimathi',     'Srinivasan',   'srimathi.srinivasan@utdallas.edu', NULL, TRUE),
+    (1, 'FULL',      'Jeyakesavan',  'Veerasamy',    'veerasam@utdallas.edu',            NULL, TRUE);
+
 -- Placeholder password. Replace it with a BCrypt hash once real login is set up.
 INSERT INTO user_account (professor_id, username, email, password_hash, is_active) VALUES
     (1, 'anguyen', 'alice.nguyen@univ.edu', '{noop}changeme', TRUE);
 
 INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
-    ('Fall',   2026, '2026-08-24', '2026-12-11'),
+    ('Fall',   2026, '2026-08-24', '2026-12-16'),
     ('Spring', 2025, '2025-01-13', '2025-05-09');
 
+-- Semesters of the sections copied from the UTD Nebula API below. Fall 2026 is semester 1 above.
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Fall',   2025, '2025-08-25', '2025-12-16'),
+    ('Spring', 2026, '2026-01-20', '2026-05-15'),
+    ('Summer', 2026, '2026-06-01', '2026-08-14'),
+    ('Spring', 2027, '2027-01-19', '2027-05-14');
+
+-- CS courses copied from the UTD Nebula API (2026 catalog)
 INSERT INTO course (department_id, course_code, course_number, course_name, course_level) VALUES
-    (1, 'CS', '101', 'Intro to Programming', 'UNDERGRADUATE');
+    (1, 'CS', '1337', 'Computer Science I', 'UNDERGRADUATE'),
+    (1, 'CS', '2336', 'Computer Science II', 'UNDERGRADUATE'),
+    (1, 'CS', '3345', 'Data Structures and Foundations of Algorithmic Analysis', 'UNDERGRADUATE'),
+    (1, 'CS', '4485', 'Computer Science Project', 'UNDERGRADUATE'),
+    (1, 'CS', '6363', 'Design and Analysis of Computer Algorithms', 'GRADUATE');
 
 INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location) VALUES
     (1, 1, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
     (1, 2, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204');
 
-INSERT INTO teaching_history (professor_id, section_id) VALUES (2, 1), (2, 2);
+-- Sections copied from the UTD Nebula API: every class section of the courses above taught by one of the
+-- Nebula professors, Fall 2025 to Spring 2027. Exam-only sections (701) are left out. Days use R for Thursday.
+-- Ids start at 3, after the 2 demo sections.
+INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location) VALUES
+    -- Fall 2025 (semester 3)
+    (2, 3, '003', 'MW', '10:00:00', '11:15:00', 'ECSW 1.355'),
+    (2, 3, '005', 'MW', '11:30:00', '12:45:00', 'ECSW 1.355'),
+    (2, 3, '006', 'MW', '11:30:00', '12:45:00', 'JO 3.601'),
+    (2, 3, '007', 'TR', '11:30:00', '12:45:00', 'ECSW 1.365'),
+    (2, 3, '009', 'TR', '11:30:00', '12:45:00', 'ECSS 2.203'),
+    (2, 3, '010', 'TR', '14:30:00', '15:45:00', 'GR 3.302'),
+    (2, 3, '012', 'TR', '14:30:00', '15:45:00', 'ECSW 1.365'),
+    (3, 3, '002', 'MW', '08:30:00', '09:45:00', 'JO 4.102'),
+    (3, 3, '005', 'TR', '13:00:00', '14:15:00', 'ECSW 1.355'),
+    (3, 3, '501', 'TR', '17:30:00', '18:45:00', 'JO 3.601'),
+    (3, 3, 'HON', 'TR', '10:00:00', '11:15:00', 'AD 2.232'),
+    (4, 3, '0W1', 'T', '13:00:00', '14:15:00', 'Online'),
+    (5, 3, '002', 'TR', '08:30:00', '09:45:00', 'ECSW 1.355'),
+    (5, 3, '003', 'TR', '13:00:00', '14:15:00', 'JO 4.102'),
+    -- Spring 2026 (semester 4)
+    (1, 4, '002', 'MW', '10:00:00', '11:15:00', 'ECSS 2.203'),
+    (1, 4, '003', 'MW', '10:00:00', '11:15:00', 'ECSW 1.355'),
+    (1, 4, '004', 'TR', '16:00:00', '17:15:00', 'GR 2.302'),
+    (1, 4, '005', 'MW', '11:30:00', '12:45:00', 'ECSS 2.203'),
+    (1, 4, '006', 'MW', '11:30:00', '12:45:00', 'JO 3.601'),
+    (1, 4, '009', 'TR', '13:00:00', '14:15:00', 'GR 2.302'),
+    (1, 4, '011', 'MW', '10:00:00', '11:15:00', 'GR 2.302'),
+    (2, 4, '001', 'MW', '10:00:00', '11:15:00', 'ECSS 2.201'),
+    (2, 4, '003', 'MW', '11:30:00', '12:45:00', 'GR 2.530'),
+    (3, 4, '001', 'MW', '10:00:00', '11:15:00', 'JO 4.614'),
+    (3, 4, '003', 'MW', '10:00:00', '11:15:00', 'ECSW 1.365'),
+    (3, 4, '005', 'MW', '08:30:00', '09:45:00', 'ECSW 1.355'),
+    (3, 4, '008', 'MW', '08:30:00', '09:45:00', 'ECSS 2.306'),
+    (3, 4, '501', 'TR', '17:30:00', '18:45:00', 'ECSS 2.306'),
+    (4, 4, '0W1', 'T', '14:30:00', '17:15:00', 'Online'),
+    (5, 4, '001', 'TR', '10:00:00', '11:15:00', 'ECSS 2.311'),
+    -- Summer 2026 (semester 5)
+    (1, 5, '0W1', 'MW', '12:30:00', '14:30:00', 'Online'),
+    (2, 5, '0U1', 'TR', '15:00:00', '17:15:00', 'JSOM 2.102'),
+    -- Fall 2026 (semester 1)
+    (1, 1, '001', 'MW', '14:30:00', '15:45:00', 'ECSW 3.210'),
+    (1, 1, '004', 'TR', '10:00:00', '11:15:00', 'ECSS 2.201'),
+    (2, 1, '002', 'MW', '10:00:00', '11:15:00', 'ECSW 1.355'),
+    (2, 1, '003', 'MW', '10:00:00', '11:15:00', 'JO 4.102'),
+    (2, 1, '006', 'MW', '08:30:00', '09:45:00', 'GR 4.301'),
+    (2, 1, '007', 'TR', '11:30:00', '12:45:00', 'ECSW 1.365'),
+    (2, 1, '010', 'TR', '14:30:00', '15:45:00', 'ECSS 2.305'),
+    (2, 1, '011', 'MW', '14:30:00', '15:45:00', 'FN 2.214'),
+    (3, 1, '002', 'MW', '08:30:00', '09:45:00', 'JO 4.102'),
+    (3, 1, '008', 'TR', '13:00:00', '14:15:00', 'CR 1.202'),
+    (3, 1, '501', 'TR', '17:30:00', '18:45:00', 'ECSS 2.305'),
+    (3, 1, 'HON', 'TR', '10:00:00', '11:15:00', 'FO 2.404'),
+    (4, 1, '0W1', 'T', '13:00:00', '14:15:00', 'Online'),
+    (5, 1, '002', 'MW', '14:30:00', '15:45:00', 'JO 4.102'),
+    (5, 1, '003', 'TR', '13:00:00', '14:15:00', 'JO 4.102'),
+    -- Spring 2027 (semester 6)
+    (1, 6, '001', 'MW', '10:00:00', '11:15:00', 'ECSS 2.203'),
+    (1, 6, '003', 'TR', '16:00:00', '17:15:00', 'ECSS 2.410'),
+    (1, 6, '004', 'MW', '11:30:00', '12:45:00', 'ECSS 2.203'),
+    (1, 6, '503', 'MW', '17:30:00', '18:45:00', 'ECSW 1.355'),
+    (2, 6, '001', 'MW', '10:00:00', '11:15:00', 'ECSS 2.201'),
+    (2, 6, '002', 'TR', '14:30:00', '15:45:00', 'ECSS 2.201'),
+    (2, 6, '003', 'MW', '11:30:00', '12:45:00', 'CR 1.202'),
+    (2, 6, '004', 'TR', '11:30:00', '12:45:00', 'JO 4.102'),
+    (2, 6, '501', 'TR', '17:30:00', '18:45:00', 'FO 2.404'),
+    (3, 6, '001', 'MW', '10:00:00', '11:15:00', 'ECSS 2.305'),
+    (3, 6, '003', 'MW', '10:00:00', '11:15:00', 'ECSW 1.365'),
+    (3, 6, '004', 'TR', '13:00:00', '14:15:00', 'ECSW 1.365'),
+    (3, 6, '005', 'MW', '08:30:00', '09:45:00', 'ECSW 1.355'),
+    (3, 6, '006', 'MW', '08:30:00', '09:45:00', 'ECSS 2.306'),
+    (3, 6, '502', 'TR', '17:30:00', '18:45:00', 'ECSS 2.305'),
+    (3, 6, '504', 'MW', '17:30:00', '18:45:00', 'ECSS 2.305'),
+    (4, 6, '0W1', 'T', '14:30:00', '17:15:00', 'Online'),
+    (5, 6, '001', 'TR', '10:00:00', '11:15:00', 'ECSS 2.311');
+
+-- Which Nebula professor teaches which Nebula section, from the UTD Nebula API. One line per professor.
+INSERT INTO teaching_history (professor_id, section_id) VALUES
+    (3, 27), (3, 29), (3, 31), (3, 60), (3, 62), (3, 66), -- Sridhar Alagar
+    (4, 61), -- Sergey Bereg
+    (5, 7), (5, 9), (5, 34), (5, 37), (5, 40), (5, 41), (5, 55), (5, 57), -- Sruthi Chappidi
+    (6, 15), -- Bhadrachalam Chitturi
+    (7, 14), (7, 31), (7, 47), (7, 66), -- John Cole
+    (8, 11), (8, 26), (8, 44), (8, 59), -- Yvo Desmedt
+    (9, 63), -- Serdar Erbatur
+    (10, 3), (10, 4), (10, 33), (10, 39), -- Ranran Feng
+    (11, 10), (11, 12), (11, 28), (11, 30), (11, 43), (11, 45), (11, 64), (11, 65), -- Omar Hamdy
+    (12, 16), (12, 32), (12, 49), (12, 67), -- Dung Huynh
+    (13, 19), (13, 22), (13, 51), -- Shyam Karrah
+    (14, 47), -- Richard Min
+    (15, 21), (15, 23), -- Neeraj Mittal
+    (16, 47), (16, 58), -- Priya Narayanasami
+    (17, 13), (17, 46), -- Andrew Nemec
+    (18, 14), -- Nhut Nguyen
+    (19, 38), -- Erik Peterson
+    (20, 14), -- Ravi Prakash
+    (21, 48), -- Benjamin Raichel
+    (22, 24), (22, 25), (22, 54), (22, 56), -- Brian Ricks
+    (23, 47), -- Sadi Seker
+    (24, 6), (24, 8), (24, 18), -- Jason Smith
+    (25, 17), (25, 20), (25, 35), (25, 36), (25, 50), (25, 52), (25, 53), -- Srimathi Srinivasan
+    (26, 5), (26, 21), (26, 23), (26, 42), (26, 66); -- Jeyakesavan Veerasamy
 
 INSERT INTO evaluation_cycle (semester_id, signup_deadline, observation_deadline, feedback_deadline, status) VALUES
     (1, '2026-09-15', '2026-11-15', '2026-12-01', 'OPEN'),
