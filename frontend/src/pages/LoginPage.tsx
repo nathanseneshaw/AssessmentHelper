@@ -256,6 +256,15 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   Password: <code>Committee123!</code>
                 </p>
               </div>
+              <div>
+                <p className="font-semibold text-neutral-800">
+                  Faculty — Evaluation Requests
+                </p>
+                <p className="break-all">requests@utdallas.edu</p>
+                <p>
+                  Password: <code>Faculty123!</code>
+                </p>
+              </div>
             </div>
           </details>
         </div>

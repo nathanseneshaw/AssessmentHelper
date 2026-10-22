@@ -30,6 +30,14 @@ const accounts: (AuthUser & { password: string })[] = [
     role: "assessment-committee",
     password: "Committee123!",
   },
+  {
+    id: "demo-requests",
+    professorId: 4,
+    name: "Dave",
+    email: "requests@utdallas.edu",
+    role: "faculty",
+    password: "Faculty123!",
+  },
 ];
 
 export async function mockLogin(
