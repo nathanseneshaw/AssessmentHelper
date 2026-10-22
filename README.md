@@ -40,7 +40,48 @@ While the backend is running, the API documentation is at http://localhost:8080/
 
 On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
-The frontend sends API requests to the backend at http://localhost:8080. To use a different address, set `BUN_PUBLIC_API_URL` when starting or building the frontend, for example `BUN_PUBLIC_API_URL=http://localhost:9090 bun run dev`. The backend only accepts browser requests from the origins listed in `app.cors.allowed-origins` in `backend/src/main/resources/application.properties`, which is `http://localhost:3000` by default. If the frontend runs at a different address, add it there or set the `APP_CORS_ALLOWED_ORIGINS` environment variable when starting the backend.
+The shared frontend API client sends requests to the backend at http://localhost:8080.
+
+## Overdue evaluation notifications
+
+The Faculty Evaluations page loads all active faculty from
+`GET /api/evaluation-eligibility`. Due This Term, Overdue, and rank filters use
+the same server-calculated classifications as the dashboard overlays; All
+Faculty also includes upcoming evaluations.
+The queue previews four matching professors on the page. View All opens the
+complete filtered list in an overlay with vertical scrolling and fixed column headers.
+
+The **Faculty Due for Evaluation** dashboard panel also uses calculated faculty
+data. **View All** opens the due overlay with the next due semester, personalized
+editable notifications, confirmation, and follow-up actions. Sending is simulated
+and does not complete the evaluation. Due and overdue share the same scheduling
+calculation and current-cycle notification history. The due API is
+`GET /api/due-evaluations`, with notifications posted to
+`/api/due-evaluations/{cycleId}/professors/{professorId}/notifications`.
+
+Start both the backend and frontend, then open the Assessment Committee overview.
+The overdue card loads actual faculty data; **View All** opens the overdue list.
+**Notify** and **Follow Up** open personalized, editable email templates. Sending
+simulates delivery and saves the recipient, edited subject/body, and timestamp;
+it never contacts an email provider. A notification does not clear the overdue count.
+
+The backend selects the semester containing today's date in America/Chicago.
+Active assistants have annual evaluations; associate/full professors use their
+two-year policies. Scheduling starts at the latest observation `completedAt` for
+an observee marked `COMPLETED`, or at hire date when there is no completion.
+A current-semester recurrence takes priority over a previously missed evaluation.
+Missing/ambiguous semester or cycle configuration and missing completion dates
+produce an actionable error instead of a fabricated count.
+
+Each backend startup creates a fresh in-memory H2 database and loads the default
+demo records from `data.sql`. Restarting the backend resets data and notification
+statuses, including during development hot restarts. Notifications persist across
+browser refreshes and are shared by committee users while the backend is running.
+Previously created files in `backend/data/` are no longer used. Due and overdue
+requests use the shared frontend API client in `frontend/src/api/client.ts`.
+The default backend is `http://localhost:8080`; configure `BUN_PUBLIC_API_URL`
+when starting or building the frontend to use another backend.
+The existing mock sign-in and permissive backend API security remain demo-only.
 
 ## Frontend mock sign-in
 
