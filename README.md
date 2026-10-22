@@ -85,6 +85,42 @@ Validation: `bun test src/pages/faculty/EvaluationSignup.test.tsx` in `frontend/
 and `./gradlew test --tests '*EvaluationSignupIntegrationTests'` in `backend/`
 (use `.\gradlew.bat` on Windows).
 
+## Evaluation requests (issue #42)
+
+Sign in with `requests@utdallas.edu` / `Faculty123!`, then click **View Generated
+Observers** or open `/faculty/observers`. This demo account maps to Dave (professor
+4), whose Fall 2026 signup has Alice as a proposed observer. Select Alice and click
+**Send evaluation request**. The page shows the saved request, its seven-day
+response window, and Pending / Confirmed / Expired status. Reopening the page
+restores it; **Refresh status** reloads responses and applies expiration.
+
+The page uses stored `observer_match` rows. Candidate generation, eligibility,
+availability, and observer response screens remain separate work (#39–#41, #43).
+New signups without matches display an explanation. No email provider is called.
+The existing confirmation API remains available for testing a response:
+`POST /api/observer-requests/{requestId}/confirm`.
+
+| Endpoint | Result |
+| --- | --- |
+| `GET /api/professors/{professorId}/observer-requests` | That professor's signups, proposed candidates, request history and unavailable reasons |
+| `POST /api/professors/{professorId}/observer-requests` | Send `{ "signupId": 31, "matchId": 2 }`; IDs must come from the GET response |
+| `POST /api/observer-requests` | Existing `{ "signupId": 31, "observerId": 1 }` API, now with the same match and lifecycle validation |
+
+Both POST endpoints accept an optional future `expirationDate` in server-local
+ISO date/time; the default is seven days. Times use America/Chicago. The sender
+must own the signup; the selected match must be proposed for that signup, with an
+active observer and professor in the same cycle, excluding self-observation.
+Closed, inactive, completed, or already scheduled evaluations reject new requests.
+One pending or confirmed request is allowed per signup. Repeated sends to the
+same observer return the existing active request without extending its expiration.
+After expiration, a new request may be sent and the old one remains in history.
+Concurrent sends are serialized. Course selection becomes locked once candidates
+or requests exist, preventing a request from silently changing its course.
+
+As with the rest of the demo, supplied professor IDs are not authenticated
+identities; server-side authentication/authorization remains necessary before
+production use. Data resets on backend restart.
+
 ## Overdue evaluation notifications
 
 The Faculty Evaluations page loads all active faculty from

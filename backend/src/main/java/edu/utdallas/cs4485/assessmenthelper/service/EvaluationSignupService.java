@@ -7,6 +7,7 @@ import edu.utdallas.cs4485.assessmenthelper.repository.CourseSectionRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.TeachingHistoryRepository;
@@ -26,6 +27,7 @@ public class EvaluationSignupService {
     private final ObserveeRepository observees;
     private final EvaluationSignupRepository signups;
     private final Clock clock;
+    private final ObserverRequestContextRepository requestContext;
 
     public EvaluationSignupService(
             ProfessorRepository professors,
@@ -35,7 +37,8 @@ public class EvaluationSignupService {
             TeachingHistoryRepository teaching,
             ObserveeRepository observees,
             EvaluationSignupRepository signups,
-            Clock clock) {
+            Clock clock,
+            ObserverRequestContextRepository requestContext) {
         this.professors = professors;
         this.semesters = semesters;
         this.cycles = cycles;
@@ -44,6 +47,7 @@ public class EvaluationSignupService {
         this.observees = observees;
         this.signups = signups;
         this.clock = clock;
+        this.requestContext = requestContext;
     }
 
     @Transactional(readOnly = true)
@@ -88,7 +92,7 @@ public class EvaluationSignupService {
             if (existing.sectionId().equals(sectionId)) {
                 return existing;
             }
-            if (!"PENDING".equals(existing.status())) {
+            if (!"PENDING".equals(existing.status()) || requestContext.hasStartedMatching(existing.signupId())) {
                 throw new ConflictException("This signup cannot be changed after matching has started.");
             }
             return signups.save(new EvaluationSignup(

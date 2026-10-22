@@ -19,6 +19,15 @@ describe("mockLogin", () => {
     expect(result.user.role).toBe("assessment-committee");
   });
 
+  test("maps the request demo account to the seeded requester", async () => {
+    const result = await mockLogin("requests@utdallas.edu", "Faculty123!");
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error("Expected successful login");
+    expect(result.user.role).toBe("faculty");
+    expect(result.user.professorId).toBe(4);
+    expect(result.user).not.toHaveProperty("password");
+  });
+
   test("rejects incorrect passwords, including changed case or extra spaces", async () => {
     for (const password of ["wrong", "faculty123!", "Faculty123! "]) {
       expect(await mockLogin("faculty@utdallas.edu", password)).toEqual({
