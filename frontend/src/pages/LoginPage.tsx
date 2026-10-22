@@ -229,18 +229,18 @@ export function LoginPage() {
               <p>Sample accounts:</p>
               <div>
                 <p className="font-semibold text-neutral-800">
-                  Faculty (Bob Martinez)
+                  Faculty (Bob Bob)
                 </p>
-                <p className="break-all">bob.martinez@example.edu</p>
+                <p className="break-all">bob@utdallas.edu</p>
                 <p>
                   Password: <code>Faculty123!</code>
                 </p>
               </div>
               <div>
                 <p className="font-semibold text-neutral-800">
-                  Assessment Committee (Alice Nguyen)
+                  Assessment Committee (Alice Alice)
                 </p>
-                <p className="break-all">alice.nguyen@example.edu</p>
+                <p className="break-all">alice@utdallas.edu</p>
                 <p>
                   Password: <code>Committee123!</code>
                 </p>

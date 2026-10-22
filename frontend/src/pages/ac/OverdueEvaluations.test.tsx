@@ -32,7 +32,7 @@ const queue: OverdueQueue = {
       name: "Alice Nguyen",
       lastName: "Nguyen",
       rank: "FULL",
-      email: "alice.nguyen@example.edu",
+      email: "alice@utdallas.edu",
       lastEvaluationCycle: "Spring 2023",
       nextDueDate: "2025-03-01",
       intervalYears: 2,
@@ -43,7 +43,7 @@ const queue: OverdueQueue = {
       name: "Bob Martinez",
       lastName: "Martinez",
       rank: "ASSISTANT",
-      email: "bob.martinez@example.edu",
+      email: "bob@utdallas.edu",
       lastEvaluationCycle: "Spring 2025",
       nextDueDate: "2026-03-01",
       intervalYears: 1,
@@ -74,7 +74,7 @@ test("personalizes rank, interval, name, history, and follow-up", () => {
   expect(alice.body).toContain("Dear Professor Nguyen,");
   expect(alice.body).toContain("every 2 years");
   expect(bob.body).toContain("every year");
-  expect(bob.recipient).toBe("bob.martinez@example.edu");
+  expect(bob.recipient).toBe("bob@utdallas.edu");
   expect(
     notificationTemplate(
       { ...sampleFaculty(0), lastNotifiedAt: "2026-10-20T10:00:00" },
@@ -103,7 +103,7 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
   expect(screen.getByRole("dialog")).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: "Notify Alice Nguyen" }));
   expect((screen.getByLabelText("To") as HTMLInputElement).value).toBe(
-    "alice.nguyen@example.edu",
+    "alice@utdallas.edu",
   );
   fireEvent.change(screen.getByLabelText("Subject"), {
     target: { value: "Personal reminder" },
@@ -132,7 +132,7 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   fireEvent.click(screen.getByRole("button", { name: "Notify Bob Martinez" }));
   expect((screen.getByLabelText("To") as HTMLInputElement).value).toBe(
-    "bob.martinez@example.edu",
+    "bob@utdallas.edu",
   );
 });
 
@@ -231,7 +231,7 @@ test("due overlay personalizes an editable email, saves to the due endpoint, and
   expect(savedUrl).toBe(
     `${API_URL}/api/due-evaluations/1/professors/1/notifications`,
   );
-  expect(savedBody?.recipient).toBe("alice.nguyen@example.edu");
+  expect(savedBody?.recipient).toBe("alice@utdallas.edu");
   expect(savedBody?.subject).toBe("Your evaluation is due");
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
   expect(

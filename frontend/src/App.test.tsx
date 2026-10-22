@@ -99,25 +99,25 @@ describe("signed out", () => {
 describe("signing in", () => {
   test("faculty land on the faculty dashboard", async () => {
     renderAt("/login");
-    await submitLogin("bob.martinez@example.edu", "Faculty123!");
+    await submitLogin("bob@utdallas.edu", "Faculty123!");
     await screen.findByRole("heading", { name: "My Evaluation Dashboard" });
     expect(currentPath()).toBe("/faculty");
-    expect(screen.getByText("Bob Martinez")).toBeDefined();
+    expect(screen.getByText("Bob Bob")).toBeDefined();
   });
 
   test("assessment committee members land on the AC overview", async () => {
     renderAt("/login");
-    await submitLogin("alice.nguyen@example.edu", "Committee123!");
+    await submitLogin("alice@utdallas.edu", "Committee123!");
     await screen.findByRole("heading", {
       name: "Assessment Committee Dashboard",
     });
     expect(currentPath()).toBe("/ac");
-    expect(screen.getByText("Alice Nguyen")).toBeDefined();
+    expect(screen.getByText("Alice Alice")).toBeDefined();
   });
 
   test("a wrong password stays on the login page", async () => {
     renderAt("/login");
-    await submitLogin("bob.martinez@example.edu", "wrong");
+    await submitLogin("bob@utdallas.edu", "wrong");
     await screen.findByText("Incorrect email or password.");
     expect(currentPath()).toBe("/login");
   });

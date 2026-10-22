@@ -51,8 +51,8 @@ and does not complete the evaluation. Due and overdue share the same scheduling
 calculation and current-cycle notification history. The due API is
 `GET /api/due-evaluations`, with notifications posted to
 `/api/due-evaluations/{cycleId}/professors/{professorId}/notifications`.
-Demo professor Carol Reyes is due in Fall 2026 based on her October 2024 hire
-date and two-year associate professor interval; Bob Martinez remains overdue.
+Demo professor Carol Carol is due in Fall 2026 based on her October 2024 hire
+date and two-year associate professor interval; Bob Bob remains overdue.
 The demo dataset has 25 professors: in Fall 2026, 10 are due, 10 are overdue,
 and 5 have upcoming evaluations. Names and emails are fictional. New professors
 without completed evaluation history use their hire dates for scheduling.
@@ -90,8 +90,8 @@ The backend handles sign-in, so it must be running before you can sign in to the
 
 | Role | Name | Email | Password |
 | --- | --- | --- | --- |
-| Assessment Committee | Alice Nguyen | `alice.nguyen@example.edu` | `Committee123!` |
-| Faculty | Bob Martinez | `bob.martinez@example.edu` | `Faculty123!` |
+| Assessment Committee | Alice Alice | `alice@utdallas.edu` | `Committee123!` |
+| Faculty | Bob Bob | `bob@utdallas.edu` | `Faculty123!` |
 
 Alice is an Assessment Committee member in the Erik Jonsson School of Engineering and Computer Science, so she can see the records of professors in that school but not in other schools. Bob can see only his own records.
 

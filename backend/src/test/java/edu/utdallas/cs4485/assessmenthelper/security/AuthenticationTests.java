@@ -18,7 +18,7 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-// These tests get CSRF tokens the way the frontend does instead of using spring-security-test's csrf() or
+// These tests get CSRF tokens the way the frontend does instead of using spring security test's csrf() or
 // formLogin() helpers. Those helpers swap the cookie token repository for a session-based one in the shared
 // Spring context, which would stop /api/auth/csrf from setting its cookie in every test that runs after them.
 @SpringBootTest
@@ -27,9 +27,9 @@ class AuthenticationTests {
 
     // Seed data: Alice is an AC member in Computer Science (ECS), Bob is a professor in Computer Science,
     // and Yara (professor 25) is in Mathematics (NSM).
-    private static final String ALICE = "alice.nguyen@example.edu";
+    private static final String ALICE = "alice@utdallas.edu";
     private static final String ALICE_PASSWORD = "Committee123!";
-    private static final String BOB = "bob.martinez@example.edu";
+    private static final String BOB = "bob@utdallas.edu";
     private static final String BOB_PASSWORD = "Faculty123!";
 
     @Autowired
@@ -39,7 +39,7 @@ class AuthenticationTests {
     void signingInReturnsTheUser() throws Exception {
         mockMvc.perform(signInRequest(BOB, BOB_PASSWORD))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("Bob Martinez"))
+                .andExpect(jsonPath("$.name").value("Bob Bob"))
                 .andExpect(jsonPath("$.email").value(BOB))
                 .andExpect(jsonPath("$.professorId").value(2))
                 .andExpect(jsonPath("$.schoolId").value(1))
@@ -55,7 +55,7 @@ class AuthenticationTests {
 
     @Test
     void emailIsNotCaseSensitive() throws Exception {
-        mockMvc.perform(signInRequest("Bob.Martinez@Example.edu", BOB_PASSWORD)).andExpect(status().isOk());
+        mockMvc.perform(signInRequest("Bob@UTDallas.edu", BOB_PASSWORD)).andExpect(status().isOk());
     }
 
     @Test
@@ -68,7 +68,7 @@ class AuthenticationTests {
 
     @Test
     void unknownEmailGetsTheSameErrorAsAWrongPassword() throws Exception {
-        mockMvc.perform(signInRequest("nobody@example.edu", BOB_PASSWORD))
+        mockMvc.perform(signInRequest("nobody@utdallas.edu", BOB_PASSWORD))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value("Incorrect email or password."));
     }
@@ -102,7 +102,7 @@ class AuthenticationTests {
 
         mockMvc.perform(get("/api/auth/me").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("Bob Martinez"))
+                .andExpect(jsonPath("$.name").value("Bob Bob"))
                 .andExpect(jsonPath("$.professorId").value(2));
     }
 

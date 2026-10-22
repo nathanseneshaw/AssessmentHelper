@@ -69,10 +69,10 @@ class EvaluationEligibilityIntegrationTests {
                         .toList());
         assertThat(due.faculty())
                 .extracting(EvaluationEligibilityService.Faculty::lastName)
-                .contains("Reyes");
+                .contains("Carol");
         assertThat(overdue.faculty())
                 .extracting(EvaluationEligibilityService.Faculty::lastName)
-                .contains("Martinez");
+                .contains("Bob");
         mvc.perform(get("/api/due-evaluations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(10))
@@ -86,7 +86,7 @@ class EvaluationEligibilityIntegrationTests {
     @Test
     void remindersAndFollowUpsSaveEditedContentWithoutChangingCounts() throws Exception {
         String carolMessage = """
-                {"recipient":"carol.reyes@example.edu","subject":"Edited reminder","body":"Dear Professor Reyes, please sign up."}
+                {"recipient":"carol@utdallas.edu","subject":"Edited reminder","body":"Dear Professor Carol, please sign up."}
                 """;
         for (int i = 0; i < 2; i++) {
             mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/3/notifications"))
@@ -94,14 +94,14 @@ class EvaluationEligibilityIntegrationTests {
                             .content(carolMessage))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.notificationId").isNumber())
-                    .andExpect(jsonPath("$.recipient").value("carol.reyes@example.edu"))
+                    .andExpect(jsonPath("$.recipient").value("carol@utdallas.edu"))
                     .andExpect(jsonPath("$.subject").value("Edited reminder"))
                     .andExpect(jsonPath("$.sentAt").value("2026-10-21T10:00:00"));
         }
         mvc.perform(withCsrfToken(post("/api/overdue-evaluations/1/professors/2/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"bob.martinez@example.edu","subject":"Overdue reminder","body":"Dear Professor Martinez, please sign up."}
+                                {"recipient":"bob@utdallas.edu","subject":"Overdue reminder","body":"Dear Professor Bob, please sign up."}
                                 """))
                 .andExpect(status().isOk());
         assertThat(db.queryForObject("SELECT COUNT(*) FROM evaluation_notification", Integer.class))
@@ -109,7 +109,7 @@ class EvaluationEligibilityIntegrationTests {
         assertThat(db.queryForObject(
                         "SELECT COUNT(*) FROM evaluation_notification WHERE professor_id = 3 AND body = ?",
                         Integer.class,
-                        "Dear Professor Reyes, please sign up."))
+                        "Dear Professor Carol, please sign up."))
                 .isEqualTo(2);
         assertThat(service.findDue().count()).isEqualTo(10);
         assertThat(service.findOverdue().count()).isEqualTo(10);
@@ -132,19 +132,19 @@ class EvaluationEligibilityIntegrationTests {
         mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/3/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"wrong@example.edu","subject":"Reminder","body":"Message"}
+                                {"recipient":"wrong@utdallas.edu","subject":"Reminder","body":"Message"}
                                 """))
                 .andExpect(status().isBadRequest());
         mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/2/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"bob.martinez@example.edu","subject":"Reminder","body":"Message"}
+                                {"recipient":"bob@utdallas.edu","subject":"Reminder","body":"Message"}
                                 """))
                 .andExpect(status().isConflict());
         mvc.perform(withCsrfToken(post("/api/due-evaluations/99/professors/3/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"carol.reyes@example.edu","subject":"Reminder","body":"Message"}
+                                {"recipient":"carol@utdallas.edu","subject":"Reminder","body":"Message"}
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("The evaluation cycle changed. Refresh the evaluation list."));

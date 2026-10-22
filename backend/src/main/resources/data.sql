@@ -16,42 +16,42 @@ INSERT INTO evaluation_policy (professor_rank, evaluation_interval_years, active
     ('FULL',      2, TRUE, '2026-01-01', '2026-01-01', 0);
 
 INSERT INTO professor (department_id, professor_rank, first_name, last_name, email, hire_date, active_status) VALUES
-    (1, 'FULL',      'Alice',  'Nguyen',    'alice.nguyen@example.edu',    '2008-08-15', TRUE),
-    (1, 'ASSISTANT', 'Bob',    'Martinez',  'bob.martinez@example.edu',    '2024-08-15', TRUE),
-    (1, 'ASSOCIATE', 'Carol',  'Reyes',     'carol.reyes@example.edu',     '2024-10-01', TRUE),
+    (1, 'FULL',      'Alice', 'Alice', 'alice@utdallas.edu', '2008-08-15', TRUE),
+    (1, 'ASSISTANT', 'Bob',   'Bob',   'bob@utdallas.edu',   '2024-08-15', TRUE),
+    (1, 'ASSOCIATE', 'Carol', 'Carol', 'carol@utdallas.edu', '2024-10-01', TRUE),
     -- Due in Fall 2026. Some also missed earlier cycles; due takes priority.
-    (1, 'ASSISTANT', 'Dave',   'Okafor',    'dave.okafor@example.edu',     '2025-09-10', TRUE),
-    (1, 'ASSOCIATE', 'Ella',   'Brooks',    'ella.brooks@example.edu',     '2024-11-05', TRUE),
-    (1, 'FULL',      'Frank',  'Lindqvist', 'frank.lindqvist@example.edu', '2024-10-15', TRUE),
-    (1, 'ASSISTANT', 'Grace',  'Patel',     'grace.patel@example.edu',     '2023-09-20', TRUE),
-    (1, 'ASSOCIATE', 'Henry',  'Kowalski',  'henry.kowalski@example.edu',  '2022-11-10', TRUE),
-    (1, 'FULL',      'Iris',   'Tanaka',    'iris.tanaka@example.edu',     '2024-12-01', TRUE),
-    (1, 'ASSISTANT', 'Jack',   'Moreno',    'jack.moreno@example.edu',     '2025-08-25', TRUE),
-    (1, 'ASSOCIATE', 'Kate',   'Sullivan',  'kate.sullivan@example.edu',   '2024-10-25', TRUE),
-    (1, 'FULL',      'Liam',   'Fischer',   'liam.fischer@example.edu',    '2022-09-15', TRUE),
+    (1, 'ASSISTANT', 'Dave',  'Dave',  'dave@utdallas.edu',  '2025-09-10', TRUE),
+    (1, 'ASSOCIATE', 'Ella',  'Ella',  'ella@utdallas.edu',  '2024-11-05', TRUE),
+    (1, 'FULL',      'Frank', 'Frank', 'frank@utdallas.edu', '2024-10-15', TRUE),
+    (1, 'ASSISTANT', 'Grace', 'Grace', 'grace@utdallas.edu', '2023-09-20', TRUE),
+    (1, 'ASSOCIATE', 'Henry', 'Henry', 'henry@utdallas.edu', '2022-11-10', TRUE),
+    (1, 'FULL',      'Iris',  'Iris',  'iris@utdallas.edu',  '2024-12-01', TRUE),
+    (1, 'ASSISTANT', 'Jack',  'Jack',  'jack@utdallas.edu',  '2025-08-25', TRUE),
+    (1, 'ASSOCIATE', 'Kate',  'Kate',  'kate@utdallas.edu',  '2024-10-25', TRUE),
+    (1, 'FULL',      'Liam',  'Liam',  'liam@utdallas.edu',  '2022-09-15', TRUE),
     -- Overdue from earlier semesters, with no Fall 2026 recurrence.
-    (1, 'ASSISTANT', 'Maya',   'Chen',      'maya.chen@example.edu',       '2025-02-10', TRUE),
-    (1, 'ASSOCIATE', 'Noah',   'Adeyemi',   'noah.adeyemi@example.edu',    '2023-03-15', TRUE),
-    (1, 'FULL',      'Olivia', 'Rossi',     'olivia.rossi@example.edu',    '2023-04-10', TRUE),
-    (1, 'ASSISTANT', 'Paul',   'Novak',     'paul.novak@example.edu',      '2024-01-20', TRUE),
-    (1, 'ASSOCIATE', 'Quinn',  'Harper',    'quinn.harper@example.edu',    '2024-03-01', TRUE),
-    (1, 'FULL',      'Rose',   'Delgado',   'rose.delgado@example.edu',    '2024-02-15', TRUE),
-    (1, 'ASSISTANT', 'Sam',    'Whitaker',  'sam.whitaker@example.edu',    '2025-04-20', TRUE),
-    (1, 'ASSOCIATE', 'Tara',   'Singh',     'tara.singh@example.edu',      '2023-10-10', TRUE),
+    (1, 'ASSISTANT', 'Maya',   'Maya',   'maya@utdallas.edu',   '2025-02-10', TRUE),
+    (1, 'ASSOCIATE', 'Noah',   'Noah',   'noah@utdallas.edu',   '2023-03-15', TRUE),
+    (1, 'FULL',      'Olivia', 'Olivia', 'olivia@utdallas.edu', '2023-04-10', TRUE),
+    (1, 'ASSISTANT', 'Paul',   'Paul',   'paul@utdallas.edu',   '2024-01-20', TRUE),
+    (1, 'ASSOCIATE', 'Quinn',  'Quinn',  'quinn@utdallas.edu',  '2024-03-01', TRUE),
+    (1, 'FULL',      'Rose',   'Rose',   'rose@utdallas.edu',   '2024-02-15', TRUE),
+    (1, 'ASSISTANT', 'Sam',    'Sam',    'sam@utdallas.edu',    '2025-04-20', TRUE),
+    (1, 'ASSOCIATE', 'Tara',   'Tara',   'tara@utdallas.edu',   '2023-10-10', TRUE),
     -- Upcoming: their first evaluation is due after Fall 2026.
-    (1, 'ASSISTANT', 'Uma',    'Iyer',      'uma.iyer@example.edu',        '2026-02-01', TRUE),
-    (1, 'ASSOCIATE', 'Victor', 'Haddad',    'victor.haddad@example.edu',   '2025-03-10', TRUE),
-    (1, 'FULL',      'Wendy',  'Park',      'wendy.park@example.edu',      '2025-09-01', TRUE),
-    (1, 'ASSISTANT', 'Xavier', 'Dubois',    'xavier.dubois@example.edu',   '2026-10-01', TRUE),
-    (2, 'FULL',      'Yara',   'Mansour',   'yara.mansour@example.edu',    '2025-11-15', TRUE);
+    (1, 'ASSISTANT', 'Uma',    'Uma',    'uma@utdallas.edu',    '2026-02-01', TRUE),
+    (1, 'ASSOCIATE', 'Victor', 'Victor', 'victor@utdallas.edu', '2025-03-10', TRUE),
+    (1, 'FULL',      'Wendy',  'Wendy',  'wendy@utdallas.edu',  '2025-09-01', TRUE),
+    (1, 'ASSISTANT', 'Xavier', 'Xavier', 'xavier@utdallas.edu', '2026-10-01', TRUE),
+    (2, 'FULL',      'Yara',   'Yara',   'yara@utdallas.edu',   '2025-11-15', TRUE);
 
 -- Alice is on the Assessment Committee. A NULL end_date means no end date is set.
 INSERT INTO committee_member (professor_id, start_date, end_date, active_status) VALUES (1, '2026-01-01', NULL, TRUE);
 
 -- Demo passwords, also listed in the README: Committee123! for Alice and Faculty123! for Bob.
 INSERT INTO user_account (professor_id, username, email, password_hash, is_active) VALUES
-    (1, 'anguyen',   'alice.nguyen@example.edu', '{bcrypt}$2a$10$i1Ey/aeGhBiqRUbMA6.xqeu0jdkRqIiJNQUQwlRrjcrdPIR7yFkEi', TRUE),
-    (2, 'bmartinez', 'bob.martinez@example.edu', '{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW', TRUE);
+    (1, 'anguyen',   'alice@utdallas.edu',    '{bcrypt}$2a$10$i1Ey/aeGhBiqRUbMA6.xqeu0jdkRqIiJNQUQwlRrjcrdPIR7yFkEi', TRUE),
+    (2, 'bmartinez', 'bob@utdallas.edu',      '{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW', TRUE);
 
 INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
     ('Fall',   2026, '2026-08-24', '2026-12-11'),
