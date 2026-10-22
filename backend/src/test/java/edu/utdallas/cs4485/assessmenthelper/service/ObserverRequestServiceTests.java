@@ -175,6 +175,47 @@ class ObserverRequestServiceTests {
         assertThatThrownBy(() -> service.confirm(-1)).isInstanceOf(NotFoundException.class);
     }
 
+    @Test
+    void declineBeforeExpirationSetsDeclinedAndResponseDate() {
+        ObserverRequest pending = service.create(signup.signupId(), observer.observerId(), null);
+
+        ObserverRequest declined = service.decline(pending.requestId());
+
+        assertThat(declined.status()).isEqualTo("DECLINED");
+        assertThat(declined.responseDate()).isEqualTo(NOW);
+        assertThat(service.findById(pending.requestId())).isEqualTo(declined);
+    }
+
+    @Test
+    void declinedRequestCannotBeAnsweredAgain() {
+        ObserverRequest pending = service.create(signup.signupId(), observer.observerId(), null);
+        service.decline(pending.requestId());
+
+        assertThatThrownBy(() -> service.decline(pending.requestId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Request " + pending.requestId() + " is already DECLINED");
+        assertThatThrownBy(() -> service.confirm(pending.requestId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Request " + pending.requestId() + " is already DECLINED");
+    }
+
+    @Test
+    void overdueRequestCannotBeDeclined() {
+        ObserverRequest overdue = insertRequest("PENDING", NOW.minusMinutes(1));
+
+        assertThatThrownBy(() -> service.decline(overdue.requestId()))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("Request " + overdue.requestId() + " has expired");
+    }
+
+    @Test
+    void declinedRequestNeverExpires() {
+        ObserverRequest declined = insertRequest("DECLINED", NOW.minusDays(30));
+
+        assertThat(service.findById(declined.requestId()).status()).isEqualTo("DECLINED");
+        assertThat(service.expireOverdue()).isZero();
+    }
+
     private ObserverRequest insertRequest(String status, LocalDateTime expiration) {
         return db.insert(new ObserverRequest(
                 null,
