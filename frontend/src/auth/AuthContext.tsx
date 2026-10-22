@@ -4,6 +4,7 @@ import type { Role } from "../navConfig";
 export interface User {
   role: Role;
   name: string;
+  professorId?: number;
 }
 
 interface AuthValue {

@@ -260,3 +260,17 @@ DROP TABLE demo_completed_history;
 INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
     ('Fall', 2027, '2027-08-23', '2027-12-10'),
     ('Spring', 2028, '2028-01-10', '2028-05-05');
+
+-- Course-selection demo: the mock faculty login maps to Carol (professor 3).
+-- Append records so the existing observation/history IDs stay stable.
+INSERT INTO course (department_id, course_code, course_number, course_name, course_level) VALUES
+    (1, 'CS', '3345', 'Data Structures and Algorithms', 'UNDERGRADUATE');
+
+INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location) VALUES
+    (1, 1, '002', 'TR', '09:00:00', '10:15:00', 'Science Hall 206'),
+    (1, 1, '003', 'MWF', '13:00:00', '13:50:00', 'Science Hall 208'),
+    (2, 1, '001', 'TR', '14:30:00', '15:45:00', 'ECS 2.410');
+
+INSERT INTO teaching_history (professor_id, section_id)
+SELECT 3, section_id FROM course_section
+WHERE semester_id = 1 AND ((course_id = 1 AND section_number IN ('002', '003')) OR course_id = 2);

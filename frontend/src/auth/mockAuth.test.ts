@@ -7,6 +7,7 @@ describe("mockLogin", () => {
     expect(result.success).toBe(true);
     if (!result.success) throw new Error("Expected successful login");
     expect(result.user.role).toBe("faculty");
+    expect(result.user.professorId).toBe(3);
     expect(result.user.email).toBe("faculty@utdallas.edu");
     expect(result.user).not.toHaveProperty("password");
   });

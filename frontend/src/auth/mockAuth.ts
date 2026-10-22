@@ -5,6 +5,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: UserRole;
+  professorId?: number;
 }
 
 export type LoginResult =
@@ -12,9 +13,11 @@ export type LoginResult =
   | { success: false; error: string };
 
 // Demo credentials
-const accounts = [
+const accounts: (AuthUser & { password: string })[] = [
   {
     id: "demo-faculty",
+    // Carol in data.sql has demo sections and no current-cycle signup.
+    professorId: 3,
     name: "Demo Faculty",
     email: "faculty@utdallas.edu",
     role: "faculty",
@@ -27,7 +30,7 @@ const accounts = [
     role: "assessment-committee",
     password: "Committee123!",
   },
-] satisfies (AuthUser & { password: string })[];
+];
 
 export async function mockLogin(
   email: string,
@@ -52,6 +55,7 @@ export async function mockLogin(
       name: account.name,
       email: account.email,
       role: account.role,
+      professorId: account.professorId,
     },
   };
 }
