@@ -1,3 +1,8 @@
+import {
+  type AcState,
+  schedule,
+  useObserverData,
+} from "../../api/observerEligibility";
 import { ActionButton } from "../../components/ActionButton";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
@@ -24,30 +29,17 @@ const kpis: Kpi[] = [
   },
 ];
 
-const signupRequests = [
-  {
-    observee: "Professor 2",
-    section: "CS 4348.501",
-    meetingTime: "MW 10:00–11:15",
-    status: "Ready",
-  },
-  {
-    observee: "Professor 1",
-    section: "CS 3345.002",
-    meetingTime: "TR 1:00–2:15",
-    status: "Ready",
-  },
-  {
-    observee: "Professor 5",
-    section: "CS 4384.001",
-    meetingTime: "MW 8:30–9:45",
-    status: "Ready",
-  },
-];
-
 const columns = ["Observee", "Course / Section", "Meeting Time", "Status"];
 
 export function AcSignups() {
+  const { data, error } = useObserverData<AcState>("/ac");
+  const signupRequests = (data?.signups ?? []).map((s) => ({
+    signupId: s.signupId,
+    observee: s.name,
+    section: s.section.label,
+    meetingTime: schedule(s.section),
+    status: s.released ? "List sent" : "Awaiting review",
+  }));
   return (
     <div>
       <PageHeader
@@ -56,14 +48,34 @@ export function AcSignups() {
       />
 
       {/* Cards keep the Overview's KPI width rather than stretching across the page. */}
+      {error && (
+        <p role="alert" className="mt-4 text-brand-red">
+          {error}
+        </p>
+      )}
       <div className="mt-10.25 grid gap-4 sm:grid-cols-2 xl:max-w-324 xl:grid-cols-4">
         {kpis.map((kpi) => (
-          <KpiCard key={kpi.label} kpi={kpi} />
+          <KpiCard
+            key={kpi.label}
+            kpi={
+              kpi.label === "Signed Up"
+                ? {
+                    ...kpi,
+                    value: data ? String(signupRequests.length) : "Loading",
+                    note: "Current cycle",
+                  }
+                : kpi.label === "Signup Deadline"
+                  ? { ...kpi, value: data?.cycle?.signupDeadline ?? "Loading" }
+                  : kpi
+            }
+          />
         ))}
       </div>
 
       <section className="mt-9.5 rounded-lg border border-line bg-white px-5.5 pt-5 pb-5">
         <h2 className="font-semibold text-[21px]/7">Signup Requests</h2>
+        {!data && !error && <p>Loading signups...</p>}
+        {data && signupRequests.length === 0 && <p>No signups yet.</p>}
         {/* On narrow screens the table scrolls inside the card. `relative` keeps
             the sr-only header inside the scroller so the page does not widen. */}
         <div className="relative mt-6.75 overflow-x-auto">
@@ -87,7 +99,7 @@ export function AcSignups() {
             <tbody>
               {signupRequests.map((request) => (
                 // From lg up the rows sit 131px apart, as in the mockup.
-                <tr key={request.observee} className="*:pb-8 lg:*:pb-20.75">
+                <tr key={request.signupId} className="*:pb-8 lg:*:pb-20.75">
                   <th scope="row" className="text-left font-semibold">
                     {request.observee}
                   </th>
@@ -98,6 +110,7 @@ export function AcSignups() {
                     <ActionButton
                       tone="green"
                       ariaLabel={`Review signup for ${request.observee}`}
+                      to={`/ac/matching?signup=${request.signupId}`}
                       className="min-w-40.5"
                     >
                       Review

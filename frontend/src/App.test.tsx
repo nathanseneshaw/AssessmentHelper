@@ -6,20 +6,27 @@ import {
   screen,
   within,
 } from "@testing-library/react";
+import { ac, faculty } from "../test/observerFixtures";
 import { App } from "./App";
 import { STORAGE_KEY } from "./auth/AuthContext";
 import { NAV_ITEMS, type Role } from "./navConfig";
 
 const originalFetch = globalThis.fetch;
 beforeEach(() => {
-  globalThis.fetch = mock(async () =>
-    Response.json({
+  globalThis.fetch = mock(async (input: unknown) => {
+    const path = String(input);
+    if (path.endsWith("/observer-eligibility/faculty"))
+      return Response.json([faculty.professor]);
+    if (path.includes("/observer-eligibility/faculty/"))
+      return Response.json(faculty);
+    if (path.endsWith("/observer-eligibility/ac")) return Response.json(ac);
+    return Response.json({
       cycleId: 1,
       cycleLabel: "Fall 2026",
       count: 0,
       faculty: [],
-    }),
-  ) as unknown as typeof fetch;
+    });
+  }) as unknown as typeof fetch;
 });
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -257,10 +264,8 @@ describe("faculty", () => {
     expect(currentPath()).toBe("/faculty");
     expect(screen.queryByRole("dialog")).toBeNull();
 
-    fireEvent.click(
-      screen.getByRole("link", { name: "View Generated Observers" }),
-    );
-    await screen.findByRole("dialog", { name: "Choose Observers" });
+    fireEvent.click(screen.getByRole("link", { name: /Observer Requests/ }));
+    await screen.findByRole("dialog", { name: "Observer Requests" });
     fireEvent.keyDown(window, { key: "Escape" });
     expect(currentPath()).toBe("/faculty");
     expect(screen.queryByRole("dialog")).toBeNull();
