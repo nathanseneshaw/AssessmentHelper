@@ -16,7 +16,7 @@ INSERT INTO evaluation_policy (professor_rank, evaluation_interval_years, active
     ('FULL',      2, TRUE, '2026-01-01', '2026-01-01', 0);
 
 INSERT INTO professor (department_id, professor_rank, first_name, last_name, email, hire_date, active_status) VALUES
-    (1, 'FULL',      'Alice', 'Alice', 'alice@utdallas.edu', '2008-08-15', TRUE),
+    (1, 'FULL',      'Alice', 'Alice', 'alice@utdallas.edu', '2008-10-15', TRUE),
     (1, 'ASSISTANT', 'Bob',   'Bob',   'bob@utdallas.edu',   '2024-08-15', TRUE),
     (1, 'ASSOCIATE', 'Carol', 'Carol', 'carol@utdallas.edu', '2024-10-01', TRUE),
     -- Due in Fall 2026. Some also missed earlier cycles; due takes priority.
@@ -37,13 +37,20 @@ INSERT INTO professor (department_id, professor_rank, first_name, last_name, ema
     (1, 'ASSOCIATE', 'Quinn',  'Quinn',  'quinn@utdallas.edu',  '2024-03-01', TRUE),
     (1, 'FULL',      'Rose',   'Rose',   'rose@utdallas.edu',   '2024-02-15', TRUE),
     (1, 'ASSISTANT', 'Sam',    'Sam',    'sam@utdallas.edu',    '2025-04-20', TRUE),
-    (1, 'ASSOCIATE', 'Tara',   'Tara',   'tara@utdallas.edu',   '2023-10-10', TRUE),
+    -- Tara's annual recurrence and Uma's first evaluation are due in Fall 2026.
+    (1, 'ASSISTANT', 'Tara',   'Tara',   'tara@utdallas.edu',   '2023-10-10', TRUE),
+    (1, 'ASSISTANT', 'Uma',    'Uma',    'uma@utdallas.edu',    '2025-09-01', TRUE),
     -- Upcoming: their first evaluation is due after Fall 2026.
-    (1, 'ASSISTANT', 'Uma',    'Uma',    'uma@utdallas.edu',    '2026-02-01', TRUE),
     (1, 'ASSOCIATE', 'Victor', 'Victor', 'victor@utdallas.edu', '2025-03-10', TRUE),
     (1, 'FULL',      'Wendy',  'Wendy',  'wendy@utdallas.edu',  '2025-09-01', TRUE),
     (1, 'ASSISTANT', 'Xavier', 'Xavier', 'xavier@utdallas.edu', '2026-10-01', TRUE),
-    (2, 'FULL',      'Yara',   'Yara',   'yara@utdallas.edu',   '2025-11-15', TRUE);
+    (2, 'FULL',      'Yara',   'Yara',   'yara@utdallas.edu',   '2025-11-15', TRUE),
+    -- Additional due professors: totals are 18 due, 8 overdue, and 4 upcoming.
+    (1, 'ASSISTANT', 'Ava',   'Ava',   'ava@utdallas.edu',   '2025-09-15', TRUE),
+    (1, 'ASSOCIATE', 'Ben',   'Ben',   'ben@utdallas.edu',   '2024-11-20', TRUE),
+    (1, 'FULL',      'Chloe', 'Chloe', 'chloe@utdallas.edu', '2024-10-05', TRUE),
+    (1, 'ASSISTANT', 'Drew',  'Drew',  'drew@utdallas.edu',  '2025-11-01', TRUE),
+    (1, 'ASSOCIATE', 'Evan',  'Evan',  'evan@utdallas.edu',  '2024-09-25', TRUE);
 
 -- Alice is on the Assessment Committee. A NULL end_date means no end date is set.
 INSERT INTO committee_member (professor_id, start_date, end_date, active_status) VALUES (1, '2026-01-01', NULL, TRUE);
@@ -105,8 +112,8 @@ INSERT INTO observation_response (observation_id, criterion_id, rating, comments
     (2, 2, 4,    'Most students took part in the pair exercise.'),
     (2, 3, NULL, 'Consider leaving more time for questions at the end.');
 
--- Completed history for eight additional overdue professors. Their next required
--- evaluation is still outstanding in Fall 2026; the original demo IDs stay stable.
+-- Completed history for eight additional professors. Seven are overdue; Tara's
+-- annual recurrence is due in Fall 2026. The original demo IDs stay stable.
 INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
     ('Spring', 2024, '2024-01-08', '2024-05-10'),
     ('Spring', 2023, '2023-01-09', '2023-05-12'),
@@ -172,3 +179,89 @@ INSERT INTO observation_response (observation_id, criterion_id, rating, comments
     (8, 4, 4, 'Completed evaluation for Rose.'),
     (9, 4, 5, 'Completed evaluation for Sam.'),
     (10, 4, 4, 'Completed evaluation for Tara.');
+
+-- Exact semester boundaries for outstanding evaluations due in Spring 2026.
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Spring', 2026, '2026-01-12', '2026-05-08');
+
+-- Additional completed history: Xavier is the only professor never evaluated.
+-- Keep the same 18 due / 8 overdue / 4 upcoming classifications in Fall 2026.
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Fall', 2024, '2024-08-26', '2024-12-13'),
+    ('Fall', 2025, '2025-08-25', '2025-12-12');
+
+INSERT INTO evaluation_cycle (semester_id, signup_deadline, observation_deadline, feedback_deadline, status) VALUES
+    (7, '2024-09-15', '2024-12-06', '2024-12-13', 'CLOSED'),
+    (8, '2025-09-15', '2025-12-05', '2025-12-12', 'CLOSED'),
+    (6, '2026-02-01', '2026-04-20', '2026-05-01', 'CLOSED');
+
+INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location) VALUES
+    (1, 7, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
+    (1, 8, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
+    (1, 6, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204');
+
+-- Olivia observed Fall 2024; Alice observed Fall 2025 and Spring 2026.
+INSERT INTO observer (professor_id, cycle_id, active_status) VALUES
+    (15, 6, TRUE), (1, 7, TRUE), (1, 8, TRUE);
+
+-- Temporary seed helper keeps observees, signups, and observations consistent.
+-- It is dropped below and is not part of the application schema.
+CREATE LOCAL TEMPORARY TABLE demo_completed_history (
+    professor_id INT, cycle_id INT, section_id INT, observer_id INT, completed_date DATE
+);
+
+INSERT INTO demo_completed_history VALUES
+    (1, 6, 6, 6, '2024-10-15'),
+    (3, 6, 6, 6, '2024-11-01'),
+    (4, 7, 7, 7, '2025-10-01'),
+    (5, 6, 6, 6, '2024-11-20'),
+    (6, 6, 6, 6, '2024-11-01'),
+    (7, 7, 7, 7, '2025-10-05'),
+    (8, 6, 6, 6, '2024-11-15'),
+    (9, 6, 6, 6, '2024-12-05'),
+    (10, 7, 7, 7, '2025-09-10'),
+    (11, 6, 6, 6, '2024-11-05'),
+    (12, 6, 6, 6, '2024-09-25'),
+    (21, 7, 7, 7, '2025-09-15'),
+    (22, 8, 8, 8, '2026-03-20'),
+    (23, 7, 7, 7, '2025-10-01'),
+    (25, 7, 7, 7, '2025-12-01'),
+    (26, 7, 7, 7, '2025-10-01'),
+    (27, 6, 6, 6, '2024-12-01'),
+    (28, 6, 6, 6, '2024-11-05'),
+    (29, 7, 7, 7, '2025-11-20'),
+    (30, 6, 6, 6, '2024-10-01');
+
+INSERT INTO observee (professor_id, cycle_id, status)
+SELECT professor_id, cycle_id, 'COMPLETED' FROM demo_completed_history;
+
+INSERT INTO teaching_history (professor_id, section_id)
+SELECT professor_id, section_id FROM demo_completed_history;
+
+INSERT INTO evaluation_signup (observee_id, section_id, signup_date, status)
+SELECT o.observee_id, h.section_id, h.completed_date, 'COMPLETED'
+FROM demo_completed_history h
+JOIN observee o ON o.professor_id = h.professor_id AND o.cycle_id = h.cycle_id;
+
+INSERT INTO observation (signup_id, observer_id, template_id, observation_date, start_time, status, observee_signed, observer_signed, observee_signed_at, observer_signed_at, completed_at)
+SELECT s.signup_id, h.observer_id, 2, h.completed_date, TIME '10:00:00', 'COMPLETED', TRUE, TRUE,
+    DATEADD('HOUR', 16, CAST(h.completed_date AS TIMESTAMP)),
+    DATEADD('HOUR', 15, CAST(h.completed_date AS TIMESTAMP)),
+    DATEADD('HOUR', 16, CAST(h.completed_date AS TIMESTAMP))
+FROM demo_completed_history h
+JOIN observee o ON o.professor_id = h.professor_id AND o.cycle_id = h.cycle_id
+JOIN evaluation_signup s ON s.observee_id = o.observee_id;
+
+INSERT INTO observation_response (observation_id, criterion_id, rating, comments)
+SELECT ob.observation_id, 4, 4, 'Completed historical demo evaluation.'
+FROM demo_completed_history h
+JOIN observee o ON o.professor_id = h.professor_id AND o.cycle_id = h.cycle_id
+JOIN evaluation_signup s ON s.observee_id = o.observee_id
+JOIN observation ob ON ob.signup_id = s.signup_id;
+
+DROP TABLE demo_completed_history;
+
+-- Upcoming evaluation dates also resolve to a configured semester label.
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Fall', 2027, '2027-08-23', '2027-12-10'),
+    ('Spring', 2028, '2028-01-10', '2028-05-05');

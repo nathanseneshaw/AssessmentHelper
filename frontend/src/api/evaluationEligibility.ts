@@ -8,6 +8,7 @@ export interface OverdueFaculty {
   email: string;
   lastEvaluationCycle: string;
   nextDueDate: string;
+  nextDueSemester?: string;
   intervalYears: number;
   lastNotifiedAt: string | null;
 }
@@ -26,6 +27,19 @@ export interface NotificationEmail {
 }
 
 export type EvaluationKind = "due" | "overdue";
+
+export type EligibilityStatus = "Due" | "Overdue" | "Upcoming";
+export interface EvaluationFaculty extends OverdueFaculty {
+  status: EligibilityStatus;
+}
+export interface EvaluationQueue extends Omit<OverdueQueue, "faculty"> {
+  faculty: EvaluationFaculty[];
+}
+export function getEvaluationQueue(
+  signal?: AbortSignal,
+): Promise<EvaluationQueue> {
+  return apiFetch<EvaluationQueue>("/api/evaluation-eligibility", { signal });
+}
 
 export async function getDueQueue(signal?: AbortSignal): Promise<OverdueQueue> {
   return apiFetch<OverdueQueue>("/api/due-evaluations", { signal });
