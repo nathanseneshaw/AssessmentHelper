@@ -10,74 +10,75 @@ INSERT INTO evaluation_policy (professor_rank, evaluation_interval_years, active
 -- Instructors of the courses below from Fall 2022 to Spring 2027, copied from the UTD Nebula API. Rank comes
 -- from the Nebula title when it names a professor rank, otherwise it is NULL. Nebula has no hire dates.
 -- Instructors who have not taught since Fall 2025 are inactive.
+-- Names and emails are made up to keep the instructors anonymous; everything else is from Nebula.
 INSERT INTO professor (department_id, professor_rank, first_name, last_name, email, hire_date, active_status) VALUES
-    (1, 'ASSOCIATE', 'Sridhar',           'Alagar',       'sridhar@utdallas.edu',             NULL, TRUE),
-    (1, NULL,        'Gordon',            'Arnold',       'gxa120930@utdallas.edu',           NULL, TRUE),
-    (1, 'ASSISTANT', 'Eric',              'Becker',       'eric.becker@utdallas.edu',         NULL, FALSE),
-    (1, NULL,        'Mohamed Amine',     'Belkoura',     'mxb135330@utdallas.edu',           NULL, TRUE),
-    (1, 'FULL',      'Sergey',            'Bereg',        'besp@utdallas.edu',                NULL, TRUE),
-    (1, NULL,        'Vlad',              'Birsan',       'vib220000@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Mehra Nouroz',      'Borazjany',    'mxn143230@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Ebru',              'Cankaya',      'exc067000@utdallas.edu',           NULL, FALSE),
-    (1, 'ASSISTANT', 'Sruthi',            'Chappidi',     'sruthi.chappidi@utdallas.edu',     NULL, TRUE),
-    (1, 'ASSOCIATE', 'Anjum',             'Chida',        'anjum.chida@utdallas.edu',         NULL, FALSE),
-    (1, 'FULL',      'Bhadrachalam',      'Chitturi',     'chalam@utdallas.edu',              NULL, TRUE),
-    (1, 'FULL',      'John',              'Cole',         'jxc064000@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Parisa',            'Darbari',      'dal776869@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Chris',             'Davis',        'cid021000@utdallas.edu',           NULL, FALSE),
-    (1, NULL,        'Partha',            'De',           'pxd141430@utdallas.edu',           NULL, FALSE),
-    (1, 'FULL',      'Doug',              'DeGroot',      'doug.degroot@utdallas.edu',        NULL, FALSE),
-    (1, 'FULL',      'Yvo',               'Desmedt',      'ygd120030@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Semih',             'Dinc',         'dal811175@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Scott',             'Dollinger',    'smd013000@utdallas.edu',           NULL, FALSE),
-    (1, NULL,        'Ding',              'Du',           'dxd056000@utdallas.edu',           NULL, TRUE),
-    (1, 'ASSOCIATE', 'Serdar',            'Erbatur',      'serdar.erbatur@utdallas.edu',      NULL, TRUE),
-    (1, NULL,        'Ranran',            'Feng',         'rxf090020@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Emily',             'Fox',          'kjf170230@utdallas.edu',           NULL, FALSE),
-    (1, NULL,        'Anand',             'Gupta',        'axg060200@utdallas.edu',           NULL, FALSE),
-    (1, 'ASSOCIATE', 'Neeraj',            'Gupta',        'neeraj.gupta@utdallas.edu',        NULL, FALSE),
-    (1, 'ASSOCIATE', 'Omar',              'Hamdy',        'omar.hamdy@utdallas.edu',          NULL, TRUE),
-    (1, 'FULL',      'Dung',              'Huynh',        'dung.huynh@utdallas.edu',          NULL, TRUE),
-    (1, NULL,        'Muhammad',          'Ikram',        'mzi041000@utdallas.edu',           NULL, TRUE),
-    (1, 'ASSISTANT', 'Gity',              'Karami',       'gity.karami@utdallas.edu',         NULL, FALSE),
-    (1, NULL,        'Shyam',             'Karrah',       'skarrah@utdallas.edu',             NULL, TRUE),
-    (1, NULL,        'Ziaullah',          'Khan',         'kkhan@utdallas.edu',               NULL, TRUE),
-    (1, 'FULL',      'Pushpa',            'Kumar',        'pkumar@utdallas.edu',              NULL, FALSE),
-    (1, NULL,        'Khiem',             'Le',           'kvl140030@utdallas.edu',           NULL, FALSE),
-    (1, NULL,        'Jianqiang',         'Li',           'dal223899@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Beiyu',             'Lin',          'dal207602@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Barbara',           'Maweu',        'bmk101020@utdallas.edu',           NULL, FALSE),
-    (1, 'ASSISTANT', 'Richard',           'Min',          'richard.min@utdallas.edu',         NULL, TRUE),
-    (1, 'FULL',      'Neeraj',            'Mittal',       'nxm020100@utdallas.edu',           NULL, TRUE),
-    (1, 'ASSOCIATE', 'Anurag',            'Nagar',        'anurag.nagar@utdallas.edu',        NULL, FALSE),
-    (1, 'ASSOCIATE', 'Priya',             'Narayanasami', 'priyan@utdallas.edu',              NULL, TRUE),
-    (1, 'ASSISTANT', 'Andrew',            'Nemec',        'andrew.nemec@utdallas.edu',        NULL, TRUE),
-    (1, NULL,        'Nhut',              'Nguyen',       'nhutnn@utdallas.edu',              NULL, TRUE),
-    (1, NULL,        'Palina',            'Niamkova',     'pxn190018@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Greg',              'Ozbirn',       'greg.ozbirn@utdallas.edu',         NULL, FALSE),
-    (1, NULL,        'Erik',              'Peterson',     'erik.peterson@utdallas.edu',       NULL, TRUE),
-    (1, 'FULL',      'Ravi',              'Prakash',      'ravip@utdallas.edu',               NULL, TRUE),
-    (1, 'ASSOCIATE', 'Benjamin',          'Raichel',      'benjamin.raichel@utdallas.edu',    NULL, TRUE),
-    (1, NULL,        'Ramana',            'Ramachandran', 'ramana@utdallas.edu',              NULL, FALSE),
-    (1, NULL,        'Miguel Razo',       'Razo',         'mrazora@utdallas.edu',             NULL, TRUE),
-    (1, 'ASSISTANT', 'Brian',             'Ricks',        'absolutefunk@utdallas.edu',        NULL, TRUE),
-    (1, NULL,        'Raed',              'Salih',        'dal360153@utdallas.edu',           NULL, FALSE),
-    (1, NULL,        'Anahita',           'Samadi',       'dal736928@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Selim',             'Sarac',        'dal552490@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Meghana',           'Satpute',      'mns086000@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Sadi',              'Seker',        'sadi.seker@utdallas.edu',          NULL, TRUE),
-    (1, NULL,        'David',             'Sims',         'dxs190044@utdallas.edu',           NULL, FALSE),
-    (1, 'ASSOCIATE', 'Jason',             'Smith',        'smith@utdallas.edu',               NULL, TRUE),
-    (1, 'ASSISTANT', 'Srimathi',          'Srinivasan',   'srimathi.srinivasan@utdallas.edu', NULL, TRUE),
-    (1, NULL,        'Aditya',            'Srivastava',   'axs142531@utdallas.edu',           NULL, FALSE),
-    (1, NULL,        'Zachary',           'Stallbohm',    'zxs110030@utdallas.edu',           NULL, TRUE),
-    (1, 'ASSOCIATE', 'Laurie',            'Thompson',     'lthomp@utdallas.edu',              NULL, FALSE),
-    (1, NULL,        'Siva Sai Nagender', 'Vasireddy',    'sxv163630@utdallas.edu',           NULL, TRUE),
-    (1, 'FULL',      'Jeyakesavan',       'Veerasamy',    'veerasam@utdallas.edu',            NULL, TRUE),
-    (1, NULL,        'James',             'Willson',      'jkw053000@utdallas.edu',           NULL, TRUE),
-    (1, NULL,        'Nurcan',            'Yuruk',        'nxy140530@utdallas.edu',           NULL, FALSE),
-    (1, NULL,        'Yi',                'Zhao',         'zhao@utdallas.edu',                NULL, FALSE),
-    (1, NULL,        'Hao',               'Zhou',         'dal071127@utdallas.edu',           NULL, TRUE);
+    (1, 'ASSOCIATE', 'Adele',    'Amberly',      'adele.amberly@example.edu',      NULL, TRUE),
+    (1, NULL,        'Ansel',    'Ashcombe',     'ansel.ashcombe@example.edu',     NULL, TRUE),
+    (1, 'ASSISTANT', 'Beatrix',  'Bellwood',     'beatrix.bellwood@example.edu',   NULL, FALSE),
+    (1, NULL,        'Cassius',  'Birchfield',   'cassius.birchfield@example.edu', NULL, TRUE),
+    (1, 'FULL',      'Delphine', 'Blackmere',    'delphine.blackmere@example.edu', NULL, TRUE),
+    (1, NULL,        'Emeric',   'Brambleton',   'emeric.brambleton@example.edu',  NULL, TRUE),
+    (1, NULL,        'Fiona',    'Brightwater',  'fiona.brightwater@example.edu',  NULL, TRUE),
+    (1, NULL,        'Gideon',   'Brookhollow',  'gideon.brookhollow@example.edu', NULL, FALSE),
+    (1, 'ASSISTANT', 'Hollis',   'Carrowmore',   'hollis.carrowmore@example.edu',  NULL, TRUE),
+    (1, 'ASSOCIATE', 'Isolde',   'Castellan',    'isolde.castellan@example.edu',   NULL, FALSE),
+    (1, 'FULL',      'Jude',     'Cindervale',   'jude.cindervale@example.edu',    NULL, TRUE),
+    (1, 'FULL',      'Kaia',     'Clearbrook',   'kaia.clearbrook@example.edu',    NULL, TRUE),
+    (1, NULL,        'Leander',  'Coldwell',     'leander.coldwell@example.edu',   NULL, TRUE),
+    (1, NULL,        'Marisol',  'Dalgrave',     'marisol.dalgrave@example.edu',   NULL, FALSE),
+    (1, NULL,        'Nico',     'Deepwell',     'nico.deepwell@example.edu',      NULL, FALSE),
+    (1, 'FULL',      'Odette',   'Dunmore',      'odette.dunmore@example.edu',     NULL, FALSE),
+    (1, 'FULL',      'Perrin',   'Duskwood',     'perrin.duskwood@example.edu',    NULL, TRUE),
+    (1, NULL,        'Rhea',     'Eastbrook',    'rhea.eastbrook@example.edu',     NULL, TRUE),
+    (1, NULL,        'Silas',    'Elderidge',    'silas.elderidge@example.edu',    NULL, FALSE),
+    (1, NULL,        'Thea',     'Emberton',     'thea.emberton@example.edu',      NULL, TRUE),
+    (1, 'ASSOCIATE', 'Ulric',    'Fairhaven',    'ulric.fairhaven@example.edu',    NULL, TRUE),
+    (1, NULL,        'Vivian',   'Fernsby',      'vivian.fernsby@example.edu',     NULL, TRUE),
+    (1, NULL,        'Wesley',   'Foxhollow',    'wesley.foxhollow@example.edu',   NULL, FALSE),
+    (1, NULL,        'Yara',     'Frostholm',    'yara.frostholm@example.edu',     NULL, FALSE),
+    (1, 'ASSOCIATE', 'Zane',     'Glenhurst',    'zane.glenhurst@example.edu',     NULL, FALSE),
+    (1, 'ASSOCIATE', 'Arlo',     'Glimmerton',   'arlo.glimmerton@example.edu',    NULL, TRUE),
+    (1, 'FULL',      'Bianca',   'Goldmere',     'bianca.goldmere@example.edu',    NULL, TRUE),
+    (1, NULL,        'Cyrus',    'Greystone',    'cyrus.greystone@example.edu',    NULL, TRUE),
+    (1, 'ASSISTANT', 'Dahlia',   'Hallowell',    'dahlia.hallowell@example.edu',   NULL, FALSE),
+    (1, NULL,        'Elio',     'Harrowgate',   'elio.harrowgate@example.edu',    NULL, TRUE),
+    (1, NULL,        'Avery',    'Hazelwood',    'avery.hazelwood@example.edu',    NULL, TRUE),
+    (1, 'FULL',      'Blake',    'Heathcote',    'blake.heathcote@example.edu',    NULL, FALSE),
+    (1, NULL,        'Camille',  'Highmoor',     'camille.highmoor@example.edu',   NULL, FALSE),
+    (1, NULL,        'Dario',    'Hollowell',    'dario.hollowell@example.edu',    NULL, TRUE),
+    (1, NULL,        'Elena',    'Ironwood',     'elena.ironwood@example.edu',     NULL, TRUE),
+    (1, NULL,        'Farid',    'Ivelmont',     'farid.ivelmont@example.edu',     NULL, FALSE),
+    (1, 'ASSISTANT', 'Greta',    'Ivorydale',    'greta.ivorydale@example.edu',    NULL, TRUE),
+    (1, 'FULL',      'Hiro',     'Juniper',      'hiro.juniper@example.edu',       NULL, TRUE),
+    (1, 'ASSOCIATE', 'Imani',    'Kestrel',      'imani.kestrel@example.edu',      NULL, FALSE),
+    (1, 'ASSOCIATE', 'Jonas',    'Lakeshore',    'jonas.lakeshore@example.edu',    NULL, TRUE),
+    (1, 'ASSISTANT', 'Keira',    'Larkspur',     'keira.larkspur@example.edu',     NULL, TRUE),
+    (1, NULL,        'Luca',     'Lindenhall',   'luca.lindenhall@example.edu',    NULL, TRUE),
+    (1, NULL,        'Mira',     'Marchbank',    'mira.marchbank@example.edu',     NULL, TRUE),
+    (1, NULL,        'Nikhil',   'Meadowcroft',  'nikhil.meadowcroft@example.edu', NULL, FALSE),
+    (1, NULL,        'Orla',     'Merriweather', 'orla.merriweather@example.edu',  NULL, TRUE),
+    (1, 'FULL',      'Pavel',    'Millbrook',    'pavel.millbrook@example.edu',    NULL, TRUE),
+    (1, 'ASSOCIATE', 'Quinn',    'Moorfield',    'quinn.moorfield@example.edu',    NULL, TRUE),
+    (1, NULL,        'Rosa',     'Northcott',    'rosa.northcott@example.edu',     NULL, FALSE),
+    (1, NULL,        'Soren',    'Oakhurst',     'soren.oakhurst@example.edu',     NULL, TRUE),
+    (1, 'ASSISTANT', 'Tamsin',   'Oldcastle',    'tamsin.oldcastle@example.edu',   NULL, TRUE),
+    (1, NULL,        'Umar',     'Penhallow',    'umar.penhallow@example.edu',     NULL, FALSE),
+    (1, NULL,        'Vera',     'Quarrington',  'vera.quarrington@example.edu',   NULL, TRUE),
+    (1, NULL,        'Wren',     'Ravenhill',    'wren.ravenhill@example.edu',     NULL, TRUE),
+    (1, NULL,        'Xiomara',  'Ridgeway',     'xiomara.ridgeway@example.edu',   NULL, TRUE),
+    (1, NULL,        'Yusuf',    'Rookwood',     'yusuf.rookwood@example.edu',     NULL, TRUE),
+    (1, NULL,        'Zara',     'Rosedale',     'zara.rosedale@example.edu',      NULL, FALSE),
+    (1, 'ASSOCIATE', 'Anika',    'Saltmarsh',    'anika.saltmarsh@example.edu',    NULL, TRUE),
+    (1, 'ASSISTANT', 'Bram',     'Silverton',    'bram.silverton@example.edu',     NULL, TRUE),
+    (1, NULL,        'Celeste',  'Southwick',    'celeste.southwick@example.edu',  NULL, FALSE),
+    (1, NULL,        'Devika',   'Stonebridge',  'devika.stonebridge@example.edu', NULL, TRUE),
+    (1, 'ASSOCIATE', 'Esme',     'Thistlewood',  'esme.thistlewood@example.edu',   NULL, FALSE),
+    (1, NULL,        'Felix',    'Thornbury',    'felix.thornbury@example.edu',    NULL, TRUE),
+    (1, 'FULL',      'Gemma',    'Underhill',    'gemma.underhill@example.edu',    NULL, TRUE),
+    (1, NULL,        'Hugo',     'Valemont',     'hugo.valemont@example.edu',      NULL, TRUE),
+    (1, NULL,        'Ines',     'Westbrook',    'ines.westbrook@example.edu',     NULL, FALSE),
+    (1, NULL,        'Jasper',   'Willowby',     'jasper.willowby@example.edu',    NULL, FALSE),
+    (1, NULL,        'Kofi',     'Winterbourne', 'kofi.winterbourne@example.edu',  NULL, TRUE);
 
 -- Semesters from the UTD Nebula API, Fall 2022 to Spring 2027, oldest first.
 INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
@@ -458,70 +459,70 @@ INSERT INTO course_section (course_id, semester_id, section_number, meeting_days
 
 -- Which professor taught which section, from the UTD Nebula API. One line per professor.
 INSERT INTO teaching_history (professor_id, section_id) VALUES
-    (1, 59), (1, 90), (1, 94), (1, 134), (1, 164), (1, 166), (1, 196), (1, 205), (1, 263), (1, 267), (1, 272), (1, 323), (1, 325), (1, 332), -- Sridhar Alagar
-    (2, 48), (2, 151), (2, 153), (2, 181), (2, 214), (2, 249), (2, 254), (2, 290), (2, 293), -- Gordon Arnold
-    (3, 3), (3, 134), (3, 205), -- Eric Becker
-    (4, 13), (4, 14), (4, 55), (4, 269), -- Mohamed Amine Belkoura
-    (5, 31), (5, 63), (5, 102), (5, 126), (5, 137), (5, 207), (5, 324), -- Sergey Bereg
-    (6, 216), -- Vlad Birsan
-    (7, 5), (7, 48), (7, 76), (7, 218), (7, 228), -- Mehra Nouroz Borazjany
-    (8, 134), -- Ebru Cankaya
-    (9, 161), (9, 169), (9, 198), (9, 211), (9, 226), (9, 229), (9, 276), (9, 284), (9, 288), (9, 291), (9, 317), (9, 319), -- Sruthi Chappidi
-    (10, 10), (10, 83), (10, 96), -- Anjum Chida
-    (11, 29), (11, 70), (11, 97), (11, 98), (11, 129), (11, 173), (11, 242), -- Bhadrachalam Chitturi
-    (12, 59), (12, 96), (12, 134), (12, 171), (12, 205), (12, 241), (12, 272), (12, 303), (12, 332), -- John Cole
-    (13, 178), (13, 200), (13, 225), (13, 230), (13, 232), (13, 235), (13, 270), (13, 277), (13, 278), (13, 294), (13, 310), (13, 311), (13, 328), (13, 330), -- Parisa Darbari
-    (14, 71), -- Chris Davis
-    (15, 82), (15, 136), -- Partha De
-    (16, 41), (16, 43), (16, 112), (16, 114), -- Doug DeGroot
-    (17, 194), (17, 233), (17, 261), (17, 299), (17, 321), -- Yvo Desmedt
-    (18, 272), -- Semih Dinc
-    (19, 32), (19, 40), (19, 65), (19, 75), (19, 103), (19, 111), (19, 115), (19, 116), (19, 140), (19, 147), (19, 186), (19, 187), -- Scott Dollinger
-    (20, 64), (20, 138), (20, 208), (20, 274), (20, 334), -- Ding Du
-    (21, 27), (21, 62), (21, 130), (21, 165), (21, 326), -- Serdar Erbatur
-    (22, 53), (22, 54), (22, 77), (22, 79), (22, 80), (22, 81), (22, 127), (22, 128), (22, 149), (22, 220), (22, 222), (22, 275), (22, 287), -- Ranran Feng
-    (23, 24), (23, 61), (23, 95), (23, 170), -- Emily Fox
-    (24, 171), -- Anand Gupta
-    (25, 66), (25, 85), (25, 106), (25, 121), (25, 139), (25, 209), -- Neeraj Gupta
-    (26, 16), (26, 18), (26, 58), (26, 88), (26, 89), (26, 133), (26, 162), (26, 197), (26, 202), (26, 231), (26, 237), (26, 265), (26, 268), (26, 295), (26, 300), (26, 329), (26, 331), -- Omar Hamdy
-    (27, 28), (27, 60), (27, 99), (27, 135), (27, 175), (27, 206), (27, 243), (27, 273), (27, 305), (27, 333), -- Dung Huynh
-    (28, 205), (28, 241), (28, 272), (28, 303), -- Muhammad Ikram
-    (29, 17), -- Gity Karami
-    (30, 179), (30, 184), (30, 247), (30, 252), (30, 308), -- Shyam Karrah
-    (31, 12), (31, 20), (31, 21), (31, 56), (31, 57), (31, 68), (31, 86), (31, 91), (31, 92), (31, 131), (31, 132), (31, 141), (31, 158), (31, 160), (31, 167), (31, 168), (31, 203), (31, 204), (31, 210), (31, 238), (31, 239), (31, 271), (31, 301), -- Ziaullah Khan
-    (32, 96), (32, 134), -- Pushpa Kumar
-    (33, 2), (33, 35), (33, 42), (33, 44), (33, 74), -- Khiem Le
-    (34, 298), -- Jianqiang Li
-    (35, 236), (35, 258), (35, 259), -- Beiyu Lin
-    (36, 122), -- Barbara Maweu
-    (37, 67), (37, 303), -- Richard Min
-    (38, 249), (38, 254), -- Neeraj Mittal
-    (39, 59), -- Anurag Nagar
-    (40, 73), (40, 104), (40, 176), (40, 303), (40, 320), -- Priya Narayanasami
-    (41, 163), (41, 240), (41, 302), -- Andrew Nemec
-    (42, 134), (42, 241), -- Nhut Nguyen
-    (43, 241), (43, 244), (43, 255), (43, 313), -- Palina Niamkova
-    (44, 15), (44, 22), (44, 49), (44, 87), (44, 93), (44, 123), -- Greg Ozbirn
-    (45, 84), (45, 148), (45, 155), (45, 285), -- Erik Peterson
-    (46, 241), -- Ravi Prakash
-    (47, 26), (47, 30), (47, 100), (47, 101), (47, 174), (47, 304), -- Benjamin Raichel
-    (48, 11), (48, 154), -- Ramana Ramachandran
-    (49, 4), (49, 25), (49, 33), (49, 36), (49, 59), (49, 96), (49, 113), (49, 117), (49, 134), (49, 143), (49, 144), (49, 171), (49, 172), (49, 205), (49, 213), (49, 215), (49, 217), (49, 241), (49, 244), (49, 250), (49, 255), (49, 272), (49, 280), (49, 282), (49, 303), (49, 312), (49, 313), (49, 332), -- Miguel Razo Razo
-    (50, 6), (50, 46), (50, 47), (50, 119), (50, 120), (50, 188), (50, 189), (50, 256), (50, 257), (50, 316), (50, 318), -- Brian Ricks
-    (51, 171), (51, 205), -- Raed Salih
-    (52, 272), -- Anahita Samadi
-    (53, 205), (53, 241), (53, 272), -- Selim Sarac
-    (54, 51), (54, 125), (54, 156), (54, 195), (54, 199), (54, 219), (54, 221), (54, 234), (54, 262), (54, 266), (54, 286), (54, 289), (54, 296), (54, 297), (54, 322), (54, 327), -- Meghana Satpute
-    (55, 279), (55, 303), -- Sadi Seker
-    (56, 159), (56, 193), -- David Sims
-    (57, 1), (57, 7), (57, 38), (57, 39), (57, 45), (57, 72), (57, 78), (57, 109), (57, 110), (57, 118), (57, 145), (57, 150), (57, 182), (57, 185), (57, 190), (57, 224), (57, 227), (57, 246), -- Jason Smith
-    (58, 34), (58, 105), (58, 107), (58, 108), (58, 146), (58, 177), (58, 180), (58, 245), (58, 248), (58, 281), (58, 283), (58, 306), (58, 309), (58, 315), -- Srimathi Srinivasan
-    (59, 171), (59, 183), (59, 192), (59, 205), -- Aditya Srivastava
-    (60, 157), (60, 260), -- Zachary Stallbohm
-    (61, 59), (61, 134), -- Laurie Thompson
-    (62, 264), -- Siva Sai Nagender Vasireddy
-    (63, 8), (63, 9), (63, 37), (63, 152), (63, 191), (63, 223), (63, 249), (63, 254), (63, 292), (63, 332), -- Jeyakesavan Veerasamy
-    (64, 251), (64, 253), (64, 314), -- James Willson
-    (65, 59), -- Nurcan Yuruk
-    (66, 19), (66, 23), (66, 50), (66, 52), (66, 69), (66, 124), (66, 142), (66, 201), (66, 212), -- Yi Zhao
-    (67, 303); -- Hao Zhou
+    (1, 59), (1, 90), (1, 94), (1, 134), (1, 164), (1, 166), (1, 196), (1, 205), (1, 263), (1, 267), (1, 272), (1, 323), (1, 325), (1, 332), -- Adele Amberly
+    (2, 48), (2, 151), (2, 153), (2, 181), (2, 214), (2, 249), (2, 254), (2, 290), (2, 293), -- Ansel Ashcombe
+    (3, 3), (3, 134), (3, 205), -- Beatrix Bellwood
+    (4, 13), (4, 14), (4, 55), (4, 269), -- Cassius Birchfield
+    (5, 31), (5, 63), (5, 102), (5, 126), (5, 137), (5, 207), (5, 324), -- Delphine Blackmere
+    (6, 216), -- Emeric Brambleton
+    (7, 5), (7, 48), (7, 76), (7, 218), (7, 228), -- Fiona Brightwater
+    (8, 134), -- Gideon Brookhollow
+    (9, 161), (9, 169), (9, 198), (9, 211), (9, 226), (9, 229), (9, 276), (9, 284), (9, 288), (9, 291), (9, 317), (9, 319), -- Hollis Carrowmore
+    (10, 10), (10, 83), (10, 96), -- Isolde Castellan
+    (11, 29), (11, 70), (11, 97), (11, 98), (11, 129), (11, 173), (11, 242), -- Jude Cindervale
+    (12, 59), (12, 96), (12, 134), (12, 171), (12, 205), (12, 241), (12, 272), (12, 303), (12, 332), -- Kaia Clearbrook
+    (13, 178), (13, 200), (13, 225), (13, 230), (13, 232), (13, 235), (13, 270), (13, 277), (13, 278), (13, 294), (13, 310), (13, 311), (13, 328), (13, 330), -- Leander Coldwell
+    (14, 71), -- Marisol Dalgrave
+    (15, 82), (15, 136), -- Nico Deepwell
+    (16, 41), (16, 43), (16, 112), (16, 114), -- Odette Dunmore
+    (17, 194), (17, 233), (17, 261), (17, 299), (17, 321), -- Perrin Duskwood
+    (18, 272), -- Rhea Eastbrook
+    (19, 32), (19, 40), (19, 65), (19, 75), (19, 103), (19, 111), (19, 115), (19, 116), (19, 140), (19, 147), (19, 186), (19, 187), -- Silas Elderidge
+    (20, 64), (20, 138), (20, 208), (20, 274), (20, 334), -- Thea Emberton
+    (21, 27), (21, 62), (21, 130), (21, 165), (21, 326), -- Ulric Fairhaven
+    (22, 53), (22, 54), (22, 77), (22, 79), (22, 80), (22, 81), (22, 127), (22, 128), (22, 149), (22, 220), (22, 222), (22, 275), (22, 287), -- Vivian Fernsby
+    (23, 24), (23, 61), (23, 95), (23, 170), -- Wesley Foxhollow
+    (24, 171), -- Yara Frostholm
+    (25, 66), (25, 85), (25, 106), (25, 121), (25, 139), (25, 209), -- Zane Glenhurst
+    (26, 16), (26, 18), (26, 58), (26, 88), (26, 89), (26, 133), (26, 162), (26, 197), (26, 202), (26, 231), (26, 237), (26, 265), (26, 268), (26, 295), (26, 300), (26, 329), (26, 331), -- Arlo Glimmerton
+    (27, 28), (27, 60), (27, 99), (27, 135), (27, 175), (27, 206), (27, 243), (27, 273), (27, 305), (27, 333), -- Bianca Goldmere
+    (28, 205), (28, 241), (28, 272), (28, 303), -- Cyrus Greystone
+    (29, 17), -- Dahlia Hallowell
+    (30, 179), (30, 184), (30, 247), (30, 252), (30, 308), -- Elio Harrowgate
+    (31, 12), (31, 20), (31, 21), (31, 56), (31, 57), (31, 68), (31, 86), (31, 91), (31, 92), (31, 131), (31, 132), (31, 141), (31, 158), (31, 160), (31, 167), (31, 168), (31, 203), (31, 204), (31, 210), (31, 238), (31, 239), (31, 271), (31, 301), -- Avery Hazelwood
+    (32, 96), (32, 134), -- Blake Heathcote
+    (33, 2), (33, 35), (33, 42), (33, 44), (33, 74), -- Camille Highmoor
+    (34, 298), -- Dario Hollowell
+    (35, 236), (35, 258), (35, 259), -- Elena Ironwood
+    (36, 122), -- Farid Ivelmont
+    (37, 67), (37, 303), -- Greta Ivorydale
+    (38, 249), (38, 254), -- Hiro Juniper
+    (39, 59), -- Imani Kestrel
+    (40, 73), (40, 104), (40, 176), (40, 303), (40, 320), -- Jonas Lakeshore
+    (41, 163), (41, 240), (41, 302), -- Keira Larkspur
+    (42, 134), (42, 241), -- Luca Lindenhall
+    (43, 241), (43, 244), (43, 255), (43, 313), -- Mira Marchbank
+    (44, 15), (44, 22), (44, 49), (44, 87), (44, 93), (44, 123), -- Nikhil Meadowcroft
+    (45, 84), (45, 148), (45, 155), (45, 285), -- Orla Merriweather
+    (46, 241), -- Pavel Millbrook
+    (47, 26), (47, 30), (47, 100), (47, 101), (47, 174), (47, 304), -- Quinn Moorfield
+    (48, 11), (48, 154), -- Rosa Northcott
+    (49, 4), (49, 25), (49, 33), (49, 36), (49, 59), (49, 96), (49, 113), (49, 117), (49, 134), (49, 143), (49, 144), (49, 171), (49, 172), (49, 205), (49, 213), (49, 215), (49, 217), (49, 241), (49, 244), (49, 250), (49, 255), (49, 272), (49, 280), (49, 282), (49, 303), (49, 312), (49, 313), (49, 332), -- Soren Oakhurst
+    (50, 6), (50, 46), (50, 47), (50, 119), (50, 120), (50, 188), (50, 189), (50, 256), (50, 257), (50, 316), (50, 318), -- Tamsin Oldcastle
+    (51, 171), (51, 205), -- Umar Penhallow
+    (52, 272), -- Vera Quarrington
+    (53, 205), (53, 241), (53, 272), -- Wren Ravenhill
+    (54, 51), (54, 125), (54, 156), (54, 195), (54, 199), (54, 219), (54, 221), (54, 234), (54, 262), (54, 266), (54, 286), (54, 289), (54, 296), (54, 297), (54, 322), (54, 327), -- Xiomara Ridgeway
+    (55, 279), (55, 303), -- Yusuf Rookwood
+    (56, 159), (56, 193), -- Zara Rosedale
+    (57, 1), (57, 7), (57, 38), (57, 39), (57, 45), (57, 72), (57, 78), (57, 109), (57, 110), (57, 118), (57, 145), (57, 150), (57, 182), (57, 185), (57, 190), (57, 224), (57, 227), (57, 246), -- Anika Saltmarsh
+    (58, 34), (58, 105), (58, 107), (58, 108), (58, 146), (58, 177), (58, 180), (58, 245), (58, 248), (58, 281), (58, 283), (58, 306), (58, 309), (58, 315), -- Bram Silverton
+    (59, 171), (59, 183), (59, 192), (59, 205), -- Celeste Southwick
+    (60, 157), (60, 260), -- Devika Stonebridge
+    (61, 59), (61, 134), -- Esme Thistlewood
+    (62, 264), -- Felix Thornbury
+    (63, 8), (63, 9), (63, 37), (63, 152), (63, 191), (63, 223), (63, 249), (63, 254), (63, 292), (63, 332), -- Gemma Underhill
+    (64, 251), (64, 253), (64, 314), -- Hugo Valemont
+    (65, 59), -- Ines Westbrook
+    (66, 19), (66, 23), (66, 50), (66, 52), (66, 69), (66, 124), (66, 142), (66, 201), (66, 212), -- Jasper Willowby
+    (67, 303); -- Kofi Winterbourne
