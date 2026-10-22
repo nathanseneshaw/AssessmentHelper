@@ -115,6 +115,9 @@ describe("signing in", () => {
     );
     expect(currentPath()).toBe("/faculty");
     expect(screen.getByText("Demo Faculty")).toBeDefined();
+    expect(
+      JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}").professorId,
+    ).toBe(3);
   });
 
   test("assessment committee members land on the AC overview", async () => {

@@ -42,6 +42,49 @@ On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
 The shared frontend API client sends requests to the backend at http://localhost:8080.
 
+## Course and section selection (issue #37)
+
+Start both servers, sign in with `faculty@utdallas.edu` / `Faculty123!`, and open
+**Sign Up for Evaluation** (`/faculty/signup`). Sign out and back in once if you
+have a session saved before this feature. The demo account maps to seeded
+professor 3 (Carol), who teaches CS 101 sections 002/003 and CS 3345 section 001
+in Fall 2026. Existing observation records and their IDs are unchanged.
+
+Choose a semester, course, and section, review the meeting details, and save.
+Only that professor's teaching sections appear. Reopening the semester restores
+the saved selection. A pending selection can be changed; a matched/completed
+signup cannot be changed through this form. Changing the course or semester
+clears the dependent selection. Loading failures offer a retry, and a failed
+save retains the selection without showing success.
+
+The catalog endpoints needed by #78 are included:
+
+| Endpoint | Result |
+| --- | --- |
+| `GET /api/semesters` | All semesters; optional `signupOpen=true` limits to semesters with an OPEN cycle |
+| `GET /api/courses` | Seeded courses |
+| `GET /api/sections` | Sections; optional `semesterId`, `courseId`, and `professorId` filters combine |
+| `GET /api/professors/{professorId}/evaluation-signups/{semesterId}` | Saved signup, or 204 if none exists |
+| `PUT /api/professors/{professorId}/evaluation-signups/{semesterId}` | Save `{ "sectionId": 9 }`; return the saved signup |
+
+The save endpoint checks teaching ownership, section/semester consistency,
+professor activity, and a single OPEN evaluation cycle. It creates the observee
+record when needed. Repeated requests reuse the signup, and a professor-row lock
+serializes concurrent selections. Non-pending signups retain their section and
+observation links. Deadline and eligibility enforcement are separate policies;
+this feature uses the cycle's OPEN status rather than adding a deadline rule.
+
+Authentication is still the project's mock login: `professorId` is a demo mapping,
+not authenticated proof of identity. Production authorization must derive the
+professor from the server-side authenticated user. The API validates teaching
+ownership against the supplied professor, consistent with the existing demo APIs.
+Saved selections persist across browser refreshes but reset when the in-memory
+backend database restarts.
+
+Validation: `bun test src/pages/faculty/EvaluationSignup.test.tsx` in `frontend/`
+and `./gradlew test --tests '*EvaluationSignupIntegrationTests'` in `backend/`
+(use `.\gradlew.bat` on Windows).
+
 ## Overdue evaluation notifications
 
 The Faculty Evaluations page loads all active faculty from
