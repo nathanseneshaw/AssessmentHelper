@@ -32,7 +32,7 @@ export function Modal({
       <dialog
         open
         aria-labelledby="modal-title"
-        className="relative m-0 w-full max-w-xl rounded-xl border border-line bg-white p-6 text-ink shadow-xl"
+        className="relative m-0 max-h-[90vh] overflow-y-auto w-full max-w-xl rounded-xl border border-line bg-white p-6 text-ink shadow-xl"
       >
         <div className="flex items-start justify-between gap-4">
           <div>

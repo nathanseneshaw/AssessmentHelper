@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,12 @@ public class ObserverRequestService {
     private final EvaluationSignupRepository signupRepository;
     private final ObserverRepository observerRepository;
     private final Clock clock;
+    private ObserverEligibilityService eligibility;
+
+    @Autowired(required = false)
+    void setEligibility(ObserverEligibilityService eligibility) {
+        this.eligibility = eligibility;
+    }
 
     public ObserverRequestService(
             ObserverRequestRepository repository,
@@ -62,6 +69,13 @@ public class ObserverRequestService {
         }
         if (!observerRepository.existsById(observerId)) {
             throw new NotFoundException("No observer with id " + observerId);
+        }
+        if (eligibility != null && eligibility.manages(signupId)) {
+            eligibility.sendExistingRequest(signupId, observerId);
+            return repository.findBySignupId(signupId).stream()
+                    .filter(r -> r.observerId().equals(observerId))
+                    .findFirst()
+                    .orElseThrow();
         }
         LocalDateTime now = now();
         LocalDateTime expires = expirationDate != null ? expirationDate : now.plus(DEFAULT_RESPONSE_WINDOW);
@@ -95,6 +109,10 @@ public class ObserverRequestService {
     @Transactional
     public ObserverRequest confirm(Integer requestId) {
         ObserverRequest request = expireIfOverdue(load(requestId));
+        if (eligibility != null && eligibility.manages(request.signupId())) {
+            eligibility.confirmExistingRequest(requestId);
+            return load(requestId);
+        }
         if (EXPIRED.equals(request.status())) {
             throw new ConflictException("Request " + requestId + " has expired");
         }

@@ -19,6 +19,7 @@ import { FacultyHistory } from "./pages/faculty/History";
 import { FacultyObservationDetails } from "./pages/faculty/ObservationDetails";
 import { FacultyObservationsForMe } from "./pages/faculty/ObservationsForMe";
 import { FacultyObservationsForOthers } from "./pages/faculty/ObservationsForOthers";
+import { FacultyObserverRequests } from "./pages/faculty/ObserverRequests";
 import { FacultyObservers } from "./pages/faculty/Observers";
 import { Login } from "./pages/Login";
 import { NotFound } from "./pages/NotFound";
@@ -55,6 +56,7 @@ export function App() {
               <Route path="/faculty" element={<FacultyDashboard />}>
                 <Route path="signup" element={<FacultyEvaluationSignup />} />
                 <Route path="observers" element={<FacultyObservers />} />
+                <Route path="requests" element={<FacultyObserverRequests />} />
                 <Route path="history" element={<FacultyHistory />} />
                 <Route
                   path="observations/me"

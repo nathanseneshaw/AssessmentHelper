@@ -20,7 +20,7 @@ export function Login() {
 
   const handleLogin = (account: AuthUser) => {
     const role = ROLE_FOR[account.role];
-    login({ role, name: account.name });
+    login({ role, name: account.name, professorId: 1 });
     navigate(HOME_PATH[role], { replace: true });
   };
 

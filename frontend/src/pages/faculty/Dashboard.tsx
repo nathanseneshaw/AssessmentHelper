@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
 import { Link, Outlet } from "react-router-dom";
+import {
+  type FacultyState,
+  observerButton,
+  type Person,
+  useObserverData,
+} from "../../api/observerEligibility";
+import { useAuth } from "../../auth/AuthContext";
 
 const summary = [
   {
@@ -92,6 +99,33 @@ function SectionCard({
 }
 
 export function FacultyDashboard() {
+  const { user, login } = useAuth();
+  const id = user?.professorId ?? 1;
+  const { data, error } = useObserverData<FacultyState>(`/faculty/${id}`);
+  const { data: people } = useObserverData<Person[]>("/faculty");
+  const released = !!data?.signup?.released;
+  const canSignup = !!data?.cycle?.signupOpen && !data?.signup && !error;
+  const facultyLink = (to: string, label: string, enabled: boolean) =>
+    enabled ? (
+      <Link to={to} className={observerButton}>
+        {label}
+      </Link>
+    ) : (
+      <button type="button" disabled className={observerButton}>
+        {label}
+      </button>
+    );
+  const liveSummary = summary.map((item) =>
+    item.label === "Observations This Term"
+      ? {
+          ...item,
+          value: String(
+            data?.outgoing?.filter((r) => r.status === "CONFIRMED").length ?? 0,
+          ),
+          note: "Accepted observer requests",
+        }
+      : item,
+  );
   return (
     <div className="mx-auto max-w-6xl">
       <p className="font-semibold text-brand-green text-xs tracking-wide">
@@ -106,18 +140,12 @@ export function FacultyDashboard() {
           </p>
         </div>
         <div className="flex gap-3">
-          <Link
-            to="/faculty/observers"
-            className="rounded-lg bg-btn-gray px-5 py-3 font-medium text-sm text-white hover:opacity-90"
-          >
-            View Generated Observers
-          </Link>
-          <Link
-            to="/faculty/signup"
-            className="rounded-lg bg-btn-gray px-5 py-3 font-medium text-sm text-white hover:opacity-90"
-          >
-            Sign Up for Evaluation
-          </Link>
+          {facultyLink(
+            "/faculty/observers",
+            "View Generated Observers",
+            released && !error,
+          )}
+          {facultyLink("/faculty/signup", "Sign Up for Evaluation", canSignup)}
         </div>
       </div>
 
@@ -127,18 +155,97 @@ export function FacultyDashboard() {
             P1
           </div>
           <div>
-            <p className="font-semibold">Professor 1</p>
+            <p className="font-semibold">
+              {data?.professor?.name ?? "Loading professor..."}
+            </p>
             <p className="text-ink/60 text-xs">
               Associate Professor • School of ECS
             </p>
           </div>
         </div>
-        <p className="text-ink/60 text-sm">Fall 2026 Cycle</p>
+        <p className="text-ink/60 text-sm">
+          {data?.cycle?.label ?? "Current"} Cycle
+        </p>
       </div>
 
+      {error && (
+        <p role="alert" className="mt-4 text-brand-red">
+          {error}
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg border border-line bg-white p-4">
+        <label className="text-sm">
+          Demo faculty identity{" "}
+          <select
+            value={id}
+            onChange={(e) => {
+              const p = people?.find(
+                (p) => p.professorId === Number(e.target.value),
+              );
+              if (p && user)
+                login({ ...user, professorId: p.professorId, name: p.name });
+            }}
+            className="ml-3 rounded border border-line p-2"
+          >
+            {Array.isArray(people) &&
+              people.map((p) => (
+                <option key={p.professorId} value={p.professorId}>
+                  {p.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <Link
+          className="font-semibold text-brand-green underline"
+          to="/faculty/requests"
+        >
+          Observer Requests (
+          {data?.incoming?.filter((r) => r.status === "PENDING").length ?? 0}{" "}
+          pending)
+        </Link>
+      </div>
+      {data?.notifications && data.notifications.length > 0 && (
+        <section
+          aria-labelledby="notifications-title"
+          className="mt-4 rounded-lg border border-line bg-mist p-4"
+        >
+          <h2
+            id="notifications-title"
+            className="font-semibold text-brand-green"
+          >
+            Notifications
+          </h2>
+          <ul
+            aria-label="Notification history"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to focus this scrolling history.
+            tabIndex={0}
+            className="mt-3 max-h-40 space-y-3 overflow-y-auto pr-2 text-sm"
+          >
+            {data.notifications.map((n) => (
+              <li
+                key={n.notificationId}
+                className="border-line border-b pb-3 last:border-0"
+              >
+                <p>{n.message}</p>
+                <time
+                  dateTime={n.createdAt}
+                  className="mt-1 block text-xs text-muted"
+                >
+                  {new Date(n.createdAt).toLocaleString("en-US", {
+                    timeZone: "America/Chicago",
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}{" "}
+                  CT
+                </time>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <h2 className="mt-6 mb-3 text-ink/70 text-sm">Evaluation summary</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {summary.map((item) => (
+        {liveSummary.map((item) => (
           <div
             key={item.label}
             className="rounded-xl border border-line bg-white p-5"
