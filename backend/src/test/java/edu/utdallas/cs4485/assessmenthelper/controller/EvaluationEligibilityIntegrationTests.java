@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import edu.utdallas.cs4485.assessmenthelper.service.EvaluationEligibilityService;
+import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -20,7 +21,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Tests the real schema, seed records, JDBC repositories, service, and HTTP endpoints together. */
@@ -28,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureMockMvc
 @Import(EvaluationEligibilityIntegrationTests.FixedTime.class)
 @Transactional
+@WithMockUser(roles = "AC")
 class EvaluationEligibilityIntegrationTests {
     @TestConfiguration
     static class FixedTime {
@@ -65,10 +69,10 @@ class EvaluationEligibilityIntegrationTests {
                         .toList());
         assertThat(due.faculty())
                 .extracting(EvaluationEligibilityService.Faculty::lastName)
-                .contains("Carol");
+                .contains("Reyes");
         assertThat(overdue.faculty())
                 .extracting(EvaluationEligibilityService.Faculty::lastName)
-                .contains("Bob");
+                .contains("Martinez");
         mvc.perform(get("/api/due-evaluations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(10))
@@ -82,22 +86,22 @@ class EvaluationEligibilityIntegrationTests {
     @Test
     void remindersAndFollowUpsSaveEditedContentWithoutChangingCounts() throws Exception {
         String carolMessage = """
-                {"recipient":"carol@utdallas.edu","subject":"Edited reminder","body":"Dear Professor Carol, please sign up."}
+                {"recipient":"carol.reyes@example.edu","subject":"Edited reminder","body":"Dear Professor Reyes, please sign up."}
                 """;
         for (int i = 0; i < 2; i++) {
-            mvc.perform(post("/api/due-evaluations/1/professors/3/notifications")
+            mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/3/notifications"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(carolMessage))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.notificationId").isNumber())
-                    .andExpect(jsonPath("$.recipient").value("carol@utdallas.edu"))
+                    .andExpect(jsonPath("$.recipient").value("carol.reyes@example.edu"))
                     .andExpect(jsonPath("$.subject").value("Edited reminder"))
                     .andExpect(jsonPath("$.sentAt").value("2026-10-21T10:00:00"));
         }
-        mvc.perform(post("/api/overdue-evaluations/1/professors/2/notifications")
+        mvc.perform(withCsrfToken(post("/api/overdue-evaluations/1/professors/2/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"bob@utdallas.edu","subject":"Overdue reminder","body":"Dear Professor Bob, please sign up."}
+                                {"recipient":"bob.martinez@example.edu","subject":"Overdue reminder","body":"Dear Professor Martinez, please sign up."}
                                 """))
                 .andExpect(status().isOk());
         assertThat(db.queryForObject("SELECT COUNT(*) FROM evaluation_notification", Integer.class))
@@ -105,7 +109,7 @@ class EvaluationEligibilityIntegrationTests {
         assertThat(db.queryForObject(
                         "SELECT COUNT(*) FROM evaluation_notification WHERE professor_id = 3 AND body = ?",
                         Integer.class,
-                        "Dear Professor Carol, please sign up."))
+                        "Dear Professor Reyes, please sign up."))
                 .isEqualTo(2);
         assertThat(service.findDue().count()).isEqualTo(10);
         assertThat(service.findOverdue().count()).isEqualTo(10);
@@ -125,22 +129,22 @@ class EvaluationEligibilityIntegrationTests {
 
     @Test
     void invalidOrStaleNotificationsNeverWriteToDatabase() throws Exception {
-        mvc.perform(post("/api/due-evaluations/1/professors/3/notifications")
+        mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/3/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"wrong@utdallas.edu","subject":"Reminder","body":"Message"}
+                                {"recipient":"wrong@example.edu","subject":"Reminder","body":"Message"}
                                 """))
                 .andExpect(status().isBadRequest());
-        mvc.perform(post("/api/due-evaluations/1/professors/2/notifications")
+        mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/2/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"bob@utdallas.edu","subject":"Reminder","body":"Message"}
+                                {"recipient":"bob.martinez@example.edu","subject":"Reminder","body":"Message"}
                                 """))
                 .andExpect(status().isConflict());
-        mvc.perform(post("/api/due-evaluations/99/professors/3/notifications")
+        mvc.perform(withCsrfToken(post("/api/due-evaluations/99/professors/3/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"carol@utdallas.edu","subject":"Reminder","body":"Message"}
+                                {"recipient":"carol.reyes@example.edu","subject":"Reminder","body":"Message"}
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("The evaluation cycle changed. Refresh the evaluation list."));
@@ -175,5 +179,18 @@ class EvaluationEligibilityIntegrationTests {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail")
                         .value("No unique semester contains today's date. Configure semester dates first."));
+    }
+
+    @Test
+    @WithMockUser
+    void onlyCommitteeMembersCanSeeTheLists() throws Exception {
+        mvc.perform(get("/api/due-evaluations")).andExpect(status().isForbidden());
+        mvc.perform(get("/api/overdue-evaluations")).andExpect(status().isForbidden());
+    }
+
+    private MockHttpServletRequestBuilder withCsrfToken(MockHttpServletRequestBuilder request) throws Exception {
+        Cookie token =
+                mvc.perform(get("/api/auth/csrf")).andReturn().getResponse().getCookie("XSRF-TOKEN");
+        return request.cookie(token).header("X-XSRF-TOKEN", token.getValue());
     }
 }

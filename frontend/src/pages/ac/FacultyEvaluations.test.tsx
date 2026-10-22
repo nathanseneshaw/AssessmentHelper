@@ -7,13 +7,11 @@ import {
   within,
 } from "@testing-library/react";
 import { App } from "../../App";
-import { STORAGE_KEY } from "../../auth/AuthContext";
+import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 
 beforeEach(async () => {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "ac", name: "Test User" }),
-  );
+  fakeBackend();
+  signInAs("ac");
   window.history.pushState({}, "", "/ac/evaluations");
   render(<App />);
   await screen.findByRole("heading", { level: 1, name: "Faculty Evaluations" });
@@ -21,7 +19,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
+  resetBackend();
 });
 
 // The first cell of each body row (the header row has column headers, not cells).
