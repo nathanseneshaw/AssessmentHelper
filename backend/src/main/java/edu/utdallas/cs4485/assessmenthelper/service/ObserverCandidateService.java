@@ -99,7 +99,7 @@ public class ObserverCandidateService {
      * section first, then every section of its semester with its courses and teachers) and matched up in memory, so the
      * number of queries does not grow with the size of the department.
      *
-     * @throws InvalidRequestException if an argument is blank, or the course number is not numeric apart from its
+     * @throws IllegalArgumentException if an argument is blank, or the course number is not numeric apart from its
      *     department code
      * @throws NotFoundException if no such course or section exists, or the named professor does not teach it
      */
@@ -112,7 +112,7 @@ public class ObserverCandidateService {
         Matcher matcher = COURSE.matcher(course);
         OptionalInt parsedLevel = matcher.matches() ? courseLevel(matcher.group(2)) : OptionalInt.empty();
         if (parsedLevel.isEmpty()) {
-            throw new InvalidRequestException("courseNumber must be a number, optionally after a department code"
+            throw new IllegalArgumentException("courseNumber must be a number, optionally after a department code"
                     + " (such as 4348 or CS 4348), but was '" + course + "'");
         }
         int observedLevel = parsedLevel.getAsInt();
@@ -237,7 +237,7 @@ public class ObserverCandidateService {
 
     private static String requireText(String value, String parameter) {
         if (value == null || value.isBlank()) {
-            throw new InvalidRequestException(parameter + " must not be blank");
+            throw new IllegalArgumentException(parameter + " must not be blank");
         }
         return value.strip();
     }

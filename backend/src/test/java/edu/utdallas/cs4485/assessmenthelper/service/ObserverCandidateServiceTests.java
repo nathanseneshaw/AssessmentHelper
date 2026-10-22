@@ -7,6 +7,7 @@ import edu.utdallas.cs4485.assessmenthelper.entity.Course;
 import edu.utdallas.cs4485.assessmenthelper.entity.CourseSection;
 import edu.utdallas.cs4485.assessmenthelper.entity.Department;
 import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
+import edu.utdallas.cs4485.assessmenthelper.entity.School;
 import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
 import edu.utdallas.cs4485.assessmenthelper.entity.TeachingHistory;
 import java.time.LocalDate;
@@ -50,7 +51,8 @@ class ObserverCandidateServiceTests {
     /** The observee teaches TEST 3345.001 on TR 10:00-11:15 in the fall. */
     @BeforeEach
     void createObservee() {
-        department = db.insert(new Department(null, "Test Department", "TEST"));
+        School school = db.insert(new School(null, "Test School"));
+        department = db.insert(new Department(null, school.schoolId(), "Test Department", "TEST"));
         // The fall semester is inserted first, so it has the lower id even though it starts later.
         fall = db.insert(new Semester(null, "Fall", 2026, LocalDate.of(2026, 8, 24), LocalDate.of(2026, 12, 11)));
         spring = db.insert(new Semester(null, "Spring", 2026, LocalDate.of(2026, 1, 12), LocalDate.of(2026, 5, 8)));
@@ -162,7 +164,9 @@ class ObserverCandidateServiceTests {
 
     @Test
     void professorsOutsideTheDepartmentAreNotCandidates() {
-        Department otherDepartment = db.insert(new Department(null, "Other Department", "OTHER"));
+        // Same school, but a different department.
+        Department otherDepartment =
+                db.insert(new Department(null, department.schoolId(), "Other Department", "OTHER"));
         // Teaches a higher level course of the observed department, but belongs to another department.
         Professor outsider = db.insert(new Professor(
                 null, otherDepartment.departmentId(), null, "Otto", "Outsider", "otto@test.edu", null, true));
@@ -315,13 +319,13 @@ class ObserverCandidateServiceTests {
     @Test
     void blankArgumentsAreInvalid() {
         assertThatThrownBy(() -> service.findCandidates(" ", "001", "Olivia Observee"))
-                .isInstanceOf(InvalidRequestException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("courseNumber must not be blank");
         assertThatThrownBy(() -> service.findCandidates("3345", "", "Olivia Observee"))
-                .isInstanceOf(InvalidRequestException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("sectionNumber must not be blank");
         assertThatThrownBy(() -> service.findCandidates("3345", "001", null))
-                .isInstanceOf(InvalidRequestException.class)
+                .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("professorName must not be blank");
     }
 
@@ -330,7 +334,7 @@ class ObserverCandidateServiceTests {
         for (String courseNumber : List.of("abc", "CS 4V98", "CS 3345 001", "3345A", "1234567890")) {
             assertThatThrownBy(() -> service.findCandidates(courseNumber, "001", "Olivia Observee"))
                     .as(courseNumber)
-                    .isInstanceOf(InvalidRequestException.class)
+                    .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("'" + courseNumber + "'");
         }
     }

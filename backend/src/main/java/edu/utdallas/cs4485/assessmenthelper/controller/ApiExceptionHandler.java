@@ -1,6 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
-import edu.utdallas.cs4485.assessmenthelper.service.InvalidRequestException;
+import edu.utdallas.cs4485.assessmenthelper.service.ConflictException;
 import edu.utdallas.cs4485.assessmenthelper.service.NotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -16,8 +16,13 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
-    @ExceptionHandler(InvalidRequestException.class)
-    ProblemDetail handleInvalidRequest(InvalidRequestException e) {
+    @ExceptionHandler(ConflictException.class)
+    ProblemDetail handleConflict(ConflictException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    ProblemDetail handleBadRequest(IllegalArgumentException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 }

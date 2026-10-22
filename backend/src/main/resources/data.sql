@@ -107,59 +107,214 @@ INSERT INTO observation_response (observation_id, criterion_id, rating, comments
     (2, 2, 4,    'Most students took part in the pair exercise.'),
     (2, 3, NULL, 'Consider leaving more time for questions at the end.');
 
--- Observer candidates demo (GET /api/observer-candidates).
--- More CS courses, professors and Fall 2026 sections (semester 1) so the candidate list has something to choose from.
--- Try courseNumber=3345&sectionNumber=001&professorName=Priya Raman (CS 3345.001, TR 10:00-11:15):
---   eligible:  David Chen (4348, MW), Maria Lopez (3345, MW at the same time), Sarah Kim (6363, TR starting at 11:15),
---              Emily Davis (3345, W evening), Robert Taylor (4348, MW), Aisha Patel (4348 online, 1337 TR ending at 9:45)
---   excluded:  James Wilson (TR 10:30 overlaps), Michael Brown (only 1000/2000 level), Thomas Anderson (inactive),
---              Bob Martinez (only CS 101), Alice Nguyen (teaches nothing this semester)
--- Six professors qualify, so each request returns a random five of them.
+-- Completed history for eight additional professors. Seven are overdue; Tara's
+-- annual recurrence is due in Fall 2026. The original demo IDs stay stable.
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Spring', 2024, '2024-01-08', '2024-05-10'),
+    ('Spring', 2023, '2023-01-09', '2023-05-12'),
+    ('Fall',   2023, '2023-08-21', '2023-12-08');
 
--- Course ids 2-6
-INSERT INTO course (department_id, course_code, course_number, course_name, course_level) VALUES
-    (1, 'CS', '1337', 'Computer Science I',                                                'UNDERGRADUATE'),
-    (1, 'CS', '2336', 'Computer Science II',                                               'UNDERGRADUATE'),
-    (1, 'CS', '3345', 'Data Structures and Introduction to Algorithmic Analysis',          'UNDERGRADUATE'),
-    (1, 'CS', '4348', 'Operating Systems Concepts',                                        'UNDERGRADUATE'),
-    (1, 'CS', '6363', 'Design and Analysis of Computer Algorithms',                        'GRADUATE');
+INSERT INTO evaluation_cycle (semester_id, signup_deadline, observation_deadline, feedback_deadline, status) VALUES
+    (3, '2024-02-01', '2024-04-15', '2024-05-01', 'CLOSED'),
+    (4, '2023-02-01', '2023-04-25', '2023-05-01', 'CLOSED'),
+    (5, '2023-09-15', '2023-11-15', '2023-12-01', 'CLOSED');
 
--- Professor ids 3-12
-INSERT INTO professor (department_id, professor_rank, first_name, last_name, email, hire_date, active_status) VALUES
-    (1, 'ASSOCIATE', 'Priya',   'Raman',    'priya.raman@utdallas.edu',     '2015-08-15', TRUE),
-    (1, 'FULL',      'David',   'Chen',     'david.chen@utdallas.edu',      '2004-08-15', TRUE),
-    (1, 'ASSISTANT', 'Maria',   'Lopez',    'maria.lopez@utdallas.edu',     '2023-08-15', TRUE),
-    (1, 'ASSOCIATE', 'James',   'Wilson',   'james.wilson@utdallas.edu',    '2014-08-15', TRUE),
-    (1, 'FULL',      'Sarah',   'Kim',      'sarah.kim@utdallas.edu',       '2006-08-15', TRUE),
-    (1, 'ASSISTANT', 'Michael', 'Brown',    'michael.brown@utdallas.edu',   '2022-08-15', TRUE),
-    (1, 'ASSOCIATE', 'Emily',   'Davis',    'emily.davis@utdallas.edu',     '2016-08-15', TRUE),
-    (1, 'FULL',      'Robert',  'Taylor',   'robert.taylor@utdallas.edu',   '2001-08-15', TRUE),
-    (1, 'ASSISTANT', 'Aisha',   'Patel',    'aisha.patel@utdallas.edu',     '2024-08-15', TRUE),
-    (1, 'FULL',      'Thomas',  'Anderson', 'thomas.anderson@utdallas.edu', '1998-08-15', FALSE);
-
--- Section ids 3-14, all in Fall 2026
 INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location) VALUES
-    (4, 1, '001', 'TR',  '10:00:00', '11:15:00', 'ECSS 2.410'),
-    (5, 1, '001', 'MW',  '13:00:00', '14:15:00', 'ECSS 2.306'),
-    (4, 1, '002', 'MW',  '10:00:00', '11:15:00', 'ECSS 2.415'),
-    (5, 1, '002', 'TR',  '10:30:00', '11:45:00', 'ECSS 2.412'),
-    (6, 1, '001', 'TR',  '11:15:00', '12:30:00', 'ECSS 2.203'),
-    (2, 1, '001', 'MWF', '09:00:00', '09:50:00', 'SCI 1.210'),
-    (3, 1, '001', 'TR',  '14:30:00', '15:45:00', 'ECSS 2.311'),
-    (4, 1, '003', 'W',   '19:00:00', '21:45:00', 'ECSS 2.410'),
-    (5, 1, '003', 'MW',  '16:00:00', '17:15:00', 'ECSS 2.306'),
-    (5, 1, '501', NULL,  NULL,       NULL,       'Online'),
-    (2, 1, '002', 'TR',  '08:30:00', '09:45:00', 'SCI 1.220'),
-    (5, 1, '004', 'F',   '10:00:00', '12:45:00', 'ECSS 2.412');
+    (1, 3, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
+    (1, 4, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
+    (1, 5, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204');
+
+INSERT INTO observer (professor_id, cycle_id, active_status) VALUES
+    (1, 3, TRUE), (1, 4, TRUE), (1, 5, TRUE);
+
+-- Professor IDs 13-20: Maya, Noah, Olivia, Paul, Quinn, Rose, Sam, Tara.
+INSERT INTO observee (professor_id, cycle_id, status) VALUES
+    (13, 2, 'COMPLETED'), (14, 3, 'COMPLETED'),
+    (15, 4, 'COMPLETED'), (16, 2, 'COMPLETED'),
+    (17, 3, 'COMPLETED'), (18, 3, 'COMPLETED'),
+    (19, 2, 'COMPLETED'), (20, 5, 'COMPLETED');
 
 INSERT INTO teaching_history (professor_id, section_id) VALUES
-    (3, 3),             -- Priya Raman:     CS 3345.001
-    (4, 4),             -- David Chen:      CS 4348.001
-    (5, 5),             -- Maria Lopez:     CS 3345.002
-    (6, 6),             -- James Wilson:    CS 4348.002
-    (7, 7),             -- Sarah Kim:       CS 6363.001
-    (8, 8), (8, 9),     -- Michael Brown:   CS 1337.001, CS 2336.001
-    (9, 10),            -- Emily Davis:     CS 3345.003
-    (10, 11),           -- Robert Taylor:   CS 4348.003
-    (11, 12), (11, 13), -- Aisha Patel:     CS 4348.501, CS 1337.002
-    (12, 14);           -- Thomas Anderson: CS 4348.004
+    (13, 2), (14, 3), (15, 4), (16, 2),
+    (17, 3), (18, 3), (19, 2), (20, 5);
+
+INSERT INTO evaluation_signup (observee_id, section_id, signup_date, status) VALUES
+    (3, 2, '2025-03-01', 'COMPLETED'),
+    (4, 3, '2024-03-01', 'COMPLETED'),
+    (5, 4, '2023-04-11', 'COMPLETED'),
+    (6, 2, '2025-02-01', 'COMPLETED'),
+    (7, 3, '2024-03-01', 'COMPLETED'),
+    (8, 3, '2024-02-20', 'COMPLETED'),
+    (9, 2, '2025-04-21', 'COMPLETED'),
+    (10, 5, '2023-10-20', 'COMPLETED');
+
+-- A historical template that predates these completed observations.
+INSERT INTO observation_template (created_by, template_name, version, created_date, active_status) VALUES
+    (1, 'Historical Classroom Observation', 1, '2023-01-01', FALSE);
+
+INSERT INTO observation_criterion (template_id, criterion_text, question_type, required, display_order, rating_min, rating_max) VALUES
+    (2, 'Overall teaching effectiveness', 'RATING', TRUE, 1, 1, 5);
+
+INSERT INTO observation (signup_id, observer_id, template_id, observation_date, start_time, status, observee_signed, observer_signed, observee_signed_at, observer_signed_at, completed_at) VALUES
+    (3, 2, 2, '2025-03-20', '10:00:00', 'COMPLETED', TRUE, TRUE, '2025-03-20 16:00:00', '2025-03-20 15:00:00', '2025-03-20 16:00:00'),
+    (4, 3, 2, '2024-03-15', '10:00:00', 'COMPLETED', TRUE, TRUE, '2024-03-15 16:00:00', '2024-03-15 15:00:00', '2024-03-15 16:00:00'),
+    (5, 4, 2, '2023-04-20', '10:00:00', 'COMPLETED', TRUE, TRUE, '2023-04-20 16:00:00', '2023-04-20 15:00:00', '2023-04-20 16:00:00'),
+    (6, 2, 2, '2025-02-20', '10:00:00', 'COMPLETED', TRUE, TRUE, '2025-02-20 16:00:00', '2025-02-20 15:00:00', '2025-02-20 16:00:00'),
+    (7, 3, 2, '2024-03-20', '10:00:00', 'COMPLETED', TRUE, TRUE, '2024-03-20 16:00:00', '2024-03-20 15:00:00', '2024-03-20 16:00:00'),
+    (8, 3, 2, '2024-03-05', '10:00:00', 'COMPLETED', TRUE, TRUE, '2024-03-05 16:00:00', '2024-03-05 15:00:00', '2024-03-05 16:00:00'),
+    (9, 2, 2, '2025-05-01', '10:00:00', 'COMPLETED', TRUE, TRUE, '2025-05-01 16:00:00', '2025-05-01 15:00:00', '2025-05-01 16:00:00'),
+    (10, 5, 2, '2023-11-10', '10:00:00', 'COMPLETED', TRUE, TRUE, '2023-11-10 16:00:00', '2023-11-10 15:00:00', '2023-11-10 16:00:00');
+
+INSERT INTO observation_response (observation_id, criterion_id, rating, comments) VALUES
+    (3, 4, 4, 'Completed evaluation for Maya.'),
+    (4, 4, 5, 'Completed evaluation for Noah.'),
+    (5, 4, 4, 'Completed evaluation for Olivia.'),
+    (6, 4, 4, 'Completed evaluation for Paul.'),
+    (7, 4, 5, 'Completed evaluation for Quinn.'),
+    (8, 4, 4, 'Completed evaluation for Rose.'),
+    (9, 4, 5, 'Completed evaluation for Sam.'),
+    (10, 4, 4, 'Completed evaluation for Tara.');
+
+-- Exact semester boundaries for outstanding evaluations due in Spring 2026.
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Spring', 2026, '2026-01-12', '2026-05-08');
+
+-- Additional completed history: Xavier is the only professor never evaluated.
+-- Keep the same 18 due / 8 overdue / 4 upcoming classifications in Fall 2026.
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Fall', 2024, '2024-08-26', '2024-12-13'),
+    ('Fall', 2025, '2025-08-25', '2025-12-12');
+
+INSERT INTO evaluation_cycle (semester_id, signup_deadline, observation_deadline, feedback_deadline, status) VALUES
+    (7, '2024-09-15', '2024-12-06', '2024-12-13', 'CLOSED'),
+    (8, '2025-09-15', '2025-12-05', '2025-12-12', 'CLOSED'),
+    (6, '2026-02-01', '2026-04-20', '2026-05-01', 'CLOSED');
+
+INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location) VALUES
+    (1, 7, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
+    (1, 8, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204'),
+    (1, 6, '001', 'MWF', '10:00:00', '10:50:00', 'Science Hall 204');
+
+-- Olivia observed Fall 2024; Alice observed Fall 2025 and Spring 2026.
+INSERT INTO observer (professor_id, cycle_id, active_status) VALUES
+    (15, 6, TRUE), (1, 7, TRUE), (1, 8, TRUE);
+
+-- Temporary seed helper keeps observees, signups, and observations consistent.
+-- It is dropped below and is not part of the application schema.
+CREATE LOCAL TEMPORARY TABLE demo_completed_history (
+    professor_id INT, cycle_id INT, section_id INT, observer_id INT, completed_date DATE
+);
+
+INSERT INTO demo_completed_history VALUES
+    (1, 6, 6, 6, '2024-10-15'),
+    (3, 6, 6, 6, '2024-11-01'),
+    (4, 7, 7, 7, '2025-10-01'),
+    (5, 6, 6, 6, '2024-11-20'),
+    (6, 6, 6, 6, '2024-11-01'),
+    (7, 7, 7, 7, '2025-10-05'),
+    (8, 6, 6, 6, '2024-11-15'),
+    (9, 6, 6, 6, '2024-12-05'),
+    (10, 7, 7, 7, '2025-09-10'),
+    (11, 6, 6, 6, '2024-11-05'),
+    (12, 6, 6, 6, '2024-09-25'),
+    (21, 7, 7, 7, '2025-09-15'),
+    (22, 8, 8, 8, '2026-03-20'),
+    (23, 7, 7, 7, '2025-10-01'),
+    (25, 7, 7, 7, '2025-12-01'),
+    (26, 7, 7, 7, '2025-10-01'),
+    (27, 6, 6, 6, '2024-12-01'),
+    (28, 6, 6, 6, '2024-11-05'),
+    (29, 7, 7, 7, '2025-11-20'),
+    (30, 6, 6, 6, '2024-10-01');
+
+INSERT INTO observee (professor_id, cycle_id, status)
+SELECT professor_id, cycle_id, 'COMPLETED' FROM demo_completed_history;
+
+INSERT INTO teaching_history (professor_id, section_id)
+SELECT professor_id, section_id FROM demo_completed_history;
+
+INSERT INTO evaluation_signup (observee_id, section_id, signup_date, status)
+SELECT o.observee_id, h.section_id, h.completed_date, 'COMPLETED'
+FROM demo_completed_history h
+JOIN observee o ON o.professor_id = h.professor_id AND o.cycle_id = h.cycle_id;
+
+INSERT INTO observation (signup_id, observer_id, template_id, observation_date, start_time, status, observee_signed, observer_signed, observee_signed_at, observer_signed_at, completed_at)
+SELECT s.signup_id, h.observer_id, 2, h.completed_date, TIME '10:00:00', 'COMPLETED', TRUE, TRUE,
+    DATEADD('HOUR', 16, CAST(h.completed_date AS TIMESTAMP)),
+    DATEADD('HOUR', 15, CAST(h.completed_date AS TIMESTAMP)),
+    DATEADD('HOUR', 16, CAST(h.completed_date AS TIMESTAMP))
+FROM demo_completed_history h
+JOIN observee o ON o.professor_id = h.professor_id AND o.cycle_id = h.cycle_id
+JOIN evaluation_signup s ON s.observee_id = o.observee_id;
+
+INSERT INTO observation_response (observation_id, criterion_id, rating, comments)
+SELECT ob.observation_id, 4, 4, 'Completed historical demo evaluation.'
+FROM demo_completed_history h
+JOIN observee o ON o.professor_id = h.professor_id AND o.cycle_id = h.cycle_id
+JOIN evaluation_signup s ON s.observee_id = o.observee_id
+JOIN observation ob ON ob.signup_id = s.signup_id;
+
+DROP TABLE demo_completed_history;
+
+-- Upcoming evaluation dates also resolve to a configured semester label.
+INSERT INTO semester (term, academic_year, start_date, end_date) VALUES
+    ('Fall', 2027, '2027-08-23', '2027-12-10'),
+    ('Spring', 2028, '2028-01-10', '2028-05-05');
+
+-- Observer candidates demo (GET /api/observer-candidates).
+-- Fall 2026 CS sections for some of the professors above, so the candidate list has something to choose from.
+-- No professors are added here, because other features count every seeded professor. Courses, sections and
+-- professors are looked up by course number and email rather than by id, so rows added above don't shift them.
+-- Try courseNumber=3345&sectionNumber=001&professorName=Dave Dave (CS 3345.001, TR 10:00-11:15):
+--   eligible:  Carol (4348, MW), Ella (3345, MW at the same time), Frank (6363, TR starting at 11:15),
+--              Grace (3345, W evening), Henry (4348, MW), Iris (4348 online, 1337 TR ending at 9:45)
+--   excluded:  Jack (4348, TR 10:30 overlaps), Kate (only 1000/2000 level), Bob (only CS 101),
+--              and everyone who teaches nothing in Fall 2026
+-- Six professors qualify, so each request returns a random five of them.
+INSERT INTO course (department_id, course_code, course_number, course_name, course_level) VALUES
+    (1, 'CS', '1337', 'Computer Science I',                                       'UNDERGRADUATE'),
+    (1, 'CS', '2336', 'Computer Science II',                                      'UNDERGRADUATE'),
+    (1, 'CS', '3345', 'Data Structures and Introduction to Algorithmic Analysis', 'UNDERGRADUATE'),
+    (1, 'CS', '4348', 'Operating Systems Concepts',                               'UNDERGRADUATE'),
+    (1, 'CS', '6363', 'Design and Analysis of Computer Algorithms',               'GRADUATE');
+
+INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time, location)
+SELECT course.course_id, semester.semester_id, demo.section_number, demo.meeting_days,
+       demo.start_time, demo.end_time, demo.location
+FROM (VALUES
+    ('3345', '001', 'TR',  '10:00:00', '11:15:00', 'ECSS 2.410'),
+    ('4348', '001', 'MW',  '13:00:00', '14:15:00', 'ECSS 2.306'),
+    ('3345', '002', 'MW',  '10:00:00', '11:15:00', 'ECSS 2.415'),
+    ('4348', '002', 'TR',  '10:30:00', '11:45:00', 'ECSS 2.412'),
+    ('6363', '001', 'TR',  '11:15:00', '12:30:00', 'ECSS 2.203'),
+    ('1337', '001', 'MWF', '09:00:00', '09:50:00', 'SCI 1.210'),
+    ('2336', '001', 'TR',  '14:30:00', '15:45:00', 'ECSS 2.311'),
+    ('3345', '003', 'W',   '19:00:00', '21:45:00', 'ECSS 2.410'),
+    ('4348', '003', 'MW',  '16:00:00', '17:15:00', 'ECSS 2.306'),
+    ('4348', '501', NULL,  NULL,       NULL,       'Online'),
+    ('1337', '002', 'TR',  '08:30:00', '09:45:00', 'SCI 1.220')
+) AS demo (course_number, section_number, meeting_days, start_time, end_time, location)
+JOIN course ON course.course_code = 'CS' AND course.course_number = demo.course_number
+JOIN semester ON semester.term = 'Fall' AND semester.academic_year = 2026;
+
+INSERT INTO teaching_history (professor_id, section_id)
+SELECT professor.professor_id, course_section.section_id
+FROM (VALUES
+    ('dave@utdallas.edu',  '3345', '001'),
+    ('carol@utdallas.edu', '4348', '001'),
+    ('ella@utdallas.edu',  '3345', '002'),
+    ('jack@utdallas.edu',  '4348', '002'),
+    ('frank@utdallas.edu', '6363', '001'),
+    ('kate@utdallas.edu',  '1337', '001'),
+    ('kate@utdallas.edu',  '2336', '001'),
+    ('grace@utdallas.edu', '3345', '003'),
+    ('henry@utdallas.edu', '4348', '003'),
+    ('iris@utdallas.edu',  '4348', '501'),
+    ('iris@utdallas.edu',  '1337', '002')
+) AS demo (email, course_number, section_number)
+JOIN professor ON professor.email = demo.email
+JOIN course ON course.course_code = 'CS' AND course.course_number = demo.course_number
+JOIN course_section ON course_section.course_id = course.course_id
+    AND course_section.section_number = demo.section_number
+JOIN semester ON semester.semester_id = course_section.semester_id
+    AND semester.term = 'Fall' AND semester.academic_year = 2026;

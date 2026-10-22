@@ -8,7 +8,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import edu.utdallas.cs4485.assessmenthelper.config.SecurityConfig;
-import edu.utdallas.cs4485.assessmenthelper.service.InvalidRequestException;
 import edu.utdallas.cs4485.assessmenthelper.service.NotFoundException;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverCandidate;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverCandidateService;
@@ -119,7 +118,7 @@ class ObserverCandidateControllerTests {
     @Test
     void invalidRequestReturns400ProblemDetail() throws Exception {
         when(service.findCandidates("abc", "001", "Priya Raman"))
-                .thenThrow(new InvalidRequestException("courseNumber must be a number"));
+                .thenThrow(new IllegalArgumentException("courseNumber must be a number"));
 
         mockMvc.perform(get("/api/observer-candidates")
                         .param("courseNumber", "abc")

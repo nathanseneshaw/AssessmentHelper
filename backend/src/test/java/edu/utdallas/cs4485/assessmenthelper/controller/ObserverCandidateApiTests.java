@@ -9,6 +9,7 @@ import edu.utdallas.cs4485.assessmenthelper.entity.Course;
 import edu.utdallas.cs4485.assessmenthelper.entity.CourseSection;
 import edu.utdallas.cs4485.assessmenthelper.entity.Department;
 import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
+import edu.utdallas.cs4485.assessmenthelper.entity.School;
 import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
 import edu.utdallas.cs4485.assessmenthelper.entity.TeachingHistory;
 import java.time.LocalDate;
@@ -60,8 +61,9 @@ class ObserverCandidateApiTests {
      */
     @BeforeEach
     void createData() {
-        department = db.insert(new Department(null, "Test Department", "TEST"));
-        Department otherDepartment = db.insert(new Department(null, "Other Department", "OTHER"));
+        School school = db.insert(new School(null, "Test School"));
+        department = db.insert(new Department(null, school.schoolId(), "Test Department", "TEST"));
+        Department otherDepartment = db.insert(new Department(null, school.schoolId(), "Other Department", "OTHER"));
         fall = db.insert(new Semester(null, "Fall", 2026, LocalDate.of(2026, 8, 24), LocalDate.of(2026, 12, 11)));
         Course course1337 = course(department, "1337");
         Course course3345 = course(department, "3345");
