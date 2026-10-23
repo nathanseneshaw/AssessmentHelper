@@ -7,13 +7,11 @@ import {
   within,
 } from "@testing-library/react";
 import { App } from "../../App";
-import { STORAGE_KEY } from "../../auth/AuthContext";
+import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 
 async function renderSignups() {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "ac", name: "Test User" }),
-  );
+  fakeBackend();
+  signInAs("ac");
   window.history.pushState({}, "", "/ac/signups");
   render(<App />);
   await screen.findByRole("heading", { level: 1, name: "Evaluation Signups" });
@@ -21,7 +19,7 @@ async function renderSignups() {
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
+  resetBackend();
 });
 
 test("each signup request has a Review button named for its professor", async () => {
