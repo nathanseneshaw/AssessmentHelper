@@ -48,4 +48,9 @@ public class ObserverRequestController {
     public ObserverRequest confirm(@PathVariable Integer requestId) {
         return service.confirm(requestId);
     }
+
+    @PostMapping("/{requestId}/decline")
+    public ObserverRequest decline(@PathVariable Integer requestId) {
+        return service.decline(requestId);
+    }
 }

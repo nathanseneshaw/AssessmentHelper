@@ -81,4 +81,30 @@ class ObserverRequestControllerTests {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("Request 1 has expired"));
     }
+
+    @Test
+    void declineReturnsDeclinedRequest() throws Exception {
+        ObserverRequest declined = new ObserverRequest(
+                1,
+                2,
+                3,
+                LocalDateTime.of(2026, 10, 20, 12, 0),
+                LocalDateTime.of(2026, 10, 27, 12, 0),
+                LocalDateTime.of(2026, 10, 21, 9, 0),
+                "DECLINED");
+        when(service.decline(1)).thenReturn(declined);
+
+        mockMvc.perform(post("/api/observer-requests/1/decline"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DECLINED"));
+    }
+
+    @Test
+    void decliningExpiredRequestReturns409() throws Exception {
+        when(service.decline(1)).thenThrow(new ConflictException("Request 1 has expired"));
+
+        mockMvc.perform(post("/api/observer-requests/1/decline"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Request 1 has expired"));
+    }
 }
