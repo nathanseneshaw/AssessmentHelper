@@ -274,3 +274,14 @@ INSERT INTO course_section (course_id, semester_id, section_number, meeting_days
 INSERT INTO teaching_history (professor_id, section_id)
 SELECT 3, section_id FROM course_section
 WHERE semester_id = 1 AND ((course_id = 1 AND section_number IN ('002', '003')) OR course_id = 2);
+
+-- Request demo: Dave has a signup and a proposed observer, but no request yet.
+-- Candidate generation is a separate feature; this is a fixed demonstration match.
+INSERT INTO teaching_history (professor_id, section_id) VALUES (4, 1);
+INSERT INTO observee (professor_id, cycle_id, status) VALUES (4, 1, 'ACTIVE');
+INSERT INTO evaluation_signup (observee_id, section_id, signup_date, status)
+SELECT observee_id, 1, DATE '2026-09-01', 'PENDING' FROM observee WHERE professor_id = 4 AND cycle_id = 1;
+INSERT INTO observer_match (signup_id, observer_id, generated_date, match_status)
+SELECT s.signup_id, 1, DATE '2026-09-16', 'PROPOSED'
+FROM evaluation_signup s JOIN observee e ON e.observee_id = s.observee_id
+WHERE e.professor_id = 4 AND e.cycle_id = 1;

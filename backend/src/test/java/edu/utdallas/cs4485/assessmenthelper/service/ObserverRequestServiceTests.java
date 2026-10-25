@@ -10,10 +10,12 @@ import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
 import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observer;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverMatch;
 import edu.utdallas.cs4485.assessmenthelper.entity.ObserverRequest;
 import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
 import edu.utdallas.cs4485.assessmenthelper.entity.School;
 import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -27,7 +29,11 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 @DataJdbcTest
-@Import({ObserverRequestService.class, ObserverRequestServiceTests.FixedClock.class})
+@Import({
+    ObserverRequestService.class,
+    ObserverRequestContextRepository.class,
+    ObserverRequestServiceTests.FixedClock.class
+})
 class ObserverRequestServiceTests {
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 20, 12, 0);
@@ -62,7 +68,8 @@ class ObserverRequestServiceTests {
         observer = db.insert(new Observer(null, observerProfessor.professorId(), cycle.cycleId(), true));
         CourseSection section = db.insert(
                 new CourseSection(null, course.courseId(), semester.semesterId(), "001", null, null, null, null));
-        signup = db.insert(new EvaluationSignup(null, observeeRow.observeeId(), section.sectionId(), null, null));
+        signup = db.insert(new EvaluationSignup(null, observeeRow.observeeId(), section.sectionId(), null, "PENDING"));
+        db.insert(new ObserverMatch(null, signup.signupId(), observer.observerId(), NOW.toLocalDate(), "PROPOSED"));
     }
 
     @Test
