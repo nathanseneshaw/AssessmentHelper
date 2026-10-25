@@ -15,9 +15,13 @@ public class ProfessorAccess {
         this.departmentRepository = departmentRepository;
     }
 
+    public boolean isSelf(AccountPrincipal principal, Integer professorId) {
+        return professorId.equals(principal.user().professorId());
+    }
+
     public boolean canView(AccountPrincipal principal, Integer professorId) {
         CurrentUser user = principal.user();
-        if (professorId.equals(user.professorId())) {
+        if (isSelf(principal, professorId)) {
             return true;
         }
         return principal.isCommitteeMember()

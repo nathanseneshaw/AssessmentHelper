@@ -26,8 +26,13 @@ export const ACCOUNTS = {
   },
 } satisfies Record<Role, unknown>;
 
-type SessionUser = (typeof ACCOUNTS)[Role]["user"];
-type Route = (init?: RequestInit) => Response | Promise<Response>;
+type SessionUser = Omit<(typeof ACCOUNTS)[Role]["user"], "professorId"> & {
+  professorId: number | null;
+};
+type Route = (
+  init: RequestInit | undefined,
+  url: URL,
+) => Response | Promise<Response>;
 
 let signedInUser: SessionUser | null = null;
 
@@ -41,7 +46,8 @@ function problem(status: number, detail: string) {
 // Stands in for the backend's /api/auth endpoints, plus any other routes a test passes in.
 export function fakeBackend(routes: Record<string, Route> = {}) {
   spyOn(globalThis, "fetch").mockImplementation((async (input, init) => {
-    const path = new URL(String(input)).pathname;
+    const url = new URL(String(input));
+    const path = url.pathname;
     switch (path) {
       case "/api/auth/csrf":
         return new Response(null, { status: 204 });
@@ -64,13 +70,17 @@ export function fakeBackend(routes: Record<string, Route> = {}) {
         signedInUser = null;
         return new Response(null, { status: 204 });
       default:
-        return routes[path]?.(init) ?? problem(404, "Not found");
+        return routes[path]?.(init, url) ?? problem(404, "Not found");
     }
   }) as typeof fetch);
 }
 
-export function signInAs(role: Role | null) {
-  signedInUser = role ? ACCOUNTS[role].user : null;
+// Changes let a test sign in as a different professor, or as a user with no professor record.
+export function signInAs(
+  role: Role | null,
+  changes: Partial<SessionUser> = {},
+) {
+  signedInUser = role ? { ...ACCOUNTS[role].user, ...changes } : null;
 }
 
 export function sessionUser() {
