@@ -1,11 +1,11 @@
 import { type FormEvent, useRef, useState } from "react";
-import { type AuthUser, mockLogin } from "../auth/mockAuth";
+import { Navigate } from "react-router-dom";
+import { ApiError } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
+import { HOME_PATH } from "../navConfig";
 
-interface LoginPageProps {
-  onLogin?: (user: AuthUser) => void;
-}
-
-export function LoginPage({ onLogin }: LoginPageProps) {
+export function LoginPage() {
+  const { user, loading, login } = useAuth();
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
@@ -15,7 +15,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
-  const [message, setMessage] = useState("");
   const [authError, setAuthError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -23,10 +22,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     event.preventDefault();
     if (isSubmitting) return;
 
-    // Clear previous errors and messages
+    // Clear previous errors
     setEmailError("");
     setPasswordError("");
-    setMessage("");
     setAuthError("");
 
     let hasError = false;
@@ -58,25 +56,23 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
     setIsSubmitting(true);
     try {
-      const result = await mockLogin(email, password);
-      if (!result.success) {
-        setAuthError(result.error);
-        return;
-      }
-
-      const roleLabel =
-        result.user.role === "faculty" ? "Faculty" : "Assessment Committee";
-      setMessage(
-        `Mock sign-in successful. Welcome, ${result.user.name} (${roleLabel}).`,
+      await login(email.trim(), password);
+    } catch (error) {
+      setAuthError(
+        error instanceof ApiError && error.status === 401
+          ? error.message
+          : "Unable to sign in. Please try again.",
       );
-      setPassword("");
-      setShowPassword(false);
-      onLogin?.(result.user);
-    } catch {
-      setAuthError("Unable to sign in. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  if (loading) {
+    return null;
+  }
+  if (user) {
+    return <Navigate to={HOME_PATH[user.role]} replace />;
   }
 
   return (
@@ -137,7 +133,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   setEmail(event.target.value);
                   setEmailError("");
                   setAuthError("");
-                  setMessage("");
                 }}
                 placeholder="Enter your email"
                 aria-invalid={Boolean(emailError)}
@@ -176,7 +171,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                     setPassword(event.target.value);
                     setPasswordError("");
                     setAuthError("");
-                    setMessage("");
                   }}
                   placeholder="Enter your password"
                   aria-invalid={Boolean(passwordError)}
@@ -226,13 +220,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 {authError}
               </p>
             )}
-
-            {/* Mock authentication status */}
-            {message && (
-              <p role="status" className="text-center text-sm text-neutral-600">
-                {message}
-              </p>
-            )}
           </form>
           <details className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50 text-sm text-neutral-600">
             <summary className="min-h-11 cursor-pointer rounded-xl px-4 py-3 font-semibold text-neutral-800">
@@ -241,17 +228,19 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <div className="space-y-3 px-4 pb-4 leading-6">
               <p>Sample accounts:</p>
               <div>
-                <p className="font-semibold text-neutral-800">Faculty</p>
-                <p className="break-all">faculty@utdallas.edu</p>
+                <p className="font-semibold text-neutral-800">
+                  Faculty (Bob Bob)
+                </p>
+                <p className="break-all">bob@utdallas.edu</p>
                 <p>
                   Password: <code>Faculty123!</code>
                 </p>
               </div>
               <div>
                 <p className="font-semibold text-neutral-800">
-                  Assessment Committee
+                  Assessment Committee (Alice Alice)
                 </p>
-                <p className="break-all">ac@utdallas.edu</p>
+                <p className="break-all">alice@utdallas.edu</p>
                 <p>
                   Password: <code>Committee123!</code>
                 </p>
