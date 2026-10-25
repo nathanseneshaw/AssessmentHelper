@@ -1,13 +1,11 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App } from "../../App";
-import { STORAGE_KEY } from "../../auth/AuthContext";
+import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 
 async function renderReports() {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "ac", name: "Test User" }),
-  );
+  fakeBackend();
+  signInAs("ac");
   window.history.pushState({}, "", "/ac/reports");
   render(<App />);
   await screen.findByRole("heading", { level: 1, name: "Reports & KPIs" });
@@ -42,7 +40,7 @@ async function download(buttonName: string) {
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
+  resetBackend();
 });
 
 describe("Reports & KPIs", () => {

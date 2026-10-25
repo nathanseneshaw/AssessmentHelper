@@ -13,6 +13,7 @@ import edu.utdallas.cs4485.assessmenthelper.entity.ObservationTemplate;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observer;
 import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
+import edu.utdallas.cs4485.assessmenthelper.entity.School;
 import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -43,7 +44,8 @@ class EvaluationRecordServiceTests {
 
     @BeforeEach
     void createEvaluationHistory() {
-        department = db.insert(new Department(null, "Test Department", "TEST"));
+        School school = db.insert(new School(null, "Test School"));
+        department = db.insert(new Department(null, school.schoolId(), "Test Department", "TEST"));
         course = db.insert(new Course(null, department.departmentId(), "TEST", "1000", "Test Course", "UNDERGRADUATE"));
         template = db.insert(new ObservationTemplate(null, null, "Test Template", 1, null, true));
         observeeProfessor = db.insert(professor("observee@test.edu"));

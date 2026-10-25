@@ -1,5 +1,11 @@
 
-INSERT INTO department (department_name, department_code) VALUES ('Computer Science', 'CS');
+INSERT INTO school (school_name) VALUES
+    ('Erik Jonsson School of Engineering and Computer Science'),
+    ('School of Natural Sciences and Mathematics');
+
+INSERT INTO department (school_id, department_name, department_code) VALUES
+    (1, 'Computer Science', 'CS'),
+    (2, 'Mathematics', 'MATH');
 
 -- professor_rank is the primary key of this table
 INSERT INTO evaluation_policy (professor_rank, evaluation_interval_years, active_status, made_date, effective_date, version) VALUES

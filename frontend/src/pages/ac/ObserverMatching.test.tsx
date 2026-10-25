@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { App } from "../../App";
-import { STORAGE_KEY } from "../../auth/AuthContext";
+import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 
 function observeeHeading() {
   return screen.getByRole("heading", { level: 2, name: /^Observee:/ });
@@ -28,10 +28,8 @@ function press(name: "Previous observee" | "Next observee") {
 }
 
 beforeEach(async () => {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "ac", name: "Test User" }),
-  );
+  fakeBackend();
+  signInAs("ac");
   window.history.pushState({}, "", "/ac/matching");
   render(<App />);
   await screen.findByRole("heading", { level: 1, name: "Observer Matching" });
@@ -39,7 +37,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
+  resetBackend();
 });
 
 describe("observer matching", () => {
