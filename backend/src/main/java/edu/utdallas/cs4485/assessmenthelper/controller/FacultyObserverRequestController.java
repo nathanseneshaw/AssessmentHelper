@@ -5,6 +5,7 @@ import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,12 +26,14 @@ public class FacultyObserverRequestController {
     }
 
     @GetMapping
+    @PreAuthorize("@professorAccess.canView(principal, #professorId)")
     public List<ObserverRequestService.RequestOptions> options(@PathVariable Integer professorId) {
         return service.options(professorId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@professorAccess.isSelf(principal, #professorId)")
     public ObserverRequest send(@PathVariable Integer professorId, @RequestBody SendRequest body) {
         return service.createFromMatch(professorId, body.signupId(), body.matchId(), body.expirationDate());
     }

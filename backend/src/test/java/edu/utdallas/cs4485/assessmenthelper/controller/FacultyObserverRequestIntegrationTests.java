@@ -1,13 +1,19 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
+import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
+import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
+import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +30,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +50,16 @@ class FacultyObserverRequestIntegrationTests {
             return Clock.fixed(Instant.parse("2026-10-21T15:00:00Z"), ZoneId.of("America/Chicago"));
         }
     }
+
+    // Professors from test-data.sql. Alice is on the Assessment Committee and is the observer in Dave's match.
+    private static final AccountPrincipal ALICE = new AccountPrincipal(
+            new CurrentUser(1, 1, 1, "Alice Alice", "alice@utdallas.edu", List.of(Role.AC, Role.PROFESSOR)),
+            null,
+            true);
+    private static final AccountPrincipal CAROL = new AccountPrincipal(
+            new CurrentUser(3, 3, 1, "Carol Carol", "carol@utdallas.edu", List.of(Role.PROFESSOR)), null, true);
+    private static final AccountPrincipal DAVE = new AccountPrincipal(
+            new CurrentUser(4, 4, 1, "Dave Dave", "dave@utdallas.edu", List.of(Role.PROFESSOR)), null, true);
 
     @Autowired
     private MockMvc mvc;
@@ -64,12 +81,12 @@ class FacultyObserverRequestIntegrationTests {
 
     @Test
     void sendsFromMatchAndRestoresRequestWithNamesDatesAndNoDuplicateOnRetry() throws Exception {
-        mvc.perform(get("/api/professors/4/observer-requests"))
+        mvc.perform(as(DAVE, get("/api/professors/4/observer-requests")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].signupId").value(signupId))
                 .andExpect(jsonPath("$[0].candidates[0].observerName").value("Alice Alice"))
                 .andExpect(jsonPath("$[0].requests.length()").value(0));
-        var first = send(4, signupId, matchId)
+        var first = send(DAVE, signupId, matchId)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.requestDate").value("2026-10-21T10:00:00"))
@@ -77,43 +94,61 @@ class FacultyObserverRequestIntegrationTests {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        var retry = send(4, signupId, matchId)
+        var retry = send(DAVE, signupId, matchId)
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
         assertThat(retry).isEqualTo(first);
         assertThat(requestCount()).isEqualTo(1);
-        mvc.perform(get("/api/professors/4/observer-requests"))
+        mvc.perform(as(DAVE, get("/api/professors/4/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("PENDING"))
                 .andExpect(jsonPath("$[0].requests[0].observerName").value("Alice Alice"));
     }
 
     @Test
     void rejectsMissingOrForeignSignupAndMatchWithoutCreatingRequests() throws Exception {
-        send(3, signupId, matchId).andExpect(status().isNotFound());
-        send(4, signupId, 1).andExpect(status().isBadRequest());
-        send(4, signupId, 99999).andExpect(status().isNotFound());
-        send(4, 99999, matchId).andExpect(status().isNotFound());
-        mvc.perform(post("/api/professors/4/observer-requests")
+        send(CAROL, signupId, matchId).andExpect(status().isNotFound());
+        send(DAVE, signupId, 1).andExpect(status().isBadRequest());
+        send(DAVE, signupId, 99999).andExpect(status().isNotFound());
+        send(DAVE, 99999, matchId).andExpect(status().isNotFound());
+        mvc.perform(as(DAVE, post("/api/professors/4/observer-requests"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
-        mvc.perform(get("/api/professors/99999/observer-requests")).andExpect(status().isNotFound());
+        // Ids of other professors, known or not, are refused before any lookup.
+        mvc.perform(as(DAVE, get("/api/professors/99999/observer-requests"))).andExpect(status().isForbidden());
+        assertThat(requestCount()).isZero();
+    }
+
+    @Test
+    void onlyTheProfessorCanSendTheirRequestsButCommitteeMembersCanReadThem() throws Exception {
+        mvc.perform(as(CAROL, get("/api/professors/4/observer-requests"))).andExpect(status().isForbidden());
+        mvc.perform(as(CAROL, post("/api/professors/4/observer-requests"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"signupId\":" + signupId + ",\"matchId\":" + matchId + "}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(ALICE, get("/api/professors/4/observer-requests")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].signupId").value(signupId));
+        mvc.perform(as(ALICE, post("/api/professors/4/observer-requests"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"signupId\":" + signupId + ",\"matchId\":" + matchId + "}"))
+                .andExpect(status().isForbidden());
         assertThat(requestCount()).isZero();
     }
 
     @Test
     void legacyEndpointAlsoRequiresAnActiveProposedMatchAndOpenSignup() throws Exception {
         db.update("UPDATE observer_match SET match_status = 'REJECTED' WHERE match_id = ?", matchId);
-        send(4, signupId, matchId).andExpect(status().isConflict());
+        send(DAVE, signupId, matchId).andExpect(status().isConflict());
         legacySend(1).andExpect(status().isConflict());
         db.update("UPDATE observer_match SET match_status = 'PROPOSED' WHERE match_id = ?", matchId);
         db.update("UPDATE observer SET active_status = FALSE WHERE observer_id = 1");
         legacySend(1).andExpect(status().isConflict());
         db.update("UPDATE observer SET active_status = TRUE WHERE observer_id = 1");
         db.update("UPDATE evaluation_cycle SET status = 'CLOSED' WHERE cycle_id = 1");
-        send(4, signupId, matchId).andExpect(status().isConflict());
+        send(DAVE, signupId, matchId).andExpect(status().isConflict());
         assertThat(requestCount()).isZero();
     }
 
@@ -131,18 +166,18 @@ class FacultyObserverRequestIntegrationTests {
 
     @Test
     void rejectsScheduledAndCompletedSignupsAndPastExpiration() throws Exception {
-        mvc.perform(post("/api/professors/4/observer-requests")
+        mvc.perform(as(DAVE, post("/api/professors/4/observer-requests"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"signupId\":" + signupId + ",\"matchId\":" + matchId
                                 + ",\"expirationDate\":\"2026-10-20T10:00:00\"}"))
                 .andExpect(status().isBadRequest());
         db.update("UPDATE evaluation_signup SET status = 'COMPLETED' WHERE signup_id = ?", signupId);
-        send(4, signupId, matchId).andExpect(status().isConflict());
+        send(DAVE, signupId, matchId).andExpect(status().isConflict());
         db.update("UPDATE evaluation_signup SET status = 'PENDING' WHERE signup_id = ?", signupId);
         db.update(
                 "INSERT INTO observation (signup_id, observer_id, template_id, status) VALUES (?, 1, 1, 'SCHEDULED')",
                 signupId);
-        send(4, signupId, matchId).andExpect(status().isConflict());
+        send(DAVE, signupId, matchId).andExpect(status().isConflict());
         assertThat(requestCount()).isZero();
     }
 
@@ -155,12 +190,12 @@ class FacultyObserverRequestIntegrationTests {
                 "INSERT INTO observer_match (signup_id, observer_id, match_status) VALUES (?, ?, 'PROPOSED')",
                 signupId,
                 other);
-        send(4, signupId, matchId).andExpect(status().isCreated());
+        send(DAVE, signupId, matchId).andExpect(status().isCreated());
         legacySend(other).andExpect(status().isConflict());
         db.update(
                 "UPDATE observer_request SET expiration_date = TIMESTAMP '2026-10-20 10:00:00' WHERE signup_id = ?",
                 signupId);
-        mvc.perform(get("/api/professors/4/observer-requests"))
+        mvc.perform(as(DAVE, get("/api/professors/4/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("EXPIRED"));
         legacySend(other).andExpect(status().isCreated());
         assertThat(requestCount()).isEqualTo(2);
@@ -168,21 +203,22 @@ class FacultyObserverRequestIntegrationTests {
 
     @Test
     void confirmedRequestRemainsVisibleAndPreventsAnotherRequest() throws Exception {
-        send(4, signupId, matchId).andExpect(status().isCreated());
+        send(DAVE, signupId, matchId).andExpect(status().isCreated());
         int requestId = db.queryForObject(
                 "SELECT request_id FROM observer_request WHERE signup_id = ?", Integer.class, signupId);
-        mvc.perform(post("/api/observer-requests/" + requestId + "/confirm")).andExpect(status().isOk());
-        mvc.perform(get("/api/professors/4/observer-requests"))
+        mvc.perform(as(ALICE, post("/api/observer-requests/" + requestId + "/confirm")))
+                .andExpect(status().isOk());
+        mvc.perform(as(DAVE, get("/api/professors/4/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("CONFIRMED"))
                 .andExpect(jsonPath("$[0].requests[0].request.responseDate").value("2026-10-21T10:00:00"));
-        send(4, signupId, matchId).andExpect(jsonPath("$.status").value("CONFIRMED"));
+        send(DAVE, signupId, matchId).andExpect(jsonPath("$.status").value("CONFIRMED"));
         assertThat(requestCount()).isEqualTo(1);
     }
 
     @Test
     void courseSelectionCannotChangeAfterCandidatesHaveBeenGenerated() throws Exception {
         db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (4, 9)");
-        mvc.perform(put("/api/professors/4/evaluation-signups/1")
+        mvc.perform(as(DAVE, put("/api/professors/4/evaluation-signups/1"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":9}"))
                 .andExpect(status().isConflict());
@@ -218,16 +254,26 @@ class FacultyObserverRequestIntegrationTests {
         }
     }
 
-    private ResultActions send(int professor, int signup, int match) throws Exception {
-        return mvc.perform(post("/api/professors/" + professor + "/observer-requests")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"signupId\":" + signup + ",\"matchId\":" + match + "}"));
+    private ResultActions send(AccountPrincipal professor, int signup, int match) throws Exception {
+        return mvc.perform(
+                as(professor, post("/api/professors/" + professor.user().professorId() + "/observer-requests"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"signupId\":" + signup + ",\"matchId\":" + match + "}"));
     }
 
     private ResultActions legacySend(int observer) throws Exception {
-        return mvc.perform(post("/api/observer-requests")
+        return mvc.perform(as(DAVE, post("/api/observer-requests"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"signupId\":" + signupId + ",\"observerId\":" + observer + "}"));
+    }
+
+    // Signs the request in as the professor and adds a CSRF token the way the frontend gets one. The csrf() helper
+    // is not used because it changes the shared Spring context (see AuthenticationTests).
+    private MockHttpServletRequestBuilder as(AccountPrincipal professor, MockHttpServletRequestBuilder request)
+            throws Exception {
+        Cookie token =
+                mvc.perform(get("/api/auth/csrf")).andReturn().getResponse().getCookie("XSRF-TOKEN");
+        return request.with(user(professor)).cookie(token).header("X-XSRF-TOKEN", token.getValue());
     }
 
     private int requestCount() {
