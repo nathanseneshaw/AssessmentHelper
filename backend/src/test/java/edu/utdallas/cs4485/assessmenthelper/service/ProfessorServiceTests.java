@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import edu.utdallas.cs4485.assessmenthelper.entity.Department;
 import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
+import edu.utdallas.cs4485.assessmenthelper.entity.School;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,13 +23,15 @@ class ProfessorServiceTests {
     @Autowired
     private JdbcAggregateTemplate db;
 
+    private School school;
     private Department testDepartment;
     private Department otherDepartment;
 
     @BeforeEach
     void createDepartments() {
-        testDepartment = db.insert(new Department(null, "Test Department", "TEST"));
-        otherDepartment = db.insert(new Department(null, "Other Department", "OTHER"));
+        school = db.insert(new School(null, "Test School"));
+        testDepartment = db.insert(new Department(null, school.schoolId(), "Test Department", "TEST"));
+        otherDepartment = db.insert(new Department(null, school.schoolId(), "Other Department", "OTHER"));
     }
 
     @Test
@@ -58,7 +61,7 @@ class ProfessorServiceTests {
 
     @Test
     void schoolWithoutProfessorsReturnsEmptyList() {
-        db.insert(new Department(null, "Empty Department", "EMPTY"));
+        db.insert(new Department(null, school.schoolId(), "Empty Department", "EMPTY"));
 
         assertThat(service.findBySchool("EMPTY")).isEmpty();
     }

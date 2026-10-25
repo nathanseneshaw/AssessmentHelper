@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, expect, type Mock, test } from "bun:test";
 import {
   act,
   cleanup,
@@ -12,9 +12,8 @@ import type {
   ObserverRequest,
   RequestOptions,
 } from "../../api/observerRequests";
-import { STORAGE_KEY } from "../../auth/AuthContext";
+import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 
-const originalFetch = globalThis.fetch;
 let options: RequestOptions[];
 let writes: { signupId: number; matchId: number }[];
 let failLoad: boolean;
@@ -53,11 +52,8 @@ beforeEach(() => {
   failLoad = false;
   failSend = false;
   delaySend = undefined;
-  globalThis.fetch = mock(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(String(input));
-      if (url.pathname !== "/api/professors/4/observer-requests")
-        throw new Error(`Unexpected request: ${url}`);
+  fakeBackend({
+    "/api/professors/4/observer-requests": async (init) => {
       if (init?.method === "POST") {
         writes.push(JSON.parse(String(init.body)));
         if (delaySend) await delaySend;
@@ -75,20 +71,16 @@ beforeEach(() => {
       if (failLoad) throw new Error("Network unavailable");
       return Response.json(options);
     },
-  ) as unknown as typeof fetch;
+  });
 });
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
-  globalThis.fetch = originalFetch;
+  resetBackend();
 });
 
-function open(professorId: number | undefined = 4) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "professor", name: "Dave", professorId }),
-  );
+function open(professorId: number | null = 4) {
+  signInAs("professor", { professorId });
   window.history.pushState({}, "", "/faculty/observers");
   return render(<App />);
 }
@@ -137,11 +129,13 @@ test("suppresses duplicate clicks while the request is in flight", async () => {
   expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(
     true,
   );
-  expect(writes).toHaveLength(1);
+  // The request is sent after the CSRF token is fetched.
+  await waitFor(() => expect(writes).toHaveLength(1));
   await act(async () => {
     release?.();
   });
   await screen.findByText("Pending");
+  expect(writes).toHaveLength(1);
 });
 
 test("keeps the choice after a failed send and allows a retry", async () => {
@@ -254,12 +248,11 @@ test("explains when signups or proposed candidates are missing", async () => {
 });
 
 test("requires a faculty profile instead of guessing an identity", async () => {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "professor", name: "Old session" }),
-  );
-  window.history.pushState({}, "", "/faculty/observers");
-  render(<App />);
+  open(null);
   await screen.findByText(/Your session has no faculty profile/);
-  await waitFor(() => expect(globalThis.fetch).not.toHaveBeenCalled());
+  // Only the sign-in check may reach the backend.
+  const calls = (globalThis.fetch as unknown as Mock<typeof fetch>).mock.calls;
+  expect(
+    calls.filter(([input]) => !String(input).includes("/api/auth/")),
+  ).toHaveLength(0);
 });

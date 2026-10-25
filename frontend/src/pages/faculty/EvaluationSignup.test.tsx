@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, expect, type Mock, test } from "bun:test";
 import {
   cleanup,
   fireEvent,
@@ -8,14 +8,13 @@ import {
 } from "@testing-library/react";
 import { App } from "../../App";
 import type { EvaluationSignup } from "../../api/courseSelection";
-import { STORAGE_KEY } from "../../auth/AuthContext";
+import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 
-const originalFetch = globalThis.fetch;
 let saved: EvaluationSignup | undefined;
 let saveFailure = false;
 let catalogFailure = false;
 let emptySections = false;
-let requests: { path: string; init?: RequestInit }[];
+let heldSections: Promise<Response> | undefined;
 const courses = [
   {
     courseId: 1,
@@ -53,61 +52,69 @@ const sections = [
   },
 ];
 
+function signupRoute(init?: RequestInit) {
+  if (init?.method === "PUT") {
+    if (saveFailure)
+      return Response.json(
+        { detail: "You can only select a section you teach." },
+        { status: 400 },
+      );
+    saved = {
+      signupId: 31,
+      observeeId: 31,
+      sectionId: JSON.parse(String(init.body)).sectionId,
+      signupDate: "2026-10-21",
+      status: "PENDING",
+    };
+  }
+  return saved ? Response.json(saved) : new Response(null, { status: 204 });
+}
+
 beforeEach(() => {
   saved = undefined;
   saveFailure = false;
   catalogFailure = false;
   emptySections = false;
-  requests = [];
-  globalThis.fetch = mock(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(String(input));
-      requests.push({ path: url.pathname + url.search, init });
-      if (url.pathname === "/api/semesters") {
-        if (catalogFailure) throw new Error("Network unavailable");
-        return Response.json([
-          { semesterId: 1, term: "Fall", academicYear: 2026 },
-          { semesterId: 10, term: "Spring", academicYear: 2028 },
-        ]);
-      }
-      if (url.pathname === "/api/courses") return Response.json(courses);
-      if (url.pathname === "/api/sections")
-        return Response.json(emptySections ? [] : sections);
-      if (url.pathname.includes("evaluation-signups")) {
-        if (init?.method === "PUT") {
-          if (saveFailure)
-            return Response.json(
-              { detail: "You can only select a section you teach." },
-              { status: 400 },
-            );
-          saved = {
-            signupId: 31,
-            observeeId: 31,
-            sectionId: JSON.parse(String(init.body)).sectionId,
-            signupDate: "2026-10-21",
-            status: "PENDING",
-          };
-        }
-        return saved
-          ? Response.json(saved)
-          : new Response(null, { status: 204 });
-      }
-      throw new Error(`Unexpected request: ${url}`);
+  heldSections = undefined;
+  fakeBackend({
+    "/api/semesters": () => {
+      if (catalogFailure) throw new Error("Network unavailable");
+      return Response.json([
+        { semesterId: 1, term: "Fall", academicYear: 2026 },
+        { semesterId: 10, term: "Spring", academicYear: 2028 },
+      ]);
     },
-  ) as unknown as typeof fetch;
+    "/api/courses": () => Response.json(courses),
+    "/api/sections": (_init, url) => {
+      // A held response stands in for a slow reply for the first semester.
+      if (heldSections)
+        return url.searchParams.get("semesterId") === "1"
+          ? heldSections
+          : Response.json([]);
+      return Response.json(emptySections ? [] : sections);
+    },
+    "/api/professors/3/evaluation-signups/1": signupRoute,
+    "/api/professors/3/evaluation-signups/10": signupRoute,
+  });
 });
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
-  globalThis.fetch = originalFetch;
+  resetBackend();
 });
 
-async function openSignup(professorId: number | undefined = 3) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "professor", name: "Test Faculty", professorId }),
-  );
+// Requests the page made, leaving out the sign-in checks.
+function requests() {
+  return (globalThis.fetch as unknown as Mock<typeof fetch>).mock.calls
+    .map(([input, init]) => {
+      const url = new URL(String(input));
+      return { path: url.pathname + url.search, init };
+    })
+    .filter((request) => !request.path.startsWith("/api/auth/"));
+}
+
+async function openSignup(professorId: number | null = 3) {
+  signInAs("professor", { professorId });
   window.history.pushState({}, "", "/faculty/signup");
   render(<App />);
   await screen.findByRole("option", { name: "Fall 2026" });
@@ -140,12 +147,12 @@ test("selects a taught section, saves its id, and restores it after reopening", 
   await screen.findByText(
     "Your course and section have been saved for evaluation.",
   );
-  const writes = requests.filter((request) => request.init?.method === "PUT");
+  const writes = requests().filter((request) => request.init?.method === "PUT");
   expect(writes).toHaveLength(1);
   expect(writes[0]?.path).toBe("/api/professors/3/evaluation-signups/1");
   expect(JSON.parse(String(writes[0]?.init?.body))).toEqual({ sectionId: 9 });
   expect(
-    requests.some(
+    requests().some(
       (request) => request.path === "/api/sections?professorId=3&semesterId=1",
     ),
   ).toBe(true);
@@ -232,10 +239,7 @@ test("explains empty teaching sections and disables saving", async () => {
 
 test("retries failed catalog loading", async () => {
   catalogFailure = true;
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "professor", name: "Test", professorId: 3 }),
-  );
+  signInAs("professor", { professorId: 3 });
   window.history.pushState({}, "", "/faculty/signup");
   render(<App />);
   await screen.findByRole("alert");
@@ -269,34 +273,21 @@ test("keeps matched signups read-only", async () => {
   ).toBe(true);
 });
 
-test("older demo sessions require sign-in again instead of inventing a professor id", async () => {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "professor", name: "Old session" }),
-  );
+test("sessions without a faculty profile require sign-in again instead of inventing a professor id", async () => {
+  signInAs("professor", { professorId: null });
   window.history.pushState({}, "", "/faculty/signup");
   render(<App />);
-  fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Sign in again" }));
   await waitFor(() => expect(window.location.pathname).toBe("/login"));
-  expect(requests).toHaveLength(0);
+  expect(requests()).toHaveLength(0);
 });
 
 test("a late response for the previous semester cannot replace the current options", async () => {
-  const defaultFetch = globalThis.fetch;
   let finishOldRequest: (response: Response) => void = () => {};
   const oldResponse = new Promise<Response>((resolve) => {
     finishOldRequest = resolve;
   });
-  globalThis.fetch = mock(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/api/sections") {
-        if (url.searchParams.get("semesterId") === "1") return oldResponse;
-        return Response.json([]);
-      }
-      return defaultFetch(input, init);
-    },
-  ) as unknown as typeof fetch;
+  heldSections = oldResponse;
   await openSignup();
   fireEvent.change(screen.getByLabelText("Semester"), {
     target: { value: "1" },
