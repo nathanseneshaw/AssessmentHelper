@@ -43,15 +43,24 @@ class EvaluationSignupIntegrationTests {
         }
     }
 
-    // Professors from test-data.sql. Alice is on the Assessment Committee; all three are in the same school.
-    private static final AccountPrincipal ALICE = new AccountPrincipal(
-            new CurrentUser(1, 1, 1, "Alice Alice", "alice@utdallas.edu", List.of(Role.AC, Role.PROFESSOR)),
+    // From data.sql, all in the same school. Kaia is on the Assessment Committee. Hollis teaches CS 2336 sections
+    // 284, 288 and 291 in Fall 2026 (semester 13) and has not signed up. Leander's Fall 2026 signup (33, section 294)
+    // is matched with a scheduled observation; he also taught section 270 in Spring 2026 (semester 11).
+    private static final AccountPrincipal KAIA = new AccountPrincipal(
+            new CurrentUser(
+                    1, 12, 1, "Kaia Clearbrook", "kaia.clearbrook@example.edu", List.of(Role.AC, Role.PROFESSOR)),
             null,
             true);
-    private static final AccountPrincipal BOB = new AccountPrincipal(
-            new CurrentUser(2, 2, 1, "Bob Bob", "bob@utdallas.edu", List.of(Role.PROFESSOR)), null, true);
-    private static final AccountPrincipal CAROL = new AccountPrincipal(
-            new CurrentUser(3, 3, 1, "Carol Carol", "carol@utdallas.edu", List.of(Role.PROFESSOR)), null, true);
+    private static final AccountPrincipal LEANDER = new AccountPrincipal(
+            new CurrentUser(
+                    null, 13, 1, "Leander Coldwell", "leander.coldwell@example.edu", List.of(Role.PROFESSOR)),
+            null,
+            true);
+    private static final AccountPrincipal HOLLIS = new AccountPrincipal(
+            new CurrentUser(
+                    null, 9, 1, "Hollis Carrowmore", "hollis.carrowmore@example.edu", List.of(Role.PROFESSOR)),
+            null,
+            true);
 
     @Autowired
     private MockMvc mvc;
@@ -61,105 +70,105 @@ class EvaluationSignupIntegrationTests {
 
     @Test
     void listsCatalogAndCombinesSemesterCourseAndProfessorFilters() throws Exception {
-        mvc.perform(as(CAROL, get("/api/semesters")))
+        mvc.perform(as(HOLLIS, get("/api/semesters")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(10));
-        mvc.perform(as(CAROL, get("/api/semesters?signupOpen=true")))
+                .andExpect(jsonPath("$.length()").value(17));
+        mvc.perform(as(HOLLIS, get("/api/semesters?signupOpen=true")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].semesterId").value(1));
-        mvc.perform(as(CAROL, get("/api/courses")))
+                .andExpect(jsonPath("$[0].semesterId").value(13));
+        mvc.perform(as(HOLLIS, get("/api/courses")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
-        mvc.perform(as(CAROL, get("/api/sections?semesterId=1&courseId=1&professorId=3")))
+                .andExpect(jsonPath("$.length()").value(5));
+        mvc.perform(as(HOLLIS, get("/api/sections?semesterId=13&courseId=2&professorId=9")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].sectionNumber").value("002"));
-        mvc.perform(as(CAROL, get("/api/sections?semesterId=1&courseId=2&professorId=3")))
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].location").value("ECS 2.410"));
-        mvc.perform(as(CAROL, get("/api/sections?semesterId=1&professorId=1")))
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0].sectionNumber").value("002"))
+                .andExpect(jsonPath("$[2].location").value("ECSS 2.305"));
+        mvc.perform(as(HOLLIS, get("/api/sections?semesterId=13&courseId=3&professorId=9")))
                 .andExpect(jsonPath("$.length()").value(0));
-        mvc.perform(as(CAROL, get("/api/sections?semesterId=2")))
-                .andExpect(jsonPath("$.length()").value(1));
-        mvc.perform(as(CAROL, get("/api/sections?courseId=2")))
-                .andExpect(jsonPath("$.length()").value(1));
+        mvc.perform(as(HOLLIS, get("/api/sections?semesterId=13&professorId=38")))
+                .andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(as(HOLLIS, get("/api/sections?semesterId=2")))
+                .andExpect(jsonPath("$.length()").value(33));
+        mvc.perform(as(HOLLIS, get("/api/sections?courseId=4")))
+                .andExpect(jsonPath("$.length()").value(14));
     }
 
     @Test
     void createsReadsRetriesAndUpdatesOnePendingSignup() throws Exception {
-        mvc.perform(as(CAROL, get("/api/professors/3/evaluation-signups/1"))).andExpect(status().isNoContent());
+        mvc.perform(as(HOLLIS, get("/api/professors/9/evaluation-signups/13"))).andExpect(status().isNoContent());
         int originalCount = countSignups();
-        var first = mvc.perform(as(CAROL, put("/api/professors/3/evaluation-signups/1"))
+        var first = mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":9}"))
+                        .content("{\"sectionId\":284}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sectionId").value(9))
+                .andExpect(jsonPath("$.sectionId").value(284))
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.signupDate").value("2026-10-21"))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        var repeated = mvc.perform(as(CAROL, put("/api/professors/3/evaluation-signups/1"))
+        var repeated = mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":9}"))
+                        .content("{\"sectionId\":284}"))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
         assertThat(repeated).isEqualTo(first);
-        mvc.perform(as(CAROL, put("/api/professors/3/evaluation-signups/1"))
+        mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":11}"))
+                        .content("{\"sectionId\":291}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sectionId").value(11));
-        mvc.perform(as(CAROL, get("/api/professors/3/evaluation-signups/1")))
+                .andExpect(jsonPath("$.sectionId").value(291));
+        mvc.perform(as(HOLLIS, get("/api/professors/9/evaluation-signups/13")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sectionId").value(11));
+                .andExpect(jsonPath("$.sectionId").value(291));
         assertThat(countSignups()).isEqualTo(originalCount + 1);
         assertThat(db.queryForObject(
-                        "SELECT COUNT(*) FROM observee WHERE professor_id = 3 AND cycle_id = 1", Integer.class))
+                        "SELECT COUNT(*) FROM observee WHERE professor_id = 9 AND cycle_id = 1", Integer.class))
                 .isEqualTo(1);
     }
 
     @Test
     void rejectsAnotherProfessorsSectionWithoutWritingAnything() throws Exception {
         int originalCount = countSignups();
-        mvc.perform(as(CAROL, put("/api/professors/3/evaluation-signups/1"))
+        mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":1}"))
+                        .content("{\"sectionId\":298}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("You can only select a section you teach."));
         assertThat(countSignups()).isEqualTo(originalCount);
         assertThat(db.queryForObject(
-                        "SELECT COUNT(*) FROM observee WHERE professor_id = 3 AND cycle_id = 1", Integer.class))
+                        "SELECT COUNT(*) FROM observee WHERE professor_id = 9 AND cycle_id = 1", Integer.class))
                 .isZero();
     }
 
     @Test
     void rejectsWrongSemesterAndUnknownOrMissingIds() throws Exception {
-        mvc.perform(as(BOB, put("/api/professors/2/evaluation-signups/1"))
+        mvc.perform(as(LEANDER, put("/api/professors/13/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":2}"))
+                        .content("{\"sectionId\":270}"))
                 .andExpect(status().isBadRequest());
-        mvc.perform(as(CAROL, put("/api/professors/3/evaluation-signups/1"))
+        mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":99999}"))
                 .andExpect(status().isNotFound());
         // Ids of other professors, known or not, are refused before any lookup.
-        mvc.perform(as(CAROL, put("/api/professors/99999/evaluation-signups/1"))
+        mvc.perform(as(HOLLIS, put("/api/professors/99999/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":9}"))
+                        .content("{\"sectionId\":284}"))
                 .andExpect(status().isForbidden());
-        mvc.perform(as(CAROL, put("/api/professors/3/evaluation-signups/99999"))
+        mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/99999"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":9}"))
+                        .content("{\"sectionId\":284}"))
                 .andExpect(status().isNotFound());
-        mvc.perform(as(CAROL, put("/api/professors/3/evaluation-signups/1"))
+        mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
-        mvc.perform(as(CAROL, put("/api/professors/3/evaluation-signups/1"))
+        mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":-1}"))
                 .andExpect(status().isBadRequest());
@@ -167,53 +176,53 @@ class EvaluationSignupIntegrationTests {
 
     @Test
     void rejectsClosedOrAmbiguousCyclesAndInactiveProfessors() throws Exception {
-        mvc.perform(as(BOB, put("/api/professors/2/evaluation-signups/2"))
+        mvc.perform(as(LEANDER, put("/api/professors/13/evaluation-signups/11"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":2}"))
+                        .content("{\"sectionId\":270}"))
                 .andExpect(status().isConflict());
-        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id = 3");
-        mvc.perform(as(CAROL, put("/api/professors/3/evaluation-signups/1"))
+        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id = 9");
+        mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":9}"))
+                        .content("{\"sectionId\":284}"))
                 .andExpect(status().isConflict());
-        db.update("INSERT INTO evaluation_cycle (semester_id, status) VALUES (1, 'OPEN')");
-        mvc.perform(as(BOB, get("/api/professors/2/evaluation-signups/1"))).andExpect(status().isConflict());
+        db.update("INSERT INTO evaluation_cycle (semester_id, status) VALUES (13, 'OPEN')");
+        mvc.perform(as(LEANDER, get("/api/professors/13/evaluation-signups/13"))).andExpect(status().isConflict());
     }
 
     @Test
     void preservesMatchedSignupAndItsObservationButAllowsAnIdenticalRetry() throws Exception {
-        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (2, 9)");
-        mvc.perform(as(BOB, put("/api/professors/2/evaluation-signups/1"))
+        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (13, 284)");
+        mvc.perform(as(LEANDER, put("/api/professors/13/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":9}"))
+                        .content("{\"sectionId\":284}"))
                 .andExpect(status().isConflict());
-        mvc.perform(as(BOB, put("/api/professors/2/evaluation-signups/1"))
+        mvc.perform(as(LEANDER, put("/api/professors/13/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":1}"))
+                        .content("{\"sectionId\":294}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.signupId").value(1))
+                .andExpect(jsonPath("$.signupId").value(33))
                 .andExpect(jsonPath("$.status").value("MATCHED"))
-                .andExpect(jsonPath("$.signupDate").value("2026-09-01"));
-        assertThat(db.queryForObject("SELECT section_id FROM evaluation_signup WHERE signup_id = 1", Integer.class))
-                .isEqualTo(1);
-        assertThat(db.queryForObject("SELECT status FROM observation WHERE signup_id = 1", String.class))
+                .andExpect(jsonPath("$.signupDate").value("2026-10-12"));
+        assertThat(db.queryForObject("SELECT section_id FROM evaluation_signup WHERE signup_id = 33", Integer.class))
+                .isEqualTo(294);
+        assertThat(db.queryForObject("SELECT status FROM observation WHERE signup_id = 33", String.class))
                 .isEqualTo("SCHEDULED");
     }
 
     @Test
     void onlyTheProfessorCanChangeTheirSignupButCommitteeMembersCanReadIt() throws Exception {
         int originalCount = countSignups();
-        mvc.perform(as(BOB, get("/api/professors/3/evaluation-signups/1"))).andExpect(status().isForbidden());
-        mvc.perform(as(BOB, put("/api/professors/3/evaluation-signups/1"))
+        mvc.perform(as(LEANDER, get("/api/professors/9/evaluation-signups/13"))).andExpect(status().isForbidden());
+        mvc.perform(as(LEANDER, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":9}"))
+                        .content("{\"sectionId\":284}"))
                 .andExpect(status().isForbidden());
-        mvc.perform(as(ALICE, get("/api/professors/2/evaluation-signups/1")))
+        mvc.perform(as(KAIA, get("/api/professors/13/evaluation-signups/13")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("MATCHED"));
-        mvc.perform(as(ALICE, put("/api/professors/3/evaluation-signups/1"))
+        mvc.perform(as(KAIA, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":9}"))
+                        .content("{\"sectionId\":284}"))
                 .andExpect(status().isForbidden());
         assertThat(countSignups()).isEqualTo(originalCount);
     }
