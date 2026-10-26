@@ -7,8 +7,9 @@ import { useAuth } from "../../auth/AuthContext";
 import { Modal } from "../../components/Modal";
 export function FacultyObservationsForOthers() {
   const { user } = useAuth();
+  const id = user?.professorId;
   const { data, error } = useObserverData<FacultyState>(
-    `/faculty/${user?.professorId ?? 1}`,
+    id ? `/faculty/${id}` : null,
   );
   const accepted =
     data?.incoming?.filter((r) => r.status === "CONFIRMED") ?? [];
@@ -17,12 +18,13 @@ export function FacultyObservationsForOthers() {
       title="Observation Records for Others"
       subtitle="Accepted observations for the current cycle."
     >
-      {error && (
+      {(error || !id) && (
         <p role="alert" className="text-brand-red">
-          {error}
+          {error ||
+            "Your session has no faculty profile. Sign out and sign in again."}
         </p>
       )}
-      {!data ? (
+      {!id ? null : !data ? (
         <p>Loading observations...</p>
       ) : !accepted.length ? (
         <p>No accepted observations yet.</p>

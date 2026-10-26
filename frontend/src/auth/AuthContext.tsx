@@ -1,46 +1,58 @@
-import { createContext, type ReactNode, useContext, useState } from "react";
-import type { Role } from "../navConfig";
-
-export interface User {
-  role: Role;
-  name: string;
-  professorId?: number;
-}
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import {
+  getCurrentUser,
+  login as signIn,
+  logout as signOut,
+  type User,
+} from "../api/auth";
 
 interface AuthValue {
   user: User | null;
-  login: (user: User) => void;
-  logout: () => void;
-}
-
-export const STORAGE_KEY = "assessment-helper-demo-user";
-
-function loadUser(): User | null {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? (JSON.parse(saved) as User) : null;
-  } catch {
-    return null;
-  }
+  loading: boolean;
+  login: (email: string, password: string) => Promise<User>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(loadUser);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const login = (next: User) => {
-    setUser(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentUser()
+      .catch(() => null)
+      .then((current) => {
+        if (!cancelled) {
+          setUser(current);
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const login = async (email: string, password: string) => {
+    const signedIn = await signIn(email, password);
+    setUser(signedIn);
+    return signedIn;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await signOut().catch(() => undefined);
     setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

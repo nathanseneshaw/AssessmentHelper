@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   cleanup,
   fireEvent,
@@ -7,9 +7,8 @@ import {
   within,
 } from "@testing-library/react";
 import { App } from "../../App";
-import { STORAGE_KEY } from "../../auth/AuthContext";
+import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 
-const originalFetch = globalThis.fetch;
 const faculty = [
   {
     professorId: 1,
@@ -50,19 +49,20 @@ const faculty = [
   lastNotifiedAt: null,
 }));
 
+let eligibility: () => Response;
+function queueOf(rows: typeof faculty) {
+  return Response.json({
+    cycleId: 1,
+    cycleLabel: "Fall 2026",
+    count: rows.length,
+    faculty: rows,
+  });
+}
+
 beforeEach(async () => {
-  globalThis.fetch = mock(async () =>
-    Response.json({
-      cycleId: 1,
-      cycleLabel: "Fall 2026",
-      count: faculty.length,
-      faculty,
-    }),
-  ) as unknown as typeof fetch;
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ role: "ac", name: "Test User" }),
-  );
+  eligibility = () => queueOf(faculty);
+  fakeBackend({ "/api/evaluation-eligibility": () => eligibility() });
+  signInAs("ac");
   window.history.pushState({}, "", "/ac/evaluations");
   render(<App />);
   await screen.findByRole("heading", { level: 1, name: "Faculty Evaluations" });
@@ -71,8 +71,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
-  globalThis.fetch = originalFetch;
+  resetBackend();
 });
 
 // The first cell of each body row (the header row has column headers, not cells).
@@ -98,14 +97,7 @@ describe("evaluation queue", () => {
       { ...extra, professorId: 6, name: "Professor 6" },
       { ...extra, professorId: 7, name: "Professor 7" },
     ];
-    globalThis.fetch = mock(async () =>
-      Response.json({
-        cycleId: 1,
-        cycleLabel: "Fall 2026",
-        count: allFaculty.length,
-        faculty: allFaculty,
-      }),
-    ) as unknown as typeof fetch;
+    eligibility = () => queueOf(allFaculty);
     render(<App />);
     await screen.findByText("6 of 6 faculty shown");
     expect(facultyShown()).toHaveLength(4);
@@ -143,19 +135,13 @@ describe("evaluation queue", () => {
   test("shows an API failure and successfully retries without mock rows", async () => {
     cleanup();
     let fail = true;
-    globalThis.fetch = mock(async () =>
+    eligibility = () =>
       fail
         ? Response.json(
             { detail: "Eligibility service unavailable" },
             { status: 503 },
           )
-        : Response.json({
-            cycleId: 1,
-            cycleLabel: "Fall 2026",
-            count: faculty.length,
-            faculty,
-          }),
-    ) as unknown as typeof fetch;
+        : queueOf(faculty);
     render(<App />);
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Eligibility service unavailable",
@@ -169,14 +155,7 @@ describe("evaluation queue", () => {
 
   test("an empty backend result shows an explicit empty state", async () => {
     cleanup();
-    globalThis.fetch = mock(async () =>
-      Response.json({
-        cycleId: 1,
-        cycleLabel: "Fall 2026",
-        count: 0,
-        faculty: [],
-      }),
-    ) as unknown as typeof fetch;
+    eligibility = () => queueOf([]);
     render(<App />);
     await screen.findByText("No faculty match this filter.");
     expect(screen.getByText("0 of 0 faculty shown")).toBeDefined();

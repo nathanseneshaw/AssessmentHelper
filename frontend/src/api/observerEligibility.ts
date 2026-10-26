@@ -55,7 +55,6 @@ export interface ObserverRequest {
 export interface FacultyState {
   cycle: Cycle;
   professor: Person;
-  sections: Section[];
   signup: Signup | null;
   incoming: ObserverRequest[];
   outgoing: ObserverRequest[];
@@ -78,7 +77,8 @@ export const postObserver = <T = void>(path: string, body?: unknown) =>
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-export function useObserverData<T>(path: string) {
+// A null path loads nothing, for sessions without a faculty profile.
+export function useObserverData<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
@@ -90,6 +90,7 @@ export function useObserverData<T>(path: string) {
   useEffect(() => {
     const controller = new AbortController();
     setData(null);
+    if (path === null) return;
     let pending = false;
     const read = async () => {
       if (pending) return;

@@ -2,13 +2,18 @@ package edu.utdallas.cs4485.assessmenthelper.service;
 
 import edu.utdallas.cs4485.assessmenthelper.entity.ObserverRequest;
 import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverMatchRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository.Candidate;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository.SignupContext;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Expiry is applied two ways. Every read and every response first expires the request if it is overdue, so callers
  * never see a stale PENDING, and a scheduled sweep expires the rest so the stored status stays accurate.
+ *
+ * <p>Signups with a generated observer list also follow {@link ObserverEligibilityService}: requests wait for the
+ * committee to release the list, the observer must still be eligible, and the observer can decline (DECLINED).
  */
 @Service
 public class ObserverRequestService {
@@ -34,22 +42,28 @@ public class ObserverRequestService {
     private final EvaluationSignupRepository signupRepository;
     private final ObserverRepository observerRepository;
     private final Clock clock;
-    private ObserverEligibilityService eligibility;
-
-    @Autowired(required = false)
-    void setEligibility(ObserverEligibilityService eligibility) {
-        this.eligibility = eligibility;
-    }
+    private final ObserverMatchRepository matches;
+    private final ObserverRequestContextRepository context;
+    private final ProfessorRepository professors;
+    private final ObserverEligibilityService eligibility;
 
     public ObserverRequestService(
             ObserverRequestRepository repository,
             EvaluationSignupRepository signupRepository,
             ObserverRepository observerRepository,
-            Clock clock) {
+            Clock clock,
+            ObserverMatchRepository matches,
+            ObserverRequestContextRepository context,
+            ProfessorRepository professors,
+            ObserverEligibilityService eligibility) {
         this.repository = repository;
         this.signupRepository = signupRepository;
         this.observerRepository = observerRepository;
         this.clock = clock;
+        this.matches = matches;
+        this.context = context;
+        this.professors = professors;
+        this.eligibility = eligibility;
     }
 
     /**
@@ -64,25 +78,117 @@ public class ObserverRequestService {
         if (signupId == null || observerId == null) {
             throw new IllegalArgumentException("signupId and observerId are required");
         }
-        if (!signupRepository.existsById(signupId)) {
-            throw new NotFoundException("No evaluation signup with id " + signupId);
-        }
+        var signup = lockSignup(signupId);
         if (!observerRepository.existsById(observerId)) {
             throw new NotFoundException("No observer with id " + observerId);
         }
-        if (eligibility != null && eligibility.manages(signupId)) {
-            eligibility.sendExistingRequest(signupId, observerId);
-            return repository.findBySignupId(signupId).stream()
-                    .filter(r -> r.observerId().equals(observerId))
-                    .findFirst()
-                    .orElseThrow();
+        String reason = unavailableReason(signup);
+        if (reason != null) {
+            throw new ConflictException(reason);
+        }
+        if (context.candidates(signupId).stream()
+                .noneMatch(candidate -> candidate.observerId().equals(observerId))) {
+            throw new ConflictException("Choose an active proposed observer from this signup's evaluation cycle.");
         }
         LocalDateTime now = now();
         LocalDateTime expires = expirationDate != null ? expirationDate : now.plus(DEFAULT_RESPONSE_WINDOW);
         if (!expires.isAfter(now)) {
             throw new IllegalArgumentException("expirationDate must be in the future");
         }
-        return repository.save(new ObserverRequest(null, signupId, observerId, now, expires, null, PENDING));
+        // The professor/signup locks serialize retries and requests to different candidates.
+        var active = find(signupId, null).stream()
+                .filter(request -> PENDING.equals(request.status()) || CONFIRMED.equals(request.status()))
+                .toList();
+        if (active.size() == 1 && active.getFirst().observerId().equals(observerId)) {
+            return active.getFirst();
+        }
+        if (!active.isEmpty()) {
+            throw new ConflictException("This signup already has a pending or confirmed observer request.");
+        }
+        eligibility.requireEligible(signupId, observerId);
+        var saved = repository.save(new ObserverRequest(null, signupId, observerId, now, expires, null, PENDING));
+        eligibility.requestSent(signupId, observerId);
+        return saved;
+    }
+
+    public record RequestSummary(ObserverRequest request, String observerName) {}
+
+    public record RequestOptions(
+            Integer signupId,
+            String courseLabel,
+            String semesterLabel,
+            String signupStatus,
+            String unavailableReason,
+            List<Candidate> candidates,
+            List<RequestSummary> requests) {}
+
+    @Transactional
+    public List<RequestOptions> options(Integer professorId) {
+        if (!professors.existsById(professorId)) {
+            throw new NotFoundException("No professor with id " + professorId);
+        }
+        return context.findSignups(professorId).stream()
+                .map(signup -> new RequestOptions(
+                        signup.signupId(),
+                        signup.courseLabel(),
+                        signup.semesterLabel(),
+                        signup.signupStatus(),
+                        unavailableReason(signup),
+                        eligibility.candidatesVisible(signup.signupId())
+                                ? context.candidates(signup.signupId())
+                                : List.of(),
+                        find(signup.signupId(), null).stream()
+                                .map(request -> new RequestSummary(request, context.observerName(request.observerId())))
+                                .toList()))
+                .toList();
+    }
+
+    @Transactional
+    public ObserverRequest createFromMatch(
+            Integer professorId, Integer signupId, Integer matchId, LocalDateTime expirationDate) {
+        if (signupId == null || matchId == null) {
+            throw new IllegalArgumentException("signupId and matchId are required");
+        }
+        var signup = context.findSignup(signupId)
+                .orElseThrow(() -> new NotFoundException("No evaluation signup with id " + signupId));
+        if (!signup.professorId().equals(professorId)) {
+            throw new NotFoundException("No evaluation signup for this professor with id " + signupId);
+        }
+        var match = matches.findById(matchId)
+                .orElseThrow(() -> new NotFoundException("No observer match with id " + matchId));
+        if (!match.signupId().equals(signupId)) {
+            throw new IllegalArgumentException("The proposed match does not belong to this signup.");
+        }
+        if (!"PROPOSED".equals(match.matchStatus())) {
+            throw new ConflictException("This match is no longer proposed. Refresh the candidate list.");
+        }
+        return create(signupId, match.observerId(), expirationDate);
+    }
+
+    private SignupContext lockSignup(Integer signupId) {
+        var initial = context.findSignup(signupId)
+                .orElseThrow(() -> new NotFoundException("No evaluation signup with id " + signupId));
+        // Same lock order as course selection, so its section cannot change during a send.
+        professors.findForSignupUpdate(initial.professorId()).orElseThrow();
+        signupRepository.findForRequestUpdate(signupId).orElseThrow();
+        return context.findSignup(signupId).orElseThrow();
+    }
+
+    private String unavailableReason(SignupContext signup) {
+        if (!Boolean.TRUE.equals(signup.professorActive())) {
+            return "This professor is not active.";
+        }
+        if (!"OPEN".equals(signup.cycleStatus())) {
+            return "This evaluation cycle is closed.";
+        }
+        if (!"ACTIVE".equals(signup.observeeStatus())
+                || !("PENDING".equals(signup.signupStatus()) || "MATCHED".equals(signup.signupStatus()))) {
+            return "This signup is no longer accepting observer requests.";
+        }
+        if (Boolean.TRUE.equals(signup.observationExists())) {
+            return "An observation is already scheduled for this signup.";
+        }
+        return eligibility.requestBlocker(signup.signupId());
     }
 
     /** @throws NotFoundException if there is no such request */
@@ -97,7 +203,10 @@ public class ObserverRequestService {
         List<ObserverRequest> requests = signupId != null
                 ? repository.findBySignupId(signupId)
                 : observerId != null ? repository.findByObserverId(observerId) : repository.findAll();
-        return requests.stream().map(this::expireIfOverdue).toList();
+        return requests.stream()
+                .map(this::expireIfOverdue)
+                .sorted(Comparator.comparing(ObserverRequest::requestId))
+                .toList();
     }
 
     /**
@@ -108,11 +217,14 @@ public class ObserverRequestService {
      */
     @Transactional
     public ObserverRequest confirm(Integer requestId) {
-        ObserverRequest request = expireIfOverdue(load(requestId));
-        if (eligibility != null && eligibility.manages(request.signupId())) {
+        Integer signupId = load(requestId).signupId();
+        if (eligibility.manages(signupId)) {
+            // Accepting a generated-list request also records the observation and notifies the observee.
             eligibility.confirmExistingRequest(requestId);
             return load(requestId);
         }
+        lockSignup(signupId);
+        ObserverRequest request = expireIfOverdue(load(requestId));
         if (EXPIRED.equals(request.status())) {
             throw new ConflictException("Request " + requestId + " has expired");
         }

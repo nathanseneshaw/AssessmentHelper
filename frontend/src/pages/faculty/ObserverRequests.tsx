@@ -12,11 +12,14 @@ import { Modal } from "../../components/Modal";
 
 export function FacultyObserverRequests() {
   const { user } = useAuth();
-  const id = user?.professorId ?? 1;
-  const { data, error } = useObserverData<FacultyState>(`/faculty/${id}`);
+  const id = user?.professorId;
+  const { data, error } = useObserverData<FacultyState>(
+    id ? `/faculty/${id}` : null,
+  );
   const [busy, setBusy] = useState<number | null>(null);
   const [failure, setFailure] = useState("");
   async function respond(requestId: number, accept: boolean) {
+    if (!id) return;
     setBusy(requestId);
     setFailure("");
     try {
@@ -35,12 +38,14 @@ export function FacultyObserverRequests() {
       title="Observer Requests"
       subtitle="Review requests and the observations you accepted."
     >
-      {(error || failure) && (
+      {(error || failure || !id) && (
         <p role="alert" className="mb-4 text-brand-red">
-          {failure || error}
+          {failure ||
+            error ||
+            "Your session has no faculty profile. Sign out and sign in again."}
         </p>
       )}
-      {!data?.cycle ? (
+      {!id ? null : !data?.cycle ? (
         <p>Loading requests…</p>
       ) : (
         <div className="max-h-[65vh] space-y-6 overflow-y-auto">

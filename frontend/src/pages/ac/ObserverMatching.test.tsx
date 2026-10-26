@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import {
   cleanup,
   fireEvent,
@@ -6,45 +6,49 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { ac } from "../../../test/observerFixtures";
+import { App } from "../../App";
 import type { AcState } from "../../api/observerEligibility";
-import { AuthProvider } from "../../auth/AuthContext";
-import { AcObserverMatching } from "./ObserverMatching";
+import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
+import { ac } from "../../test/observerFixtures";
 
-const originalFetch = globalThis.fetch;
 let state: AcState;
 let posts: string[];
+let unavailable: boolean;
+
 beforeEach(() => {
   state = structuredClone(ac);
   posts = [];
-  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
-    const path = String(input);
-    if (init?.method === "POST") {
-      posts.push(path);
-      if (path.endsWith("/release")) {
-        const first = state.signups[0];
-        if (first) first.released = true;
-      } else return Response.json(state);
+  unavailable = false;
+  fakeBackend({
+    "/api/observer-eligibility/ac": () =>
+      unavailable
+        ? Response.json({ detail: "Backend unavailable" }, { status: 503 })
+        : Response.json(state),
+    "/api/observer-eligibility/generate": (_init, url) => {
+      posts.push(url.pathname);
+      return Response.json(state);
+    },
+    "/api/observer-eligibility/signups/1/release": (_init, url) => {
+      posts.push(url.pathname);
+      const first = state.signups[0];
+      if (first) first.released = true;
       return new Response(null, { status: 204 });
-    }
-    return Response.json(state);
-  }) as unknown as typeof fetch;
+    },
+  });
+  signInAs("ac");
 });
+
 afterEach(() => {
   cleanup();
-  globalThis.fetch = originalFetch;
+  resetBackend();
 });
+
 async function open() {
-  render(
-    <MemoryRouter>
-      <AuthProvider>
-        <AcObserverMatching />
-      </AuthProvider>
-    </MemoryRouter>,
-  );
+  window.history.pushState({}, "", "/ac/matching");
+  render(<App />);
   await screen.findByRole("heading", { name: "Observee: Professor 1" });
 }
+
 test("loads persisted candidates and releases the reviewed list", async () => {
   await open();
   const card = screen
@@ -56,8 +60,9 @@ test("loads persisted candidates and releases the reviewed list", async () => {
   expect(within(card).queryByText(/3000-level/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Send Candidate List" }));
   await screen.findByRole("button", { name: "Candidate List Sent" });
-  expect(posts[0]).toEndWith("/signups/1/release");
+  expect(posts).toEqual(["/api/observer-eligibility/signups/1/release"]);
 });
+
 test("zero candidates alert AC and prevent release; arrows wrap", async () => {
   await open();
   fireEvent.click(screen.getByRole("button", { name: "Next observee" }));
@@ -76,23 +81,18 @@ test("zero candidates alert AC and prevent release; arrows wrap", async () => {
     screen.getByRole("heading", { name: "Observee: Professor 1" }),
   ).toBeDefined();
 });
+
 test("allows generation before the signup deadline", async () => {
   await open();
   fireEvent.click(screen.getByRole("button", { name: "Generate Matches" }));
   await screen.findByRole("status");
-  expect(posts[0]).toEndWith("/generate");
+  expect(posts).toEqual(["/api/observer-eligibility/generate"]);
 });
+
 test("reports a failed load without inventing candidates", async () => {
-  globalThis.fetch = mock(async () =>
-    Response.json({ detail: "Backend unavailable" }, { status: 503 }),
-  ) as unknown as typeof fetch;
-  render(
-    <MemoryRouter>
-      <AuthProvider>
-        <AcObserverMatching />
-      </AuthProvider>
-    </MemoryRouter>,
-  );
-  await screen.findByRole("alert");
+  unavailable = true;
+  window.history.pushState({}, "", "/ac/matching");
+  render(<App />);
+  await screen.findByText(/Backend unavailable/);
   expect(screen.queryByText("Professor 2")).toBeNull();
 });

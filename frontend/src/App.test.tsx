@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   cleanup,
   fireEvent,
@@ -6,31 +6,15 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { ac, faculty } from "../test/observerFixtures";
 import { App } from "./App";
-import { STORAGE_KEY } from "./auth/AuthContext";
 import { NAV_ITEMS, type Role } from "./navConfig";
-
-const originalFetch = globalThis.fetch;
-beforeEach(() => {
-  globalThis.fetch = mock(async (input: unknown) => {
-    const path = String(input);
-    if (path.endsWith("/observer-eligibility/faculty"))
-      return Response.json([faculty.professor]);
-    if (path.includes("/observer-eligibility/faculty/"))
-      return Response.json(faculty);
-    if (path.endsWith("/observer-eligibility/ac")) return Response.json(ac);
-    return Response.json({
-      cycleId: 1,
-      cycleLabel: "Fall 2026",
-      count: 0,
-      faculty: [],
-    });
-  }) as unknown as typeof fetch;
-});
-afterEach(() => {
-  globalThis.fetch = originalFetch;
-});
+import {
+  fakeBackend,
+  resetBackend,
+  sessionUser,
+  signInAs,
+} from "./test/fakeBackend";
+import { ac, faculty } from "./test/observerFixtures";
 
 const AC_PAGES = [
   ["/ac", "Assessment Committee Dashboard"],
@@ -46,6 +30,7 @@ const AC_PAGES = [
 const FACULTY_DIALOGS = [
   ["/faculty/signup", "Sign Up for Evaluation"],
   ["/faculty/observers", "Choose Observers"],
+  ["/faculty/requests", "Observer Requests"],
   ["/faculty/history", "Evaluation History"],
   ["/faculty/observations/me", "Observation Records for Me"],
   ["/faculty/observations/others", "Observation Records for Others"],
@@ -59,16 +44,11 @@ const PROTECTED_PATHS = [
   ...FACULTY_DIALOGS.map(([path]) => path),
 ];
 
-// mockLogin waits 600ms before answering.
-const SIGN_IN_WAIT = { timeout: 3000 };
+const EMPTY_QUEUE = () =>
+  Response.json({ cycleId: 1, cycleLabel: "Fall 2026", count: 0, faculty: [] });
 
 function renderAt(path: string, role?: Role) {
-  if (role) {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ role, name: "Test User" }),
-    );
-  }
+  signInAs(role ?? null);
   window.history.pushState({}, "", path);
   render(<App />);
 }
@@ -77,8 +57,8 @@ function currentPath() {
   return window.location.pathname;
 }
 
-function submitLogin(email: string, password: string) {
-  fireEvent.change(screen.getByLabelText("Email"), {
+async function submitLogin(email: string, password: string) {
+  fireEvent.change(await screen.findByLabelText("Email"), {
     target: { value: email },
   });
   fireEvent.change(screen.getByLabelText("Password"), {
@@ -87,9 +67,18 @@ function submitLogin(email: string, password: string) {
   fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
 }
 
+beforeEach(() => {
+  fakeBackend({
+    "/api/due-evaluations": EMPTY_QUEUE,
+    "/api/overdue-evaluations": EMPTY_QUEUE,
+    "/api/observer-eligibility/ac": () => Response.json(ac),
+    "/api/observer-eligibility/faculty/2": () => Response.json(faculty),
+  });
+});
+
 afterEach(() => {
   cleanup();
-  localStorage.clear();
+  resetBackend();
 });
 
 describe("signed out", () => {
@@ -114,32 +103,26 @@ describe("signed out", () => {
 describe("signing in", () => {
   test("faculty land on the faculty dashboard", async () => {
     renderAt("/login");
-    submitLogin("faculty@utdallas.edu", "Faculty123!");
-    await screen.findByRole(
-      "heading",
-      { name: "My Evaluation Dashboard" },
-      SIGN_IN_WAIT,
-    );
+    await submitLogin("bob@utdallas.edu", "Faculty123!");
+    await screen.findByRole("heading", { name: "My Evaluation Dashboard" });
     expect(currentPath()).toBe("/faculty");
-    expect(screen.getByText("Demo Faculty")).toBeDefined();
+    expect(screen.getByText("Bob Bob")).toBeDefined();
   });
 
   test("assessment committee members land on the AC overview", async () => {
     renderAt("/login");
-    submitLogin("ac@utdallas.edu", "Committee123!");
-    await screen.findByRole(
-      "heading",
-      { name: "Assessment Committee Dashboard" },
-      SIGN_IN_WAIT,
-    );
+    await submitLogin("alice@utdallas.edu", "Committee123!");
+    await screen.findByRole("heading", {
+      name: "Assessment Committee Dashboard",
+    });
     expect(currentPath()).toBe("/ac");
-    expect(screen.getByText("Demo AC Member")).toBeDefined();
+    expect(screen.getByText("Alice Alice")).toBeDefined();
   });
 
   test("a wrong password stays on the login page", async () => {
     renderAt("/login");
-    submitLogin("faculty@utdallas.edu", "wrong");
-    await screen.findByText("Incorrect email or password.", {}, SIGN_IN_WAIT);
+    await submitLogin("bob@utdallas.edu", "wrong");
+    await screen.findByText("Incorrect email or password.");
     expect(currentPath()).toBe("/login");
   });
 
@@ -198,7 +181,7 @@ describe("assessment committee", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
     await screen.findByRole("button", { name: "Sign In" });
     expect(currentPath()).toBe("/login");
-    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(sessionUser()).toBeNull();
   });
 });
 
@@ -264,8 +247,10 @@ describe("faculty", () => {
     expect(currentPath()).toBe("/faculty");
     expect(screen.queryByRole("dialog")).toBeNull();
 
-    fireEvent.click(screen.getByRole("link", { name: /Observer Requests/ }));
-    await screen.findByRole("dialog", { name: "Observer Requests" });
+    fireEvent.click(
+      screen.getByRole("link", { name: "View Generated Observers" }),
+    );
+    await screen.findByRole("dialog", { name: "Choose Observers" });
     fireEvent.keyDown(window, { key: "Escape" });
     expect(currentPath()).toBe("/faculty");
     expect(screen.queryByRole("dialog")).toBeNull();

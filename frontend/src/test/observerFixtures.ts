@@ -3,7 +3,7 @@ import type {
   Cycle,
   FacultyState,
   Signup,
-} from "../src/api/observerEligibility";
+} from "../api/observerEligibility";
 export const cycle: Cycle = {
   cycleId: 1,
   semesterId: 1,
@@ -60,7 +60,6 @@ export const faculty: FacultyState = {
     name: "Professor 1",
     department: "Computer Science",
   },
-  sections: [section],
   signup: null,
   incoming: [],
   outgoing: [],

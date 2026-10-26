@@ -2,8 +2,6 @@ import type { ReactNode } from "react";
 import { Link, Outlet } from "react-router-dom";
 import {
   type FacultyState,
-  observerButton,
-  type Person,
   useObserverData,
 } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
@@ -99,22 +97,11 @@ function SectionCard({
 }
 
 export function FacultyDashboard() {
-  const { user, login } = useAuth();
-  const id = user?.professorId ?? 1;
-  const { data, error } = useObserverData<FacultyState>(`/faculty/${id}`);
-  const { data: people } = useObserverData<Person[]>("/faculty");
-  const released = !!data?.signup?.released;
-  const canSignup = !!data?.cycle?.signupOpen && !data?.signup && !error;
-  const facultyLink = (to: string, label: string, enabled: boolean) =>
-    enabled ? (
-      <Link to={to} className={observerButton}>
-        {label}
-      </Link>
-    ) : (
-      <button type="button" disabled className={observerButton}>
-        {label}
-      </button>
-    );
+  const { user } = useAuth();
+  const id = user?.professorId;
+  const { data, error } = useObserverData<FacultyState>(
+    id ? `/faculty/${id}` : null,
+  );
   const liveSummary = summary.map((item) =>
     item.label === "Observations This Term"
       ? {
@@ -140,12 +127,18 @@ export function FacultyDashboard() {
           </p>
         </div>
         <div className="flex gap-3">
-          {facultyLink(
-            "/faculty/observers",
-            "View Generated Observers",
-            released && !error,
-          )}
-          {facultyLink("/faculty/signup", "Sign Up for Evaluation", canSignup)}
+          <Link
+            to="/faculty/observers"
+            className="rounded-lg bg-btn-gray px-5 py-3 font-medium text-sm text-white hover:opacity-90"
+          >
+            View Generated Observers
+          </Link>
+          <Link
+            to="/faculty/signup"
+            className="rounded-lg bg-btn-gray px-5 py-3 font-medium text-sm text-white hover:opacity-90"
+          >
+            Sign Up for Evaluation
+          </Link>
         </div>
       </div>
 
@@ -168,33 +161,13 @@ export function FacultyDashboard() {
         </p>
       </div>
 
-      {error && (
+      {(error || !id) && (
         <p role="alert" className="mt-4 text-brand-red">
-          {error}
+          {error ||
+            "This account has no faculty profile, so there is no evaluation status to show."}
         </p>
       )}
       <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg border border-line bg-white p-4">
-        <label className="text-sm">
-          Demo faculty identity{" "}
-          <select
-            value={id}
-            onChange={(e) => {
-              const p = people?.find(
-                (p) => p.professorId === Number(e.target.value),
-              );
-              if (p && user)
-                login({ ...user, professorId: p.professorId, name: p.name });
-            }}
-            className="ml-3 rounded border border-line p-2"
-          >
-            {Array.isArray(people) &&
-              people.map((p) => (
-                <option key={p.professorId} value={p.professorId}>
-                  {p.name}
-                </option>
-              ))}
-          </select>
-        </label>
         <Link
           className="font-semibold text-brand-green underline"
           to="/faculty/requests"

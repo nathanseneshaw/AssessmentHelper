@@ -36,7 +36,7 @@ export function AcObserverMatching() {
       );
       setMessage(
         release
-          ? "Candidate list sent. The professor can now choose observers."
+          ? "Candidate list sent. The professor can now request an observer."
           : "Candidate lists updated. Existing candidates are preserved.",
       );
       reload();
