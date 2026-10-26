@@ -34,6 +34,7 @@ public class ObserverRequestService {
     public static final String PENDING = "PENDING";
     public static final String CONFIRMED = "CONFIRMED";
     public static final String EXPIRED = "EXPIRED";
+    public static final String DECLINED = "DECLINED";
 
     /** How long an observer has to respond when the caller does not pick an expiration date. */
     static final Duration DEFAULT_RESPONSE_WINDOW = Duration.ofDays(7);
@@ -224,16 +225,18 @@ public class ObserverRequestService {
             return load(requestId);
         }
         lockSignup(signupId);
-        ObserverRequest request = expireIfOverdue(load(requestId));
-        if (EXPIRED.equals(request.status())) {
-            throw new ConflictException("Request " + requestId + " has expired");
-        }
-        if (!PENDING.equals(request.status())) {
-            throw new ConflictException("Request " + requestId + " is already " + request.status());
-        }
-        return repository.save(withStatus(request, CONFIRMED, now()));
+        return repository.save(withStatus(requirePending(requestId), CONFIRMED, now()));
     }
-
+    /**
+     * The observer declines the request.
+     *
+     * @throws NotFoundException if there is no such request
+     * @throws ConflictException if the request has expired or was already answered
+     */
+    @Transactional
+    public ObserverRequest decline(Integer requestId) {
+        return repository.save(withStatus(requirePending(requestId), DECLINED, now()));
+    }
     /** Marks every PENDING request past its expiration date as EXPIRED and returns how many it changed. */
     @Transactional
     public int expireOverdue() {
@@ -245,6 +248,17 @@ public class ObserverRequestService {
     @Scheduled(fixedRate = 60 * 60 * 1000)
     void expireOverdueOnSchedule() {
         expireOverdue();
+    }
+
+    private ObserverRequest requirePending(Integer requestId) {
+        ObserverRequest request = expireIfOverdue(load(requestId));
+        if (EXPIRED.equals(request.status())) {
+            throw new ConflictException("Request " + requestId + " has expired");
+        }
+        if (!PENDING.equals(request.status())) {
+            throw new ConflictException("Request " + requestId + " is already " + request.status());
+        }
+        return request;
     }
 
     private ObserverRequest load(Integer requestId) {
