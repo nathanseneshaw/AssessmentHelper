@@ -55,7 +55,8 @@ class AuthenticationTests {
 
     @Test
     void emailIsNotCaseSensitive() throws Exception {
-        mockMvc.perform(signInRequest("Dario.Hollowell@Example.edu", DARIO_PASSWORD)).andExpect(status().isOk());
+        mockMvc.perform(signInRequest("Dario.Hollowell@Example.edu", DARIO_PASSWORD))
+                .andExpect(status().isOk());
     }
 
     @Test

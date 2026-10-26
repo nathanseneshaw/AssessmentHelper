@@ -168,16 +168,11 @@ public class ObserverEligibilityService {
     }
 
     private Person person(int id) {
-        return db
-                .query(
-                        """
+        return db.query("""
                 SELECT p.professor_id, p.first_name || ' ' || p.last_name AS name, d.department_name
                 FROM professor p JOIN department d ON d.department_id=p.department_id
                 WHERE p.active_status=TRUE AND p.professor_id=?
-                """,
-                        (r, n) -> new Person(r.getInt(1), r.getString(2), r.getString(3)),
-                        id)
-                .stream()
+                """, (r, n) -> new Person(r.getInt(1), r.getString(2), r.getString(3)), id).stream()
                 .findFirst()
                 .orElseThrow(() -> new NotFoundException("Active professor not found."));
     }
@@ -587,7 +582,8 @@ public class ObserverEligibilityService {
     public void requestSent(int signupId, int observerId) {
         if (!manages(signupId)) return;
         Signup s = managedSignup(signupId, cycle(cycleIdOf(signupId)));
-        int recipient = db.queryForObject("SELECT professor_id FROM observer WHERE observer_id=?", Integer.class, observerId);
+        int recipient =
+                db.queryForObject("SELECT professor_id FROM observer WHERE observer_id=?", Integer.class, observerId);
         notify(
                 recipient,
                 signupId,
@@ -650,7 +646,8 @@ public class ObserverEligibilityService {
         var templates = db.queryForList(
                 "SELECT template_id FROM observation_template WHERE active_status=TRUE ORDER BY version DESC,template_id DESC",
                 Integer.class);
-        if (accept && templates.isEmpty()) throw new ConflictException("Configure an active observation template first.");
+        if (accept && templates.isEmpty())
+            throw new ConflictException("Configure an active observation template first.");
         db.update(
                 "UPDATE observer_request SET status=?,response_date=? WHERE request_id=?",
                 accept ? "CONFIRMED" : "DECLINED",

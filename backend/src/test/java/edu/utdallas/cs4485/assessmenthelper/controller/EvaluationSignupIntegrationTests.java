@@ -52,13 +52,11 @@ class EvaluationSignupIntegrationTests {
             null,
             true);
     private static final AccountPrincipal LEANDER = new AccountPrincipal(
-            new CurrentUser(
-                    null, 13, 1, "Leander Coldwell", "leander.coldwell@example.edu", List.of(Role.PROFESSOR)),
+            new CurrentUser(null, 13, 1, "Leander Coldwell", "leander.coldwell@example.edu", List.of(Role.PROFESSOR)),
             null,
             true);
     private static final AccountPrincipal HOLLIS = new AccountPrincipal(
-            new CurrentUser(
-                    null, 9, 1, "Hollis Carrowmore", "hollis.carrowmore@example.edu", List.of(Role.PROFESSOR)),
+            new CurrentUser(null, 9, 1, "Hollis Carrowmore", "hollis.carrowmore@example.edu", List.of(Role.PROFESSOR)),
             null,
             true);
 
@@ -186,7 +184,8 @@ class EvaluationSignupIntegrationTests {
                         .content("{\"sectionId\":284}"))
                 .andExpect(status().isConflict());
         db.update("INSERT INTO evaluation_cycle (semester_id, status) VALUES (13, 'OPEN')");
-        mvc.perform(as(LEANDER, get("/api/professors/13/evaluation-signups/13"))).andExpect(status().isConflict());
+        mvc.perform(as(LEANDER, get("/api/professors/13/evaluation-signups/13")))
+                .andExpect(status().isConflict());
     }
 
     @Test

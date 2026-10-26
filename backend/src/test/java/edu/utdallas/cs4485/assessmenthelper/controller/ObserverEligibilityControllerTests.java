@@ -59,8 +59,7 @@ class ObserverEligibilityControllerTests {
             null,
             true);
     private static final AccountPrincipal HOLLIS = new AccountPrincipal(
-            new CurrentUser(
-                    null, 9, 1, "Hollis Carrowmore", "hollis.carrowmore@example.edu", List.of(Role.PROFESSOR)),
+            new CurrentUser(null, 9, 1, "Hollis Carrowmore", "hollis.carrowmore@example.edu", List.of(Role.PROFESSOR)),
             null,
             true);
 
@@ -147,7 +146,8 @@ class ObserverEligibilityControllerTests {
                                 "Leander Coldwell", "Arlo Glimmerton", "Avery Hazelwood", "Keira Larkspur")));
         mvc.perform(as(DARIO, get("/api/professors/34/observer-requests")))
                 .andExpect(jsonPath("$[0].candidates.length()").value(0))
-                .andExpect(jsonPath("$[0].unavailableReason").value("Your observer list is awaiting committee review."));
+                .andExpect(
+                        jsonPath("$[0].unavailableReason").value("Your observer list is awaiting committee review."));
 
         mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/release")))
                 .andExpect(status().isNoContent());

@@ -60,8 +60,7 @@ class FacultyObserverRequestIntegrationTests {
             null,
             true);
     private static final AccountPrincipal HOLLIS = new AccountPrincipal(
-            new CurrentUser(
-                    null, 9, 1, "Hollis Carrowmore", "hollis.carrowmore@example.edu", List.of(Role.PROFESSOR)),
+            new CurrentUser(null, 9, 1, "Hollis Carrowmore", "hollis.carrowmore@example.edu", List.of(Role.PROFESSOR)),
             null,
             true);
     private static final AccountPrincipal AVERY = new AccountPrincipal(
@@ -125,8 +124,8 @@ class FacultyObserverRequestIntegrationTests {
 
     @Test
     void rejectsMissingOrForeignSignupAndMatchWithoutCreatingRequests() throws Exception {
-        int leandersMatch = db.queryForObject(
-                "SELECT MIN(match_id) FROM observer_match WHERE signup_id = 33", Integer.class);
+        int leandersMatch =
+                db.queryForObject("SELECT MIN(match_id) FROM observer_match WHERE signup_id = 33", Integer.class);
         send(HOLLIS, signupId, matchId).andExpect(status().isNotFound());
         send(AVERY, signupId, leandersMatch).andExpect(status().isBadRequest());
         send(AVERY, signupId, 99999).andExpect(status().isNotFound());

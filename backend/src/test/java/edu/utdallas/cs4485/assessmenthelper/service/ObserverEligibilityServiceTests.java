@@ -128,7 +128,8 @@ class ObserverEligibilityServiceTests {
         var candidates = list(target).candidates();
         assertThat(candidates).hasSize(4);
         int first = candidates.get(0).observerId(), second = candidates.get(1).observerId();
-        int firstProfessor = candidates.get(0).professorId(), secondProfessor = candidates.get(1).professorId();
+        int firstProfessor = candidates.get(0).professorId(),
+                secondProfessor = candidates.get(1).professorId();
 
         // Dario sees no candidates and cannot request until the committee releases the list.
         assertThat(options(DARIO).candidates()).isEmpty();
@@ -156,7 +157,8 @@ class ObserverEligibilityServiceTests {
         service.respond(secondProfessor, next.requestId(), true);
         assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, target))
                 .isEqualTo(1);
-        assertThat(options(DARIO).unavailableReason()).isEqualTo("An observation is already scheduled for this signup.");
+        assertThat(options(DARIO).unavailableReason())
+                .isEqualTo("An observation is already scheduled for this signup.");
         assertThatThrownBy(() -> requests.create(target, candidates.get(2).observerId(), null))
                 .isInstanceOf(ConflictException.class);
         assertThat(service.facultyState(DARIO).outgoing())
@@ -169,7 +171,8 @@ class ObserverEligibilityServiceTests {
     void confirmingThroughTheRequestApiRecordsTheObservation() {
         int target = darioSignsUp();
         service.release(target);
-        var request = requests.create(target, list(target).candidates().getFirst().observerId(), null);
+        var request =
+                requests.create(target, list(target).candidates().getFirst().observerId(), null);
         assertThat(requests.confirm(request.requestId()).status()).isEqualTo("CONFIRMED");
         assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, target))
                 .isEqualTo(1);
@@ -180,11 +183,7 @@ class ObserverEligibilityServiceTests {
     void rejectsBadWindowsWrongClassMatchedChangesAndDeadlines() {
         assertThat(signups.window(DARIO, FALL_2026))
                 .isEqualTo(new ObserverEligibilityService.Window(
-                        LocalDate.of(2026, 11, 1),
-                        LocalDate.of(2026, 11, 15),
-                        null,
-                        LocalDate.of(2026, 10, 31),
-                        true));
+                        LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 15), null, LocalDate.of(2026, 10, 31), true));
         assertThatThrownBy(() -> signups.save(DARIO, FALL_2026, 298, LocalDate.of(2026, 10, 31)))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> signups.save(DARIO, FALL_2026, 298, LocalDate.of(2026, 12, 1)))
