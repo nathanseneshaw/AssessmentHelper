@@ -7,4 +7,6 @@ import org.springframework.data.repository.ListCrudRepository;
 public interface TeachingHistoryRepository extends ListCrudRepository<TeachingHistory, Integer> {
 
     List<TeachingHistory> findByProfessorId(Integer professorId);
+
+    boolean existsByProfessorIdAndSectionId(Integer professorId, Integer sectionId);
 }

@@ -5,6 +5,7 @@ import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -50,6 +51,7 @@ public class ObserverRequestController {
     }
 
     @PostMapping("/{requestId}/decline")
+    @PreAuthorize("@professorAccess.isRequestedObserver(principal, #requestId)")
     public ObserverRequest decline(@PathVariable Integer requestId) {
         return service.decline(requestId);
     }

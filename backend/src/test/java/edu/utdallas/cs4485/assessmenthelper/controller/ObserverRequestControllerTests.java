@@ -1,7 +1,13 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -9,10 +15,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import edu.utdallas.cs4485.assessmenthelper.config.SecurityConfig;
 import edu.utdallas.cs4485.assessmenthelper.entity.ObserverRequest;
+import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
+import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
+import edu.utdallas.cs4485.assessmenthelper.security.ProfessorAccess;
+import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import edu.utdallas.cs4485.assessmenthelper.service.ConflictException;
 import edu.utdallas.cs4485.assessmenthelper.service.NotFoundException;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -31,11 +42,17 @@ class ObserverRequestControllerTests {
     private static final ObserverRequest PENDING = new ObserverRequest(
             1, 2, 3, LocalDateTime.of(2026, 10, 20, 12, 0), LocalDateTime.of(2026, 10, 27, 12, 0), null, "PENDING");
 
+    private static final AccountPrincipal OBSERVER = new AccountPrincipal(
+            new CurrentUser(3, 3, 1, "Test Observer", "observer@univ.edu", List.of(Role.PROFESSOR)), null, true);
+
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
     private ObserverRequestService service;
+
+    @MockitoBean(name = "professorAccess")
+    private ProfessorAccess professorAccess;
 
     @MockitoBean
     private UserDetailsService userDetailsService;
@@ -92,19 +109,38 @@ class ObserverRequestControllerTests {
                 LocalDateTime.of(2026, 10, 27, 12, 0),
                 LocalDateTime.of(2026, 10, 21, 9, 0),
                 "DECLINED");
+        when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
         when(service.decline(1)).thenReturn(declined);
 
-        mockMvc.perform(post("/api/observer-requests/1/decline"))
+        mockMvc.perform(post("/api/observer-requests/1/decline")
+                        .with(user(OBSERVER))
+                        .with(csrf()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DECLINED"));
     }
 
     @Test
     void decliningExpiredRequestReturns409() throws Exception {
+        when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
         when(service.decline(1)).thenThrow(new ConflictException("Request 1 has expired"));
 
-        mockMvc.perform(post("/api/observer-requests/1/decline"))
+        mockMvc.perform(post("/api/observer-requests/1/decline")
+                        .with(user(OBSERVER))
+                        .with(csrf()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("Request 1 has expired"));
+    }
+
+    @Test
+    void decliningARequestSentToSomeoneElseReturns403() throws Exception {
+        when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(false);
+
+        mockMvc.perform(post("/api/observer-requests/1/decline")
+                        .with(user(OBSERVER))
+                        .with(csrf()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("You do not have access to this resource."));
+
+        verify(service, never()).decline(anyInt());
     }
 }

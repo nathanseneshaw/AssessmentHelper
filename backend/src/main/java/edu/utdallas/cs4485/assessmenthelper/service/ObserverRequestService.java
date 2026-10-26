@@ -218,6 +218,13 @@ public class ObserverRequestService {
      */
     @Transactional
     public ObserverRequest confirm(Integer requestId) {
+        Integer signupId = load(requestId).signupId();
+        if (eligibility.manages(signupId)) {
+            // Accepting a generated-list request also records the observation and notifies the observee.
+            eligibility.confirmExistingRequest(requestId);
+            return load(requestId);
+        }
+        lockSignup(signupId);
         return repository.save(withStatus(requirePending(requestId), CONFIRMED, now()));
     }
     /**
