@@ -1,5 +1,10 @@
 import { type ReactNode, useEffect, useState } from "react";
 import {
+  type DashboardMetrics,
+  getDashboardMetrics,
+  type Ratio,
+} from "../../api/acDashboard";
+import {
   getDueQueue,
   getOverdueQueue,
   type OverdueQueue,
@@ -12,79 +17,151 @@ import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
 import { OverdueEvaluations } from "./OverdueEvaluations";
 
-const kpiGroups: { title: string; grid: string; kpis: Kpi[] }[] = [
-  {
-    title: "Faculty evaluation",
-    grid: "sm:grid-cols-2",
-    kpis: [
-      {
-        label: "Evaluation Eligibility Accuracy",
-        value: "96%",
-        note: "Faculty correctly identified",
-      },
-      {
-        label: "Overdue Evaluations",
-        value: "—",
-        note: "Requires committee attention",
-        alert: true,
-        action: {
-          label: "View All",
-          ariaLabel: "View all overdue evaluations",
+interface KpiGroup {
+  title: string;
+  grid: string;
+  kpis: Kpi[];
+}
+
+type Reading = Pick<Kpi, "value" | "note">;
+
+function rate(
+  { count, total }: Ratio,
+  counted: string,
+  empty: string,
+): Reading {
+  return total === 0
+    ? { value: "—", note: empty }
+    : {
+        value: `${Math.round((count / total) * 100)}%`,
+        note: `${count} of ${total} ${counted}`,
+      };
+}
+
+interface DashboardData {
+  metrics: DashboardMetrics | null;
+  metricsFailed: boolean;
+  overdue: OverdueQueue | null;
+  overdueError: string;
+  onViewOverdue: () => void;
+  /** Null until the observer matching data loads. */
+  unmatched: number | null;
+  unmatchedError: string;
+}
+
+function kpiGroups({
+  metrics,
+  metricsFailed,
+  overdue,
+  overdueError,
+  onViewOverdue,
+  unmatched,
+  unmatchedError,
+}: DashboardData): KpiGroup[] {
+  const metric = (
+    label: string,
+    read: (loaded: DashboardMetrics) => Reading,
+    alert = false,
+  ): Kpi => ({
+    label,
+    alert,
+    ...(metricsFailed
+      ? { value: "Unavailable", note: "Metrics could not be loaded" }
+      : metrics
+        ? read(metrics)
+        : { value: "—", note: "Loading…" }),
+  });
+  return [
+    {
+      title: "Faculty evaluation",
+      grid: "sm:grid-cols-2",
+      kpis: [
+        metric("Faculty Due This Cycle", (loaded) => ({
+          value: String(loaded.facultyDue),
+          note: "Active faculty due for evaluation",
+        })),
+        {
+          label: "Overdue Evaluations",
+          value: overdue ? String(overdue.count) : "—",
+          note: overdueError
+            ? "Unable to load overdue evaluations"
+            : overdue
+              ? "Requires committee attention"
+              : "Loading overdue evaluations…",
+          alert: true,
+          action: {
+            label: "View All",
+            ariaLabel: "View all overdue evaluations",
+            disabled: !overdue || Boolean(overdueError),
+            onClick: onViewOverdue,
+          },
         },
-      },
-    ],
-  },
-  {
-    title: "Assessment participation",
-    grid: "sm:grid-cols-2 xl:max-w-160",
-    kpis: [
-      {
-        label: "Participation Rate",
-        value: "82%",
-        note: "# prof signed up / # of prof due",
-      },
-      {
-        label: "Observer Utilization",
-        value: "74%",
-        note: "# of observers / # of prof signed up",
-      },
-    ],
-  },
-  {
-    title: "Recommendation engine",
-    grid: "sm:grid-cols-2",
-    kpis: [
-      {
-        label: "List Sufficiency Rate",
-        value: "91%",
-        note: "Avg # of observer matches / # sign-ups",
-      },
-      {
-        label: "Unmatched Faculty",
-        value: "2",
-        note: "Need manual attention",
-        alert: true,
-      },
-    ],
-  },
-  {
-    title: "Survey & observation completion",
-    grid: "sm:grid-cols-[6fr_7fr]",
-    kpis: [
-      {
-        label: "Survey Completion Rate",
-        value: "78%",
-        note: "Process feedback received",
-      },
-      {
-        label: "Missing Observations",
-        value: "4",
-        note: "Approved observations that are not completed",
-        alert: true,
-      },
-    ],
-  },
-];
+      ],
+    },
+    {
+      title: "Assessment participation",
+      grid: "sm:grid-cols-2 xl:max-w-160",
+      kpis: [
+        metric("Participation Rate", (loaded) =>
+          rate(
+            loaded.participation,
+            "due faculty signed up",
+            "No faculty are due this cycle",
+          ),
+        ),
+        metric("Observer Utilization", (loaded) =>
+          rate(
+            loaded.observerUtilization,
+            "signups have an observer",
+            "No signups this cycle",
+          ),
+        ),
+      ],
+    },
+    {
+      title: "Recommendation engine",
+      grid: "sm:grid-cols-2",
+      kpis: [
+        metric("List Sufficiency Rate", (loaded) =>
+          rate(
+            loaded.listSufficiency,
+            `signups have a full list of ${loaded.listSize}`,
+            "No signups this cycle",
+          ),
+        ),
+        {
+          label: "Unmatched Faculty",
+          value: unmatchedError
+            ? "Unavailable"
+            : unmatched === null
+              ? "Loading"
+              : String(unmatched),
+          note: "Need manual attention",
+          alert: true,
+        },
+      ],
+    },
+    {
+      title: "Survey & observation completion",
+      grid: "sm:grid-cols-[6fr_7fr]",
+      kpis: [
+        {
+          label: "Survey Completion Rate",
+          value: "78%",
+          note: "Process feedback received",
+        },
+        metric(
+          "Missing Observations",
+          (loaded) => ({
+            value: String(loaded.missingObservations),
+            note: "Approved observations past their date and not completed",
+          }),
+          true,
+        ),
+      ],
+    },
+  ];
+}
 
 function ListPanel({
   title,
@@ -136,12 +213,15 @@ export function AcOverview() {
   const [dueQueue, setDueQueue] = useState<OverdueQueue | null>(null);
   const [dueError, setDueError] = useState("");
   const [dueOpen, setDueOpen] = useState(false);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [metricsFailed, setMetricsFailed] = useState(false);
   // Retry deliberately reruns the request even though the request URL is unchanged.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload is an explicit retry trigger.
   useEffect(() => {
     const controller = new AbortController();
     setError("");
     setDueError("");
+    setMetricsFailed(false);
     getDueQueue(controller.signal)
       .then(setDueQueue)
       .catch((cause) => {
@@ -162,8 +242,22 @@ export function AcOverview() {
               : "Unable to load overdue evaluations.",
           );
       });
+    getDashboardMetrics(controller.signal)
+      .then(setMetrics)
+      .catch(() => {
+        if (!controller.signal.aborted) setMetricsFailed(true);
+      });
     return () => controller.abort();
   }, [reload]);
+  const groups = kpiGroups({
+    metrics,
+    metricsFailed,
+    overdue: queue,
+    overdueError: error,
+    onViewOverdue: () => setOpen(true),
+    unmatched: matching ? unmatchedFaculty.length : null,
+    unmatchedError: matchingError,
+  });
   return (
     <div>
       <PageHeader
@@ -223,44 +317,14 @@ export function AcOverview() {
       )}
 
       <div className="mt-7.5 grid gap-x-10 gap-y-8.5 xl:grid-cols-[minmax(0,40rem)_minmax(0,1fr)]">
-        {kpiGroups.map((group) => (
+        {groups.map((group) => (
           <section key={group.title}>
             <h2 className="mb-1.5 font-semibold text-[15px] text-brand-green">
               {group.title}
             </h2>
             <div className={`grid gap-4 ${group.grid}`}>
               {group.kpis.map((kpi) => (
-                <KpiCard
-                  key={kpi.label}
-                  kpi={
-                    kpi.label === "Overdue Evaluations"
-                      ? {
-                          ...kpi,
-                          value: queue ? String(queue.count) : "—",
-                          note: error
-                            ? "Unable to load overdue evaluations"
-                            : queue
-                              ? kpi.note
-                              : "Loading overdue evaluations…",
-                          action: {
-                            label: "View All",
-                            ariaLabel: "View all overdue evaluations",
-                            disabled: !queue || Boolean(error),
-                            onClick: () => setOpen(true),
-                          },
-                        }
-                      : kpi.label === "Unmatched Faculty"
-                        ? {
-                            ...kpi,
-                            value: matchingError
-                              ? "Unavailable"
-                              : matching
-                                ? String(unmatchedFaculty.length)
-                                : "Loading",
-                          }
-                        : kpi
-                  }
-                />
+                <KpiCard key={kpi.label} kpi={kpi} />
               ))}
             </div>
           </section>

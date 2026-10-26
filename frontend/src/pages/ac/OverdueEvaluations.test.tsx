@@ -14,6 +14,7 @@ import {
   type OverdueQueue,
 } from "../../api/evaluationEligibility";
 import { AuthProvider } from "../../auth/AuthContext";
+import { metrics } from "../../test/acDashboardFixtures";
 import { AcOverview } from "./Overview";
 
 const originalFetch = globalThis.fetch;
@@ -21,6 +22,17 @@ afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
 });
+
+// The dashboard also loads its KPI metrics, which these tests leave alone.
+function mockFetch(
+  handler: (input: unknown, init?: RequestInit) => Promise<Response>,
+) {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) =>
+    String(input).endsWith("/ac-dashboard/metrics")
+      ? Response.json(metrics)
+      : handler(input, init),
+  ) as unknown as typeof fetch;
+}
 
 const queue: OverdueQueue = {
   cycleId: 1,
@@ -85,13 +97,13 @@ test("personalizes rank, interval, name, history, and follow-up", () => {
 
 test("opens overlay, saves edited email, confirms, and offers follow-up without reducing count", async () => {
   let body: Record<string, string> | undefined;
-  globalThis.fetch = mock(async (_input: unknown, init?: RequestInit) => {
+  mockFetch(async (_input: unknown, init?: RequestInit) => {
     if (init?.method === "POST") {
       body = JSON.parse(String(init.body));
       return Response.json({ sentAt: "2026-10-20T10:00:00" });
     }
     return Response.json(queue);
-  }) as unknown as typeof fetch;
+  });
   openDashboard();
   const viewAll = screen.getByRole("button", {
     name: "View all overdue evaluations",
@@ -137,14 +149,14 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
 });
 
 test("failed send keeps draft and overdue status", async () => {
-  globalThis.fetch = mock(async (_input: unknown, init?: RequestInit) =>
+  mockFetch(async (_input: unknown, init?: RequestInit) =>
     init?.method === "POST"
       ? Response.json(
           { detail: "Could not save notification" },
           { status: 500 },
         )
       : Response.json(queue),
-  ) as unknown as typeof fetch;
+  );
   openDashboard();
   const viewAll = screen.getByRole("button", {
     name: "View all overdue evaluations",
@@ -167,11 +179,11 @@ test("failed send keeps draft and overdue status", async () => {
 
 test("shows load error and retries without displaying a fabricated count", async () => {
   let attempts = 0;
-  globalThis.fetch = mock(async (input: unknown) =>
+  mockFetch(async (input: unknown) =>
     String(input).endsWith("/overdue-evaluations") && ++attempts === 1
       ? Response.json({ detail: "Backend unavailable" }, { status: 503 })
       : Response.json({ ...queue, count: 0, faculty: [] }),
-  ) as unknown as typeof fetch;
+  );
   openDashboard();
   await screen.findByRole("alert");
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -190,7 +202,7 @@ test("shows load error and retries without displaying a fabricated count", async
 test("due overlay personalizes an editable email, saves to the due endpoint, and retains its count", async () => {
   let savedUrl = "";
   let savedBody: Record<string, string> | undefined;
-  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+  mockFetch(async (input: unknown, init?: RequestInit) => {
     if (init?.method === "POST") {
       savedUrl = String(input);
       savedBody = JSON.parse(String(init.body));
@@ -201,7 +213,7 @@ test("due overlay personalizes an editable email, saves to the due endpoint, and
         ? queue
         : { ...queue, count: 0, faculty: [] },
     );
-  }) as unknown as typeof fetch;
+  });
   openDashboard();
   const open = screen.getByRole("button", {
     name: "View all faculty due for evaluation",
@@ -247,11 +259,11 @@ test("due overlay personalizes an editable email, saves to the due endpoint, and
 
 test("due load failures can be retried independently and empty due results are explicit", async () => {
   let dueRequests = 0;
-  globalThis.fetch = mock(async (input: unknown) =>
+  mockFetch(async (input: unknown) =>
     String(input).endsWith("/due-evaluations") && ++dueRequests === 1
       ? Response.json({ detail: "Due service unavailable" }, { status: 503 })
       : Response.json({ ...queue, count: 0, faculty: [] }),
-  ) as unknown as typeof fetch;
+  );
   openDashboard();
   await screen.findByRole("alert");
   expect(

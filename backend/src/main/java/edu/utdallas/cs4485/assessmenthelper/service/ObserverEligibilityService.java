@@ -21,6 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class ObserverEligibilityService {
+    /** How many candidates a generated observer list is filled up to. */
+    public static final int LIST_SIZE = 5;
+
     private final JdbcTemplate db;
     private final Clock clock;
 
@@ -490,12 +493,13 @@ public class ObserverEligibilityService {
     private void refresh(Cycle c) {
         if (!c.requestsOpen()) return;
         for (Signup s : signups(c, true)) {
-            if (s.released() || s.candidates().size() >= 5) continue;
+            if (s.released() || s.candidates().size() >= LIST_SIZE) continue;
             var eligible = new ArrayList<>(eligible(s, c));
             var existing = s.candidates().stream().map(Candidate::observerId).toList();
             eligible.removeAll(existing);
             Collections.shuffle(eligible);
-            for (int observerId : eligible.stream().limit(5 - existing.size()).toList())
+            for (int observerId :
+                    eligible.stream().limit(LIST_SIZE - existing.size()).toList())
                 db.update(
                         "INSERT INTO observer_match(signup_id,observer_id,generated_date,match_status) VALUES (?,?,?,'PROPOSED')",
                         s.signupId(),
