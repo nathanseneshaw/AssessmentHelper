@@ -20,11 +20,14 @@ import { FacultyObservationDetails } from "./pages/faculty/ObservationDetails";
 import { FacultyObservationsForMe } from "./pages/faculty/ObservationsForMe";
 import { FacultyObservationsForOthers } from "./pages/faculty/ObservationsForOthers";
 import { FacultyObservers } from "./pages/faculty/Observers";
-import { Login } from "./pages/Login";
+import { LoginPage } from "./pages/LoginPage";
 import { NotFound } from "./pages/NotFound";
 
 function RootRedirect() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) {
+    return null;
+  }
   return <Navigate to={user ? HOME_PATH[user.role] : "/login"} replace />;
 }
 
@@ -34,7 +37,7 @@ export function App() {
       <AuthProvider>
         <Routes>
           <Route path="/" element={<RootRedirect />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/forbidden" element={<Forbidden />} />
 
           <Route element={<RequireRole allow="ac" />}>

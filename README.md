@@ -42,7 +42,93 @@ On Windows PowerShell, use `.\gradlew.bat` instead of `./gradlew`.
 
 The shared frontend API client sends requests to the backend at http://localhost:8080.
 
+## Course and section selection (issue #37)
+
+Start both servers, sign in with `faculty@utdallas.edu` / `Faculty123!`, and open
+**Sign Up for Evaluation** (`/faculty/signup`). Sign out and back in once if you
+have a session saved before this feature. The demo account maps to seeded
+professor 3 (Carol), who teaches CS 101 sections 002/003 and CS 3345 section 001
+in Fall 2026. Existing observation records and their IDs are unchanged.
+
+Choose a semester, course, and section, review the meeting details, and save.
+Only that professor's teaching sections appear. Reopening the semester restores
+the saved selection. A pending selection can be changed; a matched/completed
+signup cannot be changed through this form. Changing the course or semester
+clears the dependent selection. Loading failures offer a retry, and a failed
+save retains the selection without showing success.
+
+The catalog endpoints needed by #78 are included:
+
+| Endpoint | Result |
+| --- | --- |
+| `GET /api/semesters` | All semesters; optional `signupOpen=true` limits to semesters with an OPEN cycle |
+| `GET /api/courses` | Seeded courses |
+| `GET /api/sections` | Sections; optional `semesterId`, `courseId`, and `professorId` filters combine |
+| `GET /api/professors/{professorId}/evaluation-signups/{semesterId}` | Saved signup, or 204 if none exists |
+| `PUT /api/professors/{professorId}/evaluation-signups/{semesterId}` | Save `{ "sectionId": 9 }`; return the saved signup |
+
+The save endpoint checks teaching ownership, section/semester consistency,
+professor activity, and a single OPEN evaluation cycle. It creates the observee
+record when needed. Repeated requests reuse the signup, and a professor-row lock
+serializes concurrent selections. Non-pending signups retain their section and
+observation links. Deadline and eligibility enforcement are separate policies;
+this feature uses the cycle's OPEN status rather than adding a deadline rule.
+
+Authentication is still the project's mock login: `professorId` is a demo mapping,
+not authenticated proof of identity. Production authorization must derive the
+professor from the server-side authenticated user. The API validates teaching
+ownership against the supplied professor, consistent with the existing demo APIs.
+Saved selections persist across browser refreshes but reset when the in-memory
+backend database restarts.
+
+Validation: `bun test src/pages/faculty/EvaluationSignup.test.tsx` in `frontend/`
+and `./gradlew test --tests '*EvaluationSignupIntegrationTests'` in `backend/`
+(use `.\gradlew.bat` on Windows).
+
+## Evaluation requests (issue #42)
+
+Sign in with `requests@utdallas.edu` / `Faculty123!`, then click **View Generated
+Observers** or open `/faculty/observers`. This demo account maps to Dave (professor
+4), whose Fall 2026 signup has Alice as a proposed observer. Select Alice and click
+**Send evaluation request**. The page shows the saved request, its seven-day
+response window, and Pending / Confirmed / Expired status. Reopening the page
+restores it; **Refresh status** reloads responses and applies expiration.
+
+The page uses stored `observer_match` rows. Candidate generation, eligibility,
+availability, and observer response screens remain separate work (#39–#41, #43).
+New signups without matches display an explanation. No email provider is called.
+The existing confirmation API remains available for testing a response:
+`POST /api/observer-requests/{requestId}/confirm`.
+
+| Endpoint | Result |
+| --- | --- |
+| `GET /api/professors/{professorId}/observer-requests` | That professor's signups, proposed candidates, request history and unavailable reasons |
+| `POST /api/professors/{professorId}/observer-requests` | Send `{ "signupId": 31, "matchId": 2 }`; IDs must come from the GET response |
+| `POST /api/observer-requests` | Existing `{ "signupId": 31, "observerId": 1 }` API, now with the same match and lifecycle validation |
+
+Both POST endpoints accept an optional future `expirationDate` in server-local
+ISO date/time; the default is seven days. Times use America/Chicago. The sender
+must own the signup; the selected match must be proposed for that signup, with an
+active observer and professor in the same cycle, excluding self-observation.
+Closed, inactive, completed, or already scheduled evaluations reject new requests.
+One pending or confirmed request is allowed per signup. Repeated sends to the
+same observer return the existing active request without extending its expiration.
+After expiration, a new request may be sent and the old one remains in history.
+Concurrent sends are serialized. Course selection becomes locked once candidates
+or requests exist, preventing a request from silently changing its course.
+
+As with the rest of the demo, supplied professor IDs are not authenticated
+identities; server-side authentication/authorization remains necessary before
+production use. Data resets on backend restart.
+
 ## Overdue evaluation notifications
+
+The Faculty Evaluations page loads all active faculty from
+`GET /api/evaluation-eligibility`. Due This Term, Overdue, and rank filters use
+the same server-calculated classifications as the dashboard overlays; All
+Faculty also includes upcoming evaluations.
+The queue previews four matching professors on the page. View All opens the
+complete filtered list in an overlay with vertical scrolling and fixed column headers.
 
 The **Faculty Due for Evaluation** dashboard panel also uses calculated faculty
 data. **View All** opens the due overlay with the next due semester, personalized
@@ -51,15 +137,6 @@ and does not complete the evaluation. Due and overdue share the same scheduling
 calculation and current-cycle notification history. The due API is
 `GET /api/due-evaluations`, with notifications posted to
 `/api/due-evaluations/{cycleId}/professors/{professorId}/notifications`.
-Demo professor Carol Carol is due in Fall 2026 based on her October 2024 hire
-date and two-year associate professor interval; Bob Bob remains overdue.
-The demo dataset has 25 professors: in Fall 2026, 10 are due, 10 are overdue,
-and 5 have upcoming evaluations. Names and emails are fictional. New professors
-without completed evaluation history use their hire dates for scheduling.
-Nine of the ten overdue professors have completed evaluation history: Bob,
-Maya, Noah, Olivia, Paul, Quinn, Rose, Sam, and Tara. Their subsequent evaluation
-is outstanding. Historical cycles and observations cover Spring 2023, Fall 2023,
-Spring 2024, and Spring 2025; Alice remains the overdue hire-date fallback example.
 
 Start both the backend and frontend, then open the Assessment Committee overview.
 The overdue card loads actual faculty data; **View All** opens the overdue list.
@@ -83,19 +160,16 @@ Previously created files in `backend/data/` are no longer used. Due and overdue
 requests use the shared frontend API client in `frontend/src/api/client.ts`.
 The default backend is `http://localhost:8080`; configure `BUN_PUBLIC_API_URL`
 when starting or building the frontend to use another backend.
-The existing mock sign-in and permissive backend API security remain demo-only.
 
-## Frontend mock sign-in
+## Demo accounts
 
-The login page currently uses local demo accounts; the backend does not need to be running.
+The backend handles sign-in, so it must be running before you can sign in to the frontend. These accounts come from `backend/src/main/resources/data.sql`, and the in-memory database goes back to them every time the backend restarts.
 
-| Role | Email | Password |
-| --- | --- | --- |
-| Faculty | `faculty@utdallas.edu` | `Faculty123!` |
-| Assessment Committee | `ac@utdallas.edu` | `Committee123!` |
+| Role | Name | Email | Password |
+| --- | --- | --- | --- |
+| Assessment Committee | Alice Alice | `alice@utdallas.edu` | `Committee123!` |
+| Faculty | Bob Bob | `bob@utdallas.edu` | `Faculty123!` |
 
-Sign-in simulates a short request and rejects other credentials. Email matching ignores case and surrounding spaces, but passwords must match exactly. Successful sign-in displays the Faculty Dashboard or Assessment Committee Dashboard based on the user's role. Both dashboards are temporary dashboards with a Sign Out button that returns to a fresh login form. Current view does not change the URL or persist a session across refreshes.
+Alice is an Assessment Committee member in the Erik Jonsson School of Engineering and Computer Science, so she can see the records of professors in that school but not in other schools. Bob can see only his own records.
 
-`frontend/src/auth/mockAuth.ts` contains the demo service and shared user/role types. `App` uses the `LoginPage` callback `onLogin(user)` to keep the authenticated user in memory and render `DashboardPage`. These accounts and frontend role checks are for frontend development only. Real authentication and permission enforcement must be provided by the backend before real use.
-
-Run the mock authentication tests from `frontend/` with `bun test src/auth/mockAuth.test.ts`.
+Every `/api/**` endpoint except sign-in requires a signed-in session. To try the endpoints in Swagger UI, sign in through the frontend first, and Swagger UI in the same browser will use that session.

@@ -1,6 +1,7 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,11 +18,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(ObserverRequestController.class)
 @Import(SecurityConfig.class)
+@WithMockUser
 class ObserverRequestControllerTests {
 
     private static final ObserverRequest PENDING = new ObserverRequest(
@@ -33,11 +37,15 @@ class ObserverRequestControllerTests {
     @MockitoBean
     private ObserverRequestService service;
 
+    @MockitoBean
+    private UserDetailsService userDetailsService;
+
     @Test
     void createReturns201WithPendingRequest() throws Exception {
         when(service.create(2, 3, null)).thenReturn(PENDING);
 
         mockMvc.perform(post("/api/observer-requests")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"signupId\":2,\"observerId\":3}"))
                 .andExpect(status().isCreated())
@@ -51,6 +59,7 @@ class ObserverRequestControllerTests {
                 .thenThrow(new IllegalArgumentException("signupId and observerId are required"));
 
         mockMvc.perform(post("/api/observer-requests")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"observerId\":3}"))
                 .andExpect(status().isBadRequest())
@@ -68,7 +77,7 @@ class ObserverRequestControllerTests {
     void confirmingExpiredRequestReturns409() throws Exception {
         when(service.confirm(1)).thenThrow(new ConflictException("Request 1 has expired"));
 
-        mockMvc.perform(post("/api/observer-requests/1/confirm"))
+        mockMvc.perform(post("/api/observer-requests/1/confirm").with(csrf()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("Request 1 has expired"));
     }
