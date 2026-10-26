@@ -24,6 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Expiry is applied two ways. Every read and every response first expires the request if it is overdue, so callers
  * never see a stale PENDING, and a scheduled sweep expires the rest so the stored status stays accurate.
+ *
+ * <p>Signups with a generated observer list also follow {@link ObserverEligibilityService}: requests wait for the
+ * committee to release the list, the observer must still be eligible, and the observer can decline (DECLINED).
  */
 @Service
 public class ObserverRequestService {
@@ -42,6 +45,7 @@ public class ObserverRequestService {
     private final ObserverMatchRepository matches;
     private final ObserverRequestContextRepository context;
     private final ProfessorRepository professors;
+    private final ObserverEligibilityService eligibility;
 
     public ObserverRequestService(
             ObserverRequestRepository repository,
@@ -50,7 +54,8 @@ public class ObserverRequestService {
             Clock clock,
             ObserverMatchRepository matches,
             ObserverRequestContextRepository context,
-            ProfessorRepository professors) {
+            ProfessorRepository professors,
+            ObserverEligibilityService eligibility) {
         this.repository = repository;
         this.signupRepository = signupRepository;
         this.observerRepository = observerRepository;
@@ -58,6 +63,7 @@ public class ObserverRequestService {
         this.matches = matches;
         this.context = context;
         this.professors = professors;
+        this.eligibility = eligibility;
     }
 
     /**
@@ -99,7 +105,10 @@ public class ObserverRequestService {
         if (!active.isEmpty()) {
             throw new ConflictException("This signup already has a pending or confirmed observer request.");
         }
-        return repository.save(new ObserverRequest(null, signupId, observerId, now, expires, null, PENDING));
+        eligibility.requireEligible(signupId, observerId);
+        var saved = repository.save(new ObserverRequest(null, signupId, observerId, now, expires, null, PENDING));
+        eligibility.requestSent(signupId, observerId);
+        return saved;
     }
 
     public record RequestSummary(ObserverRequest request, String observerName) {}
@@ -125,7 +134,9 @@ public class ObserverRequestService {
                         signup.semesterLabel(),
                         signup.signupStatus(),
                         unavailableReason(signup),
-                        context.candidates(signup.signupId()),
+                        eligibility.candidatesVisible(signup.signupId())
+                                ? context.candidates(signup.signupId())
+                                : List.of(),
                         find(signup.signupId(), null).stream()
                                 .map(request -> new RequestSummary(request, context.observerName(request.observerId())))
                                 .toList()))
@@ -163,7 +174,7 @@ public class ObserverRequestService {
         return context.findSignup(signupId).orElseThrow();
     }
 
-    private static String unavailableReason(SignupContext signup) {
+    private String unavailableReason(SignupContext signup) {
         if (!Boolean.TRUE.equals(signup.professorActive())) {
             return "This professor is not active.";
         }
@@ -177,7 +188,7 @@ public class ObserverRequestService {
         if (Boolean.TRUE.equals(signup.observationExists())) {
             return "An observation is already scheduled for this signup.";
         }
-        return null;
+        return eligibility.requestBlocker(signup.signupId());
     }
 
     /** @throws NotFoundException if there is no such request */
@@ -206,7 +217,13 @@ public class ObserverRequestService {
      */
     @Transactional
     public ObserverRequest confirm(Integer requestId) {
-        lockSignup(load(requestId).signupId());
+        Integer signupId = load(requestId).signupId();
+        if (eligibility.manages(signupId)) {
+            // Accepting a generated-list request also records the observation and notifies the observee.
+            eligibility.confirmExistingRequest(requestId);
+            return load(requestId);
+        }
+        lockSignup(signupId);
         ObserverRequest request = expireIfOverdue(load(requestId));
         if (EXPIRED.equals(request.status())) {
             throw new ConflictException("Request " + requestId + " has expired");

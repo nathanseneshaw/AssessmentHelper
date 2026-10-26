@@ -42,6 +42,12 @@ class EvaluationEligibilityIntegrationTests {
         }
     }
 
+    // From data.sql: Hollis (professor 9) is due this term and has not signed up. Leander (professor 13) missed his
+    // first evaluation in Spring 2026 and has a scheduled observation in this cycle (signup 33).
+    private static final int HOLLIS = 9;
+    private static final int LEANDER = 13;
+    private static final int LEANDER_SIGNUP = 33;
+
     @Autowired
     private MockMvc mvc;
 
@@ -52,46 +58,62 @@ class EvaluationEligibilityIntegrationTests {
     private EvaluationEligibilityService service;
 
     @Test
-    void seededProfessorsProduceEighteenDueEightOverdueAndFourUpcoming() throws Exception {
+    void seededProfessorsProduceThirteenDueEightOverdueAndTwentyFourUpcoming() throws Exception {
         assertThat(db.queryForObject("SELECT COUNT(*) FROM professor", Integer.class))
-                .isEqualTo(30);
+                .isEqualTo(68);
         var due = service.findDue();
         var overdue = service.findOverdue();
-        assertThat(due.count()).isEqualTo(18);
+        assertThat(due.count()).isEqualTo(13);
         assertThat(overdue.count()).isEqualTo(8);
         assertThat(overdue.faculty().stream()
-                        .filter(p -> p.professorId() == 2)
+                        .filter(p -> p.professorId() == LEANDER)
                         .findFirst()
                         .orElseThrow()
                         .nextDueSemester())
                 .isEqualTo("Spring 2026");
         var all = service.findAll();
-        assertThat(all.count()).isEqualTo(30);
+        assertThat(all.count()).isEqualTo(45);
         assertThat(all.faculty())
                 .allSatisfy(
                         professor -> assertThat(professor.nextDueSemester()).matches("(Spring|Summer|Fall) \\d{4}"));
         assertThat(all.faculty().stream()
-                        .filter(p -> p.lastName().equals("Victor"))
+                        .filter(p -> p.lastName().equals("Juniper"))
                         .findFirst()
                         .orElseThrow()
                         .nextDueSemester())
                 .isEqualTo("Spring 2028");
         assertThat(all.faculty().stream().filter(p -> p.lastEvaluationCycle().equals("Never evaluated")))
                 .extracting(EvaluationEligibilityService.Faculty::lastName)
-                .containsExactly("Xavier");
+                .containsExactlyInAnyOrder(
+                        "Brambleton",
+                        "Coldwell",
+                        "Duskwood",
+                        "Eastbrook",
+                        "Harrowgate",
+                        "Hollowell",
+                        "Ivorydale",
+                        "Juniper",
+                        "Millbrook",
+                        "Quarrington",
+                        "Ravenhill",
+                        "Rookwood",
+                        "Thornbury",
+                        "Valemont",
+                        "Winterbourne",
+                        "Wrenfield");
         assertThat(all.faculty().stream().filter(p -> p.status().equals("Due")))
                 .containsExactlyElementsOf(due.faculty());
         assertThat(all.faculty().stream().filter(p -> p.status().equals("Overdue")))
                 .containsExactlyElementsOf(overdue.faculty());
         assertThat(all.faculty().stream().filter(p -> p.status().equals("Upcoming")))
-                .hasSize(4);
+                .hasSize(24);
         mvc.perform(get("/api/evaluation-eligibility"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(30))
-                .andExpect(jsonPath("$.faculty.length()").value(30));
+                .andExpect(jsonPath("$.count").value(45))
+                .andExpect(jsonPath("$.faculty.length()").value(45));
         assertThat(overdue.faculty().stream()
                         .filter(professor -> !professor.lastEvaluationCycle().equals("Never evaluated")))
-                .hasSize(8);
+                .hasSize(6);
         assertThat(due.faculty())
                 .extracting(EvaluationEligibilityService.Faculty::professorId)
                 .doesNotContainAnyElementsOf(overdue.faculty().stream()
@@ -99,14 +121,14 @@ class EvaluationEligibilityIntegrationTests {
                         .toList());
         assertThat(due.faculty())
                 .extracting(EvaluationEligibilityService.Faculty::lastName)
-                .contains("Carol");
+                .contains("Carrowmore");
         assertThat(overdue.faculty())
                 .extracting(EvaluationEligibilityService.Faculty::lastName)
-                .contains("Bob");
+                .contains("Coldwell");
         mvc.perform(get("/api/due-evaluations"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(18))
-                .andExpect(jsonPath("$.faculty.length()").value(18))
+                .andExpect(jsonPath("$.count").value(13))
+                .andExpect(jsonPath("$.faculty.length()").value(13))
                 .andExpect(jsonPath("$.cycleLabel").value("Fall 2026"));
         mvc.perform(get("/api/overdue-evaluations"))
                 .andExpect(status().isOk())
@@ -115,42 +137,43 @@ class EvaluationEligibilityIntegrationTests {
 
     @Test
     void remindersAndFollowUpsSaveEditedContentWithoutChangingCounts() throws Exception {
-        String carolMessage = """
-                {"recipient":"carol@utdallas.edu","subject":"Edited reminder","body":"Dear Professor Carol, please sign up."}
+        String hollisMessage = """
+                {"recipient":"hollis.carrowmore@example.edu","subject":"Edited reminder","body":"Dear Professor Carrowmore, please sign up."}
                 """;
         for (int i = 0; i < 2; i++) {
-            mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/3/notifications"))
+            mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/" + HOLLIS + "/notifications"))
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(carolMessage))
+                            .content(hollisMessage))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.notificationId").isNumber())
-                    .andExpect(jsonPath("$.recipient").value("carol@utdallas.edu"))
+                    .andExpect(jsonPath("$.recipient").value("hollis.carrowmore@example.edu"))
                     .andExpect(jsonPath("$.subject").value("Edited reminder"))
                     .andExpect(jsonPath("$.sentAt").value("2026-10-21T10:00:00"));
         }
-        mvc.perform(withCsrfToken(post("/api/overdue-evaluations/1/professors/2/notifications"))
+        mvc.perform(withCsrfToken(post("/api/overdue-evaluations/1/professors/" + LEANDER + "/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"bob@utdallas.edu","subject":"Overdue reminder","body":"Dear Professor Bob, please sign up."}
+                                {"recipient":"leander.coldwell@example.edu","subject":"Overdue reminder","body":"Dear Professor Coldwell, please sign up."}
                                 """))
                 .andExpect(status().isOk());
         assertThat(db.queryForObject("SELECT COUNT(*) FROM evaluation_notification", Integer.class))
                 .isEqualTo(3);
         assertThat(db.queryForObject(
-                        "SELECT COUNT(*) FROM evaluation_notification WHERE professor_id = 3 AND body = ?",
+                        "SELECT COUNT(*) FROM evaluation_notification WHERE professor_id = ? AND body = ?",
                         Integer.class,
-                        "Dear Professor Carol, please sign up."))
+                        HOLLIS,
+                        "Dear Professor Carrowmore, please sign up."))
                 .isEqualTo(2);
-        assertThat(service.findDue().count()).isEqualTo(18);
+        assertThat(service.findDue().count()).isEqualTo(13);
         assertThat(service.findOverdue().count()).isEqualTo(8);
         assertThat(service.findDue().faculty().stream()
-                        .filter(p -> p.professorId() == 3)
+                        .filter(p -> p.professorId() == HOLLIS)
                         .findFirst()
                         .orElseThrow()
                         .lastNotifiedAt())
                 .isNotNull();
         assertThat(service.findOverdue().faculty().stream()
-                        .filter(p -> p.professorId() == 2)
+                        .filter(p -> p.professorId() == LEANDER)
                         .findFirst()
                         .orElseThrow()
                         .lastNotifiedAt())
@@ -159,22 +182,22 @@ class EvaluationEligibilityIntegrationTests {
 
     @Test
     void invalidOrStaleNotificationsNeverWriteToDatabase() throws Exception {
-        mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/3/notifications"))
+        mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/" + HOLLIS + "/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"wrong@utdallas.edu","subject":"Reminder","body":"Message"}
+                                {"recipient":"wrong@example.edu","subject":"Reminder","body":"Message"}
                                 """))
                 .andExpect(status().isBadRequest());
-        mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/2/notifications"))
+        mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/" + LEANDER + "/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"bob@utdallas.edu","subject":"Reminder","body":"Message"}
+                                {"recipient":"leander.coldwell@example.edu","subject":"Reminder","body":"Message"}
                                 """))
                 .andExpect(status().isConflict());
-        mvc.perform(withCsrfToken(post("/api/due-evaluations/99/professors/3/notifications"))
+        mvc.perform(withCsrfToken(post("/api/due-evaluations/99/professors/" + HOLLIS + "/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"recipient":"carol@utdallas.edu","subject":"Reminder","body":"Message"}
+                                {"recipient":"hollis.carrowmore@example.edu","subject":"Reminder","body":"Message"}
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("The evaluation cycle changed. Refresh the evaluation list."));
@@ -184,27 +207,30 @@ class EvaluationEligibilityIntegrationTests {
 
     @Test
     void completingAnOverdueEvaluationClearsItsOldObligation() throws Exception {
-        db.update("UPDATE observee SET status = 'COMPLETED' WHERE professor_id = 2 AND cycle_id = 1");
+        db.update("UPDATE observee SET status = 'COMPLETED' WHERE professor_id = ? AND cycle_id = 1", LEANDER);
         db.update(
-                "UPDATE observation SET status = 'COMPLETED', completed_at = TIMESTAMP '2026-10-20 10:00:00' WHERE signup_id = 1");
+                "UPDATE observation SET status = 'COMPLETED', completed_at = TIMESTAMP '2026-10-20 10:00:00' WHERE signup_id = ?",
+                LEANDER_SIGNUP);
         mvc.perform(get("/api/overdue-evaluations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(7));
         assertThat(service.findDue().faculty())
                 .extracting(EvaluationEligibilityService.Faculty::professorId)
-                .doesNotContain(2);
+                .doesNotContain(LEANDER);
         assertThat(service.findOverdue().faculty())
                 .extracting(EvaluationEligibilityService.Faculty::professorId)
-                .doesNotContain(2);
+                .doesNotContain(LEANDER);
     }
 
     @Test
     void inactiveFacultyAreExcludedAndMissingCycleConfigurationIsReported() throws Exception {
-        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id IN (2, 3)");
-        assertThat(service.findDue().count()).isEqualTo(17);
+        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id IN (?, ?)", HOLLIS, LEANDER);
+        assertThat(service.findDue().count()).isEqualTo(12);
         assertThat(service.findOverdue().count()).isEqualTo(7);
-        db.update(
-                "UPDATE semester SET start_date = DATE '2027-08-24', end_date = DATE '2027-12-11' WHERE semester_id = 1");
+        db.update("""
+                UPDATE semester SET start_date = DATE '2028-08-21', end_date = DATE '2028-12-15'
+                WHERE term = 'Fall' AND academic_year = 2026
+                """);
         mvc.perform(get("/api/due-evaluations"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail")

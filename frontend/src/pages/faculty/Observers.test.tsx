@@ -13,6 +13,7 @@ import type {
   RequestOptions,
 } from "../../api/observerRequests";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
+import { faculty } from "../../test/observerFixtures";
 
 let options: RequestOptions[];
 let writes: { signupId: number; matchId: number }[];
@@ -53,6 +54,8 @@ beforeEach(() => {
   failSend = false;
   delaySend = undefined;
   fakeBackend({
+    // The faculty dashboard behind the dialog loads its own status.
+    "/api/observer-eligibility/faculty/4": () => Response.json(faculty),
     "/api/professors/4/observer-requests": async (init) => {
       if (init?.method === "POST") {
         writes.push(JSON.parse(String(init.body)));

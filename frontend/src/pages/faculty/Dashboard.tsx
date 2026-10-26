@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
 import { Link, Outlet } from "react-router-dom";
+import {
+  type FacultyState,
+  useObserverData,
+} from "../../api/observerEligibility";
+import { useAuth } from "../../auth/AuthContext";
 
 const summary = [
   {
@@ -92,6 +97,22 @@ function SectionCard({
 }
 
 export function FacultyDashboard() {
+  const { user } = useAuth();
+  const id = user?.professorId;
+  const { data, error } = useObserverData<FacultyState>(
+    id ? `/faculty/${id}` : null,
+  );
+  const liveSummary = summary.map((item) =>
+    item.label === "Observations This Term"
+      ? {
+          ...item,
+          value: String(
+            data?.outgoing?.filter((r) => r.status === "CONFIRMED").length ?? 0,
+          ),
+          note: "Accepted observer requests",
+        }
+      : item,
+  );
   return (
     <div className="mx-auto max-w-6xl">
       <p className="font-semibold text-brand-green text-xs tracking-wide">
@@ -127,18 +148,77 @@ export function FacultyDashboard() {
             P1
           </div>
           <div>
-            <p className="font-semibold">Professor 1</p>
+            <p className="font-semibold">
+              {data?.professor?.name ?? "Loading professor..."}
+            </p>
             <p className="text-ink/60 text-xs">
               Associate Professor • School of ECS
             </p>
           </div>
         </div>
-        <p className="text-ink/60 text-sm">Fall 2026 Cycle</p>
+        <p className="text-ink/60 text-sm">
+          {data?.cycle?.label ?? "Current"} Cycle
+        </p>
       </div>
 
+      {(error || !id) && (
+        <p role="alert" className="mt-4 text-brand-red">
+          {error ||
+            "This account has no faculty profile, so there is no evaluation status to show."}
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg border border-line bg-white p-4">
+        <Link
+          className="font-semibold text-brand-green underline"
+          to="/faculty/requests"
+        >
+          Observer Requests (
+          {data?.incoming?.filter((r) => r.status === "PENDING").length ?? 0}{" "}
+          pending)
+        </Link>
+      </div>
+      {data?.notifications && data.notifications.length > 0 && (
+        <section
+          aria-labelledby="notifications-title"
+          className="mt-4 rounded-lg border border-line bg-mist p-4"
+        >
+          <h2
+            id="notifications-title"
+            className="font-semibold text-brand-green"
+          >
+            Notifications
+          </h2>
+          <ul
+            aria-label="Notification history"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to focus this scrolling history.
+            tabIndex={0}
+            className="mt-3 max-h-40 space-y-3 overflow-y-auto pr-2 text-sm"
+          >
+            {data.notifications.map((n) => (
+              <li
+                key={n.notificationId}
+                className="border-line border-b pb-3 last:border-0"
+              >
+                <p>{n.message}</p>
+                <time
+                  dateTime={n.createdAt}
+                  className="mt-1 block text-xs text-muted"
+                >
+                  {new Date(n.createdAt).toLocaleString("en-US", {
+                    timeZone: "America/Chicago",
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}{" "}
+                  CT
+                </time>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <h2 className="mt-6 mb-3 text-ink/70 text-sm">Evaluation summary</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {summary.map((item) => (
+        {liveSummary.map((item) => (
           <div
             key={item.label}
             className="rounded-xl border border-line bg-white p-5"

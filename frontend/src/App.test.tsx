@@ -14,6 +14,7 @@ import {
   sessionUser,
   signInAs,
 } from "./test/fakeBackend";
+import { ac, faculty } from "./test/observerFixtures";
 
 const AC_PAGES = [
   ["/ac", "Assessment Committee Dashboard"],
@@ -29,6 +30,7 @@ const AC_PAGES = [
 const FACULTY_DIALOGS = [
   ["/faculty/signup", "Sign Up for Evaluation"],
   ["/faculty/observers", "Choose Observers"],
+  ["/faculty/requests", "Observer Requests"],
   ["/faculty/history", "Evaluation History"],
   ["/faculty/observations/me", "Observation Records for Me"],
   ["/faculty/observations/others", "Observation Records for Others"],
@@ -69,6 +71,8 @@ beforeEach(() => {
   fakeBackend({
     "/api/due-evaluations": EMPTY_QUEUE,
     "/api/overdue-evaluations": EMPTY_QUEUE,
+    "/api/observer-eligibility/ac": () => Response.json(ac),
+    "/api/observer-eligibility/faculty/2": () => Response.json(faculty),
   });
 });
 

@@ -28,6 +28,7 @@ public class EvaluationSignupService {
     private final EvaluationSignupRepository signups;
     private final Clock clock;
     private final ObserverRequestContextRepository requestContext;
+    private final ObserverEligibilityService eligibility;
 
     public EvaluationSignupService(
             ProfessorRepository professors,
@@ -38,7 +39,8 @@ public class EvaluationSignupService {
             ObserveeRepository observees,
             EvaluationSignupRepository signups,
             Clock clock,
-            ObserverRequestContextRepository requestContext) {
+            ObserverRequestContextRepository requestContext,
+            ObserverEligibilityService eligibility) {
         this.professors = professors;
         this.semesters = semesters;
         this.cycles = cycles;
@@ -48,6 +50,7 @@ public class EvaluationSignupService {
         this.signups = signups;
         this.clock = clock;
         this.requestContext = requestContext;
+        this.eligibility = eligibility;
     }
 
     @Transactional(readOnly = true)
@@ -59,8 +62,21 @@ public class EvaluationSignupService {
         return observee == null ? null : findSignup(observee.observeeId());
     }
 
+    /** The observation window the professor may choose for this semester, with the one already saved, if any. */
+    @Transactional(readOnly = true)
+    public ObserverEligibilityService.Window window(Integer professorId, Integer semesterId) {
+        var signup = find(professorId, semesterId);
+        return eligibility.window(openCycle(semesterId).cycleId(), signup == null ? null : signup.signupId());
+    }
+
+    /**
+     * Saves the professor's course selection and observation window, then generates observer candidates.
+     *
+     * @param windowEnd last day the professor can be observed, or null to keep the saved window (or, for a new
+     *     signup, to run through the observation deadline)
+     */
     @Transactional
-    public EvaluationSignup save(Integer professorId, Integer semesterId, Integer sectionId) {
+    public EvaluationSignup save(Integer professorId, Integer semesterId, Integer sectionId, LocalDate windowEnd) {
         if (sectionId == null || sectionId <= 0) {
             throw new IllegalArgumentException("A valid sectionId is required.");
         }
@@ -87,19 +103,24 @@ public class EvaluationSignupService {
             throw new ConflictException("This evaluation is no longer accepting course selections.");
         }
         var existing = findSignup(observee.observeeId());
-        if (existing != null) {
+        EvaluationSignup saved;
+        if (existing == null) {
+            saved = signups.save(
+                    new EvaluationSignup(null, observee.observeeId(), sectionId, LocalDate.now(clock), "PENDING"));
+        } else if (existing.sectionId().equals(sectionId)
+                && (windowEnd == null || windowEnd.equals(eligibility.windowEnd(existing.signupId())))) {
             // An identical retry is safe, including a retry after matching has started.
-            if (existing.sectionId().equals(sectionId)) {
-                return existing;
-            }
-            if (!"PENDING".equals(existing.status()) || requestContext.hasStartedMatching(existing.signupId())) {
-                throw new ConflictException("This signup cannot be changed after matching has started.");
-            }
-            return signups.save(new EvaluationSignup(
+            return existing;
+        } else if (!"PENDING".equals(existing.status()) || requestContext.hasStartedMatching(existing.signupId())) {
+            throw new ConflictException("This signup cannot be changed after matching has started.");
+        } else if (existing.sectionId().equals(sectionId)) {
+            saved = existing;
+        } else {
+            saved = signups.save(new EvaluationSignup(
                     existing.signupId(), existing.observeeId(), sectionId, existing.signupDate(), existing.status()));
         }
-        return signups.save(
-                new EvaluationSignup(null, observee.observeeId(), sectionId, LocalDate.now(clock), "PENDING"));
+        eligibility.signedUp(saved.signupId(), windowEnd);
+        return saved;
     }
 
     private EvaluationCycle openCycle(Integer semesterId) {
