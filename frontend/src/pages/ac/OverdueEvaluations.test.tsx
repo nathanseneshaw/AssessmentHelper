@@ -15,6 +15,7 @@ import {
 } from "../../api/evaluationEligibility";
 import { AuthProvider } from "../../auth/AuthContext";
 import { metrics } from "../../test/acDashboardFixtures";
+import { OverdueEvaluations } from "./OverdueEvaluations";
 import { AcOverview } from "./Overview";
 
 const originalFetch = globalThis.fetch;
@@ -71,6 +72,19 @@ function openDashboard() {
         <AcOverview />
       </AuthProvider>
     </MemoryRouter>,
+  );
+}
+
+const emptyQueue: OverdueQueue = { ...queue, count: 0, faculty: [] };
+
+function openModal(props: Partial<Parameters<typeof OverdueEvaluations>[0]>) {
+  render(
+    <OverdueEvaluations
+      queue={queue}
+      onClose={() => {}}
+      onNotified={() => {}}
+      {...props}
+    />,
   );
 }
 
@@ -277,4 +291,86 @@ test("due load failures can be retried independently and empty due results are e
     screen.getByRole("button", { name: "Retry due evaluations" }),
   );
   await screen.findByText("No faculty are due this cycle.");
+});
+
+const notSignedUp = {
+  kind: "due",
+  title: "Faculty Not Yet Signed Up",
+  countLabel: "not signed up",
+  emptyMessage: "All due faculty have signed up.",
+} as const;
+
+test("custom title and count label replace the default wording without changing the due rows or email", () => {
+  openModal(notSignedUp);
+  const dialog = screen.getByRole("dialog", {
+    name: "Faculty Not Yet Signed Up",
+  });
+  expect(
+    within(dialog).getByRole("heading", { name: "Faculty Not Yet Signed Up" }),
+  ).toBeDefined();
+  expect(
+    within(dialog).getByText(
+      "Fall 2026 evaluation cycle • 2 faculty not signed up",
+    ),
+  ).toBeDefined();
+  expect(within(dialog).queryByText("Faculty Due for Evaluation")).toBeNull();
+  expect(
+    within(dialog).queryByText("All due faculty have signed up."),
+  ).toBeNull();
+  expect(
+    within(dialog).getByRole("columnheader", { name: "Next Due" }),
+  ).toBeDefined();
+  const notify = within(dialog).getByRole("button", {
+    name: "Notify Alice Nguyen",
+  });
+  const row = notify.closest("tr");
+  if (!row) throw new Error("Missing professor row");
+  expect(within(row).getByText("Due")).toBeDefined();
+  fireEvent.click(notify);
+  expect((screen.getByLabelText("Subject") as HTMLInputElement).value).toBe(
+    "Faculty Evaluation Due - Fall 2026",
+  );
+});
+
+test("custom empty message replaces the default empty state", () => {
+  openModal({ ...notSignedUp, queue: emptyQueue });
+  const dialog = screen.getByRole("dialog", {
+    name: "Faculty Not Yet Signed Up",
+  });
+  expect(
+    within(dialog).getByText(
+      "Fall 2026 evaluation cycle • 0 faculty not signed up",
+    ),
+  ).toBeDefined();
+  expect(
+    within(dialog).getByText("All due faculty have signed up."),
+  ).toBeDefined();
+  expect(
+    within(dialog).queryByText("No faculty are due for evaluation."),
+  ).toBeNull();
+});
+
+test("default wording is derived from kind when no custom text is passed", () => {
+  openModal({ kind: "due", queue: emptyQueue });
+  let dialog = screen.getByRole("dialog", {
+    name: "Faculty Due for Evaluation",
+  });
+  expect(
+    within(dialog).getByText("Fall 2026 evaluation cycle • 0 faculty due"),
+  ).toBeDefined();
+  expect(
+    within(dialog).getByText("No faculty are due for evaluation."),
+  ).toBeDefined();
+  cleanup();
+
+  openModal({ queue: emptyQueue });
+  dialog = screen.getByRole("dialog", {
+    name: "Faculty Overdue for Evaluation",
+  });
+  expect(
+    within(dialog).getByText("Fall 2026 evaluation cycle • 0 faculty overdue"),
+  ).toBeDefined();
+  expect(
+    within(dialog).getByText("No faculty are overdue for evaluation."),
+  ).toBeDefined();
 });
