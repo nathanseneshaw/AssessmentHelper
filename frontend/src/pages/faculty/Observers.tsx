@@ -13,11 +13,13 @@ const buttonClass =
 const statusLabels = {
   PENDING: "Pending",
   CONFIRMED: "Confirmed",
+  DECLINED: "Declined",
   EXPIRED: "Expired",
 };
 const statusClasses = {
   PENDING: "bg-peach text-brand-orange",
   CONFIRMED: "bg-mist text-brand-green",
+  DECLINED: "bg-btn-light text-ink/70",
   EXPIRED: "bg-btn-light text-ink/70",
 };
 
@@ -199,7 +201,7 @@ function RequestForm({ professorId }: { professorId: number }) {
             <p className="rounded-lg bg-mist p-3 text-sm">
               {activeRequest.request.status === "CONFIRMED"
                 ? `${activeRequest.observerName} has confirmed this request.`
-                : `Waiting for ${activeRequest.observerName} to respond. A new request can be sent after this one expires.`}
+                : `Waiting for ${activeRequest.observerName} to respond. A new request can be sent if this one is declined or expires.`}
             </p>
           )}
           {!blocked && (

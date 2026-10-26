@@ -31,6 +31,7 @@ import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 @DataJdbcTest
 @Import({
     ObserverRequestService.class,
+    ObserverEligibilityService.class,
     ObserverRequestContextRepository.class,
     ObserverRequestServiceTests.FixedClock.class
 })

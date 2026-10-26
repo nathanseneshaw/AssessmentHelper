@@ -8,9 +8,12 @@ import {
 } from "@testing-library/react";
 import { App } from "../../App";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
+import { ac } from "../../test/observerFixtures";
 
 async function renderSignups() {
-  fakeBackend();
+  fakeBackend({
+    "/api/observer-eligibility/ac": () => Response.json(ac),
+  });
   signInAs("ac");
   window.history.pushState({}, "", "/ac/signups");
   render(<App />);
@@ -22,14 +25,15 @@ afterEach(() => {
   resetBackend();
 });
 
-test("each signup request has a Review button named for its professor", async () => {
+test("each signup request has a Review link named for its professor", async () => {
   await renderSignups();
+  await screen.findByRole("rowheader", { name: "Professor 1" });
   const table = screen.getByRole("table");
 
-  for (const name of ["Professor 2", "Professor 1", "Professor 5"]) {
+  for (const name of ["Professor 1", "Professor 8"]) {
     expect(within(table).getByRole("rowheader", { name })).toBeDefined();
     expect(
-      within(table).getByRole("button", { name: `Review signup for ${name}` }),
+      within(table).getByRole("link", { name: `Review signup for ${name}` }),
     ).toBeDefined();
   }
 });

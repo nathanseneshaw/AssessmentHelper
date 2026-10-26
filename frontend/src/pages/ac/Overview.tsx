@@ -5,6 +5,7 @@ import {
   type OverdueQueue,
   rankLabel,
 } from "../../api/evaluationEligibility";
+import { type AcState, useObserverData } from "../../api/observerEligibility";
 import { ActionButton } from "../../components/ActionButton";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
@@ -84,18 +85,6 @@ const kpiGroups: { title: string; grid: string; kpis: Kpi[] }[] = [
   },
 ];
 
-const unmatchedFaculty = [
-  { name: "Professor 4", department: "Computer Science", candidates: 0 },
-  { name: "Professor 5", department: "Computer Science", candidates: 0 },
-];
-
-const deadlines = [
-  "Sign-up Deadline: Sep 18",
-  "Observer Selection Deadline: Sep 25",
-  "Observation Cycle Deadline: Nov 13",
-  "Feedback/Survey Deadline: Dec 1",
-];
-
 function ListPanel({
   title,
   subtitle,
@@ -131,6 +120,20 @@ function ListRow({ cells, status }: { cells: string[]; status: ReactNode }) {
 }
 
 export function AcOverview() {
+  const { data: matching, error: matchingError } =
+    useObserverData<AcState>("/ac");
+  const unmatchedFaculty = (matching?.signups ?? []).filter(
+    (s) => s.candidates.length === 0,
+  );
+  const deadlines = matching?.cycle
+    ? [
+        `Sign-up Deadline: ${matching.cycle.signupDeadline}`,
+        `Observation Deadline: ${matching.cycle.observationDeadline}`,
+        ...(matching.cycle.feedbackDeadline
+          ? [`Feedback/Survey Deadline: ${matching.cycle.feedbackDeadline}`]
+          : []),
+      ]
+    : ["Loading cycle deadlines..."];
   const [queue, setQueue] = useState<OverdueQueue | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -251,7 +254,16 @@ export function AcOverview() {
                             onClick: () => setOpen(true),
                           },
                         }
-                      : kpi
+                      : kpi.label === "Unmatched Faculty"
+                        ? {
+                            ...kpi,
+                            value: matchingError
+                              ? "Unavailable"
+                              : matching
+                                ? String(unmatchedFaculty.length)
+                                : "Loading",
+                          }
+                        : kpi
                   }
                 />
               ))}
@@ -312,21 +324,34 @@ export function AcOverview() {
 
         <ListPanel
           title="Unmatched Faculty"
-          subtitle="No eligible observers or insufficient candidates"
+          subtitle="Signups with no eligible observers"
           action={
             <ActionButton tone="orange" to="/ac/matching" className="min-w-47">
               Resolve Matches
             </ActionButton>
           }
         >
+          {matchingError && (
+            <li role="alert" className="text-brand-red">
+              {matchingError}
+            </li>
+          )}
+          {!matching && !matchingError && <li>Loading unmatched faculty...</li>}
+          {matching && !matchingError && unmatchedFaculty.length === 0 && (
+            <li>No unmatched faculty.</li>
+          )}
+          {unmatchedFaculty.length > 0 && (
+            <li role="alert" className="font-semibold text-brand-red">
+              {unmatchedFaculty.length} signup(s) have no eligible observers.
+            </li>
+          )}
           {unmatchedFaculty.map((item) => (
             <ListRow
-              key={item.name}
+              key={item.signupId}
               cells={[item.name, item.department]}
               status={
                 <span className="font-semibold text-brand-red text-sm">
-                  {item.candidates}{" "}
-                  {item.candidates === 1 ? "candidate" : "candidates"}
+                  0 candidates
                 </span>
               }
             />
@@ -335,7 +360,9 @@ export function AcOverview() {
       </div>
 
       <section className="mt-7 rounded-lg border border-line bg-mist px-5.5 pt-5 pb-14">
-        <h2 className="font-semibold text-brand-green">Fall 2026 deadlines</h2>
+        <h2 className="font-semibold text-brand-green">
+          {matching?.cycle?.label ?? "Current cycle"} deadlines
+        </h2>
         {/* One bulleted line when it fits, otherwise one deadline per line. */}
         <ul className="mt-4 flex flex-col gap-x-6 gap-y-2 min-[1360px]:flex-row">
           {deadlines.map((deadline, i) => (

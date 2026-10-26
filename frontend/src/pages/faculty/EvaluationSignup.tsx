@@ -4,12 +4,15 @@ import {
   type CourseSection,
   type EvaluationSignup,
   getCourses,
+  getObservationWindow,
   getSignup,
   getSignupSemesters,
   getTeachingSections,
+  type ObservationWindow,
   type Semester,
   saveSelection,
 } from "../../api/courseSelection";
+import { observerChanged } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
 import { Modal } from "../../components/Modal";
 
@@ -26,6 +29,9 @@ function SelectionForm({ professorId }: { professorId: number }) {
   const [courseId, setCourseId] = useState("");
   const [sectionId, setSectionId] = useState("");
   const [saved, setSaved] = useState<EvaluationSignup>();
+  const [observationWindow, setObservationWindow] =
+    useState<ObservationWindow>();
+  const [windowEnd, setWindowEnd] = useState("");
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [loadingSections, setLoadingSections] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -70,11 +76,14 @@ function SelectionForm({ professorId }: { professorId: number }) {
     Promise.all([
       getTeachingSections(professorId, Number(semesterId)),
       getSignup(professorId, Number(semesterId)),
+      getObservationWindow(professorId, Number(semesterId)),
     ])
-      .then(([nextSections, signup]) => {
+      .then(([nextSections, signup, nextWindow]) => {
         if (!active) return;
         setSections(nextSections);
         setSaved(signup);
+        setObservationWindow(nextWindow);
+        setWindowEnd(nextWindow.end ?? nextWindow.latestEnd ?? "");
         const selected = nextSections.find(
           (section) => section.sectionId === signup?.sectionId,
         );
@@ -109,10 +118,16 @@ function SelectionForm({ professorId }: { professorId: number }) {
   );
   const locked = saved !== undefined && saved.status !== "PENDING";
   const busy = loadingCatalog || loadingSections || saving;
+  const closed =
+    observationWindow !== undefined && !observationWindow.signupOpen;
+  const unchanged =
+    selected?.sectionId === saved?.sectionId &&
+    windowEnd === observationWindow?.end;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || busy || locked || sectionError) return;
+    if (!selected || !windowEnd || busy || locked || closed || sectionError)
+      return;
     setSaving(true);
     setSaveError("");
     setMessage("");
@@ -121,8 +136,13 @@ function SelectionForm({ professorId }: { professorId: number }) {
         professorId,
         Number(semesterId),
         selected.sectionId,
+        windowEnd,
       );
       setSaved(signup);
+      setObservationWindow((current) =>
+        current ? { ...current, end: windowEnd } : current,
+      );
+      observerChanged();
       setMessage("Your course and section have been saved for evaluation.");
     } catch (error) {
       setSaveError(
@@ -171,6 +191,8 @@ function SelectionForm({ professorId }: { professorId: number }) {
             setSectionId("");
             setSections([]);
             setSaved(undefined);
+            setObservationWindow(undefined);
+            setWindowEnd("");
             setSectionError("");
             setSaveError("");
             setMessage("");
@@ -277,6 +299,53 @@ function SelectionForm({ professorId }: { professorId: number }) {
           <dd>{selected.location || "To be announced"}</dd>
         </dl>
       )}
+      {selected && observationWindow && (
+        <fieldset className="space-y-2">
+          <legend className="font-medium text-sm">
+            Preferred observation window
+          </legend>
+          <p className="text-ink/60 text-xs">
+            Observations begin the day after the signup deadline. The committee
+            reviews the observers generated for your class before you can
+            request one.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block text-sm" htmlFor="signup-window-start">
+              From
+              <input
+                id="signup-window-start"
+                type="date"
+                readOnly
+                value={observationWindow.start ?? ""}
+                className={selectClass}
+              />
+            </label>
+            <label className="block text-sm" htmlFor="signup-window-end">
+              Through
+              <input
+                id="signup-window-end"
+                type="date"
+                required
+                value={windowEnd}
+                min={observationWindow.start ?? undefined}
+                max={observationWindow.latestEnd ?? undefined}
+                disabled={busy || locked || closed}
+                onChange={(event) => {
+                  setWindowEnd(event.target.value);
+                  setSaveError("");
+                  setMessage("");
+                }}
+                className={selectClass}
+              />
+            </label>
+          </div>
+        </fieldset>
+      )}
+      {closed && (
+        <p className="rounded-lg bg-mist p-3 text-sm">
+          Signup closed on {observationWindow?.signupDeadline}.
+        </p>
+      )}
       {saveError && (
         <p role="alert" className="text-sm text-red-700">
           {saveError}
@@ -293,10 +362,12 @@ function SelectionForm({ professorId }: { professorId: number }) {
           className={buttonClass}
           disabled={
             !selected ||
+            !windowEnd ||
             busy ||
             locked ||
+            closed ||
             Boolean(sectionError) ||
-            selected.sectionId === saved?.sectionId
+            unchanged
           }
         >
           {saving ? "Saving…" : "Save selection"}

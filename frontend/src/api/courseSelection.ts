@@ -32,6 +32,15 @@ export interface EvaluationSignup {
   status: string;
 }
 
+// Observations run from `start` (the day after the signup deadline) through any date up to `latestEnd`.
+export interface ObservationWindow {
+  start: string | null;
+  latestEnd: string | null;
+  end: string | null;
+  signupDeadline: string | null;
+  signupOpen: boolean;
+}
+
 export const getSignupSemesters = () =>
   apiFetch<Semester[]>("/api/semesters?signupOpen=true");
 export const getCourses = () => apiFetch<Course[]>("/api/courses");
@@ -43,16 +52,21 @@ export const getSignup = (professorId: number, semesterId: number) =>
   apiFetch<EvaluationSignup | undefined>(
     `/api/professors/${professorId}/evaluation-signups/${semesterId}`,
   );
+export const getObservationWindow = (professorId: number, semesterId: number) =>
+  apiFetch<ObservationWindow>(
+    `/api/professors/${professorId}/evaluation-signups/${semesterId}/window`,
+  );
 export const saveSelection = (
   professorId: number,
   semesterId: number,
   sectionId: number,
+  windowEnd?: string,
 ) =>
   apiFetch<EvaluationSignup>(
     `/api/professors/${professorId}/evaluation-signups/${semesterId}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sectionId }),
+      body: JSON.stringify({ sectionId, windowEnd }),
     },
   );

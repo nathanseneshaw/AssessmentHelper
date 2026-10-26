@@ -7,7 +7,7 @@ export interface ObserverRequest {
   requestDate: string;
   expirationDate: string;
   responseDate: string | null;
-  status: "PENDING" | "CONFIRMED" | "EXPIRED";
+  status: "PENDING" | "CONFIRMED" | "DECLINED" | "EXPIRED";
 }
 
 export interface RequestOptions {

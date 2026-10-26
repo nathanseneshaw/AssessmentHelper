@@ -9,6 +9,7 @@ import {
 import { App } from "../../App";
 import type { EvaluationSignup } from "../../api/courseSelection";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
+import { faculty } from "../../test/observerFixtures";
 
 let saved: EvaluationSignup | undefined;
 let saveFailure = false;
@@ -52,6 +53,9 @@ const sections = [
   },
 ];
 
+let savedEnd: string | null = null;
+let signupOpen = true;
+
 function signupRoute(init?: RequestInit) {
   if (init?.method === "PUT") {
     if (saveFailure)
@@ -59,24 +63,40 @@ function signupRoute(init?: RequestInit) {
         { detail: "You can only select a section you teach." },
         { status: 400 },
       );
+    const body = JSON.parse(String(init.body));
     saved = {
       signupId: 31,
       observeeId: 31,
-      sectionId: JSON.parse(String(init.body)).sectionId,
+      sectionId: body.sectionId,
       signupDate: "2026-10-21",
       status: "PENDING",
     };
+    savedEnd = body.windowEnd;
   }
   return saved ? Response.json(saved) : new Response(null, { status: 204 });
 }
 
+function windowRoute() {
+  return Response.json({
+    start: "2026-11-01",
+    latestEnd: "2026-11-15",
+    end: savedEnd,
+    signupDeadline: "2026-10-31",
+    signupOpen,
+  });
+}
+
 beforeEach(() => {
   saved = undefined;
+  savedEnd = null;
+  signupOpen = true;
   saveFailure = false;
   catalogFailure = false;
   emptySections = false;
   heldSections = undefined;
   fakeBackend({
+    // The faculty dashboard behind the dialog loads its own status.
+    "/api/observer-eligibility/faculty/3": () => Response.json(faculty),
     "/api/semesters": () => {
       if (catalogFailure) throw new Error("Network unavailable");
       return Response.json([
@@ -95,6 +115,8 @@ beforeEach(() => {
     },
     "/api/professors/3/evaluation-signups/1": signupRoute,
     "/api/professors/3/evaluation-signups/10": signupRoute,
+    "/api/professors/3/evaluation-signups/1/window": windowRoute,
+    "/api/professors/3/evaluation-signups/10/window": windowRoute,
   });
 });
 
@@ -150,7 +172,10 @@ test("selects a taught section, saves its id, and restores it after reopening", 
   const writes = requests().filter((request) => request.init?.method === "PUT");
   expect(writes).toHaveLength(1);
   expect(writes[0]?.path).toBe("/api/professors/3/evaluation-signups/1");
-  expect(JSON.parse(String(writes[0]?.init?.body))).toEqual({ sectionId: 9 });
+  expect(JSON.parse(String(writes[0]?.init?.body))).toEqual({
+    sectionId: 9,
+    windowEnd: "2026-11-15",
+  });
   expect(
     requests().some(
       (request) => request.path === "/api/sections?professorId=3&semesterId=1",
@@ -246,6 +271,43 @@ test("retries failed catalog loading", async () => {
   catalogFailure = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByRole("option", { name: "Fall 2026" });
+});
+
+test("saves a shorter observation window and allows changing only the window", async () => {
+  await openSignup();
+  await chooseCourse();
+  const from = screen.getByLabelText("From") as HTMLInputElement;
+  const through = screen.getByLabelText("Through") as HTMLInputElement;
+  expect(from.value).toBe("2026-11-01");
+  expect(through.value).toBe("2026-11-15");
+  expect(through.max).toBe("2026-11-15");
+  fireEvent.change(through, { target: { value: "2026-11-10" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save selection" }));
+  await screen.findByText(
+    "Your course and section have been saved for evaluation.",
+  );
+  const save = screen.getByRole("button", {
+    name: "Save selection",
+  }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  fireEvent.change(through, { target: { value: "2026-11-12" } });
+  expect(save.disabled).toBe(false);
+  fireEvent.click(save);
+  await waitFor(() => expect(savedEnd).toBe("2026-11-12"));
+});
+
+test("closed signups explain the deadline and cannot be saved", async () => {
+  signupOpen = false;
+  await openSignup();
+  await chooseCourse();
+  await screen.findByText("Signup closed on 2026-10-31.");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save selection",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
 
 test("keeps matched signups read-only", async () => {

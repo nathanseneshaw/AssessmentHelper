@@ -7,8 +7,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-// The other tests load test-data.sql, so this one checks that the app starts with its own seed data.
-@SpringBootTest(properties = "spring.sql.init.data-locations=classpath:data.sql")
+// Every test loads data.sql, the app's own seed data. This one checks that it loads at all.
+@SpringBootTest
 class AssessmenthelperApplicationTests {
 
     @Autowired

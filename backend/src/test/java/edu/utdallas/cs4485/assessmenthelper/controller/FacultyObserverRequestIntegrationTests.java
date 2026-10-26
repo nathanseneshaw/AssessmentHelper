@@ -51,15 +51,22 @@ class FacultyObserverRequestIntegrationTests {
         }
     }
 
-    // Professors from test-data.sql. Alice is on the Assessment Committee and is the observer in Dave's match.
-    private static final AccountPrincipal ALICE = new AccountPrincipal(
-            new CurrentUser(1, 1, 1, "Alice Alice", "alice@utdallas.edu", List.of(Role.AC, Role.PROFESSOR)),
+    // From data.sql. Kaia is on the Assessment Committee. The committee has sent Avery's Fall 2026 list, whose
+    // proposed observers are Leander, Keira, Xiomara and Perrin, and Avery has not asked anyone yet. Hollis has no
+    // signup.
+    private static final AccountPrincipal KAIA = new AccountPrincipal(
+            new CurrentUser(
+                    1, 12, 1, "Kaia Clearbrook", "kaia.clearbrook@example.edu", List.of(Role.AC, Role.PROFESSOR)),
             null,
             true);
-    private static final AccountPrincipal CAROL = new AccountPrincipal(
-            new CurrentUser(3, 3, 1, "Carol Carol", "carol@utdallas.edu", List.of(Role.PROFESSOR)), null, true);
-    private static final AccountPrincipal DAVE = new AccountPrincipal(
-            new CurrentUser(4, 4, 1, "Dave Dave", "dave@utdallas.edu", List.of(Role.PROFESSOR)), null, true);
+    private static final AccountPrincipal HOLLIS = new AccountPrincipal(
+            new CurrentUser(null, 9, 1, "Hollis Carrowmore", "hollis.carrowmore@example.edu", List.of(Role.PROFESSOR)),
+            null,
+            true);
+    private static final AccountPrincipal AVERY = new AccountPrincipal(
+            new CurrentUser(null, 31, 1, "Avery Hazelwood", "avery.hazelwood@example.edu", List.of(Role.PROFESSOR)),
+            null,
+            true);
 
     @Autowired
     private MockMvc mvc;
@@ -69,24 +76,33 @@ class FacultyObserverRequestIntegrationTests {
 
     private int signupId;
     private int matchId;
+    private int keira;
+    private int leander;
 
     @BeforeEach
     void demoSignup() {
         signupId = db.queryForObject("""
                 SELECT s.signup_id FROM evaluation_signup s JOIN observee e ON e.observee_id = s.observee_id
-                WHERE e.professor_id = 4 AND e.cycle_id = 1
+                WHERE e.professor_id = 31 AND e.cycle_id = 1
                 """, Integer.class);
-        matchId = db.queryForObject("SELECT match_id FROM observer_match WHERE signup_id = ?", Integer.class, signupId);
+        keira = observer(41);
+        leander = observer(13);
+        matchId = db.queryForObject(
+                "SELECT match_id FROM observer_match WHERE signup_id = ? AND observer_id = ?",
+                Integer.class,
+                signupId,
+                keira);
     }
 
     @Test
     void sendsFromMatchAndRestoresRequestWithNamesDatesAndNoDuplicateOnRetry() throws Exception {
-        mvc.perform(as(DAVE, get("/api/professors/4/observer-requests")))
+        mvc.perform(as(AVERY, get("/api/professors/31/observer-requests")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].signupId").value(signupId))
-                .andExpect(jsonPath("$[0].candidates[0].observerName").value("Alice Alice"))
+                .andExpect(jsonPath("$[0].candidates.length()").value(4))
+                .andExpect(jsonPath("$[0].candidates[0].observerName").value("Leander Coldwell"))
                 .andExpect(jsonPath("$[0].requests.length()").value(0));
-        var first = send(DAVE, signupId, matchId)
+        var first = send(AVERY, signupId, matchId)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.requestDate").value("2026-10-21T10:00:00"))
@@ -94,44 +110,46 @@ class FacultyObserverRequestIntegrationTests {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        var retry = send(DAVE, signupId, matchId)
+        var retry = send(AVERY, signupId, matchId)
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
         assertThat(retry).isEqualTo(first);
         assertThat(requestCount()).isEqualTo(1);
-        mvc.perform(as(DAVE, get("/api/professors/4/observer-requests")))
+        mvc.perform(as(AVERY, get("/api/professors/31/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("PENDING"))
-                .andExpect(jsonPath("$[0].requests[0].observerName").value("Alice Alice"));
+                .andExpect(jsonPath("$[0].requests[0].observerName").value("Keira Larkspur"));
     }
 
     @Test
     void rejectsMissingOrForeignSignupAndMatchWithoutCreatingRequests() throws Exception {
-        send(CAROL, signupId, matchId).andExpect(status().isNotFound());
-        send(DAVE, signupId, 1).andExpect(status().isBadRequest());
-        send(DAVE, signupId, 99999).andExpect(status().isNotFound());
-        send(DAVE, 99999, matchId).andExpect(status().isNotFound());
-        mvc.perform(as(DAVE, post("/api/professors/4/observer-requests"))
+        int leandersMatch =
+                db.queryForObject("SELECT MIN(match_id) FROM observer_match WHERE signup_id = 33", Integer.class);
+        send(HOLLIS, signupId, matchId).andExpect(status().isNotFound());
+        send(AVERY, signupId, leandersMatch).andExpect(status().isBadRequest());
+        send(AVERY, signupId, 99999).andExpect(status().isNotFound());
+        send(AVERY, 99999, matchId).andExpect(status().isNotFound());
+        mvc.perform(as(AVERY, post("/api/professors/31/observer-requests"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
         // Ids of other professors, known or not, are refused before any lookup.
-        mvc.perform(as(DAVE, get("/api/professors/99999/observer-requests"))).andExpect(status().isForbidden());
+        mvc.perform(as(AVERY, get("/api/professors/99999/observer-requests"))).andExpect(status().isForbidden());
         assertThat(requestCount()).isZero();
     }
 
     @Test
     void onlyTheProfessorCanSendTheirRequestsButCommitteeMembersCanReadThem() throws Exception {
-        mvc.perform(as(CAROL, get("/api/professors/4/observer-requests"))).andExpect(status().isForbidden());
-        mvc.perform(as(CAROL, post("/api/professors/4/observer-requests"))
+        mvc.perform(as(HOLLIS, get("/api/professors/31/observer-requests"))).andExpect(status().isForbidden());
+        mvc.perform(as(HOLLIS, post("/api/professors/31/observer-requests"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"signupId\":" + signupId + ",\"matchId\":" + matchId + "}"))
                 .andExpect(status().isForbidden());
-        mvc.perform(as(ALICE, get("/api/professors/4/observer-requests")))
+        mvc.perform(as(KAIA, get("/api/professors/31/observer-requests")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].signupId").value(signupId));
-        mvc.perform(as(ALICE, post("/api/professors/4/observer-requests"))
+        mvc.perform(as(KAIA, post("/api/professors/31/observer-requests"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"signupId\":" + signupId + ",\"matchId\":" + matchId + "}"))
                 .andExpect(status().isForbidden());
@@ -141,90 +159,88 @@ class FacultyObserverRequestIntegrationTests {
     @Test
     void legacyEndpointAlsoRequiresAnActiveProposedMatchAndOpenSignup() throws Exception {
         db.update("UPDATE observer_match SET match_status = 'REJECTED' WHERE match_id = ?", matchId);
-        send(DAVE, signupId, matchId).andExpect(status().isConflict());
-        legacySend(1).andExpect(status().isConflict());
+        send(AVERY, signupId, matchId).andExpect(status().isConflict());
+        legacySend(keira).andExpect(status().isConflict());
         db.update("UPDATE observer_match SET match_status = 'PROPOSED' WHERE match_id = ?", matchId);
-        db.update("UPDATE observer SET active_status = FALSE WHERE observer_id = 1");
-        legacySend(1).andExpect(status().isConflict());
-        db.update("UPDATE observer SET active_status = TRUE WHERE observer_id = 1");
+        db.update("UPDATE observer SET active_status = FALSE WHERE observer_id = ?", keira);
+        legacySend(keira).andExpect(status().isConflict());
+        db.update("UPDATE observer SET active_status = TRUE WHERE observer_id = ?", keira);
         db.update("UPDATE evaluation_cycle SET status = 'CLOSED' WHERE cycle_id = 1");
-        send(DAVE, signupId, matchId).andExpect(status().isConflict());
+        send(AVERY, signupId, matchId).andExpect(status().isConflict());
         assertThat(requestCount()).isZero();
     }
 
     @Test
     void rejectsSelfAndDifferentCycleAndInactiveObserverProfessor() throws Exception {
-        db.update("UPDATE observer SET professor_id = 4 WHERE observer_id = 1");
-        legacySend(1).andExpect(status().isConflict());
-        db.update("UPDATE observer SET professor_id = 1, cycle_id = 2 WHERE observer_id = 1");
-        legacySend(1).andExpect(status().isConflict());
-        db.update("UPDATE observer SET cycle_id = 1 WHERE observer_id = 1");
-        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id = 1");
-        legacySend(1).andExpect(status().isConflict());
+        db.update("UPDATE observer SET professor_id = 31 WHERE observer_id = ?", keira);
+        legacySend(keira).andExpect(status().isConflict());
+        // Cycle 9 is the closed Spring 2026 cycle.
+        db.update("UPDATE observer SET professor_id = 41, cycle_id = 9 WHERE observer_id = ?", keira);
+        legacySend(keira).andExpect(status().isConflict());
+        db.update("UPDATE observer SET cycle_id = 1 WHERE observer_id = ?", keira);
+        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id = 41");
+        legacySend(keira).andExpect(status().isConflict());
         assertThat(requestCount()).isZero();
     }
 
     @Test
     void rejectsScheduledAndCompletedSignupsAndPastExpiration() throws Exception {
-        mvc.perform(as(DAVE, post("/api/professors/4/observer-requests"))
+        mvc.perform(as(AVERY, post("/api/professors/31/observer-requests"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"signupId\":" + signupId + ",\"matchId\":" + matchId
                                 + ",\"expirationDate\":\"2026-10-20T10:00:00\"}"))
                 .andExpect(status().isBadRequest());
         db.update("UPDATE evaluation_signup SET status = 'COMPLETED' WHERE signup_id = ?", signupId);
-        send(DAVE, signupId, matchId).andExpect(status().isConflict());
+        send(AVERY, signupId, matchId).andExpect(status().isConflict());
         db.update("UPDATE evaluation_signup SET status = 'PENDING' WHERE signup_id = ?", signupId);
         db.update(
-                "INSERT INTO observation (signup_id, observer_id, template_id, status) VALUES (?, 1, 1, 'SCHEDULED')",
-                signupId);
-        send(DAVE, signupId, matchId).andExpect(status().isConflict());
+                "INSERT INTO observation (signup_id, observer_id, template_id, status) VALUES (?, ?, 1, 'SCHEDULED')",
+                signupId,
+                keira);
+        send(AVERY, signupId, matchId).andExpect(status().isConflict());
         assertThat(requestCount()).isZero();
     }
 
     @Test
     void blocksAnotherCandidateUntilExpirationAndKeepsExpiredHistory() throws Exception {
-        db.update("INSERT INTO observer (professor_id, cycle_id, active_status) VALUES (3, 1, TRUE)");
-        int other = db.queryForObject(
-                "SELECT observer_id FROM observer WHERE professor_id = 3 AND cycle_id = 1", Integer.class);
-        db.update(
-                "INSERT INTO observer_match (signup_id, observer_id, match_status) VALUES (?, ?, 'PROPOSED')",
-                signupId,
-                other);
-        send(DAVE, signupId, matchId).andExpect(status().isCreated());
-        legacySend(other).andExpect(status().isConflict());
+        send(AVERY, signupId, matchId).andExpect(status().isCreated());
+        legacySend(leander).andExpect(status().isConflict());
         db.update(
                 "UPDATE observer_request SET expiration_date = TIMESTAMP '2026-10-20 10:00:00' WHERE signup_id = ?",
                 signupId);
-        mvc.perform(as(DAVE, get("/api/professors/4/observer-requests")))
+        mvc.perform(as(AVERY, get("/api/professors/31/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("EXPIRED"));
-        legacySend(other).andExpect(status().isCreated());
+        legacySend(leander).andExpect(status().isCreated());
         assertThat(requestCount()).isEqualTo(2);
     }
 
     @Test
     void confirmedRequestRemainsVisibleAndPreventsAnotherRequest() throws Exception {
-        send(DAVE, signupId, matchId).andExpect(status().isCreated());
+        send(AVERY, signupId, matchId).andExpect(status().isCreated());
         int requestId = db.queryForObject(
                 "SELECT request_id FROM observer_request WHERE signup_id = ?", Integer.class, signupId);
-        mvc.perform(as(ALICE, post("/api/observer-requests/" + requestId + "/confirm")))
+        mvc.perform(as(KAIA, post("/api/observer-requests/" + requestId + "/confirm")))
                 .andExpect(status().isOk());
-        mvc.perform(as(DAVE, get("/api/professors/4/observer-requests")))
+        mvc.perform(as(AVERY, get("/api/professors/31/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("CONFIRMED"))
-                .andExpect(jsonPath("$[0].requests[0].request.responseDate").value("2026-10-21T10:00:00"));
-        send(DAVE, signupId, matchId).andExpect(jsonPath("$.status").value("CONFIRMED"));
+                .andExpect(jsonPath("$[0].requests[0].request.responseDate").value("2026-10-21T10:00:00"))
+                .andExpect(jsonPath("$[0].unavailableReason")
+                        .value("An observation is already scheduled for this signup."));
+        // Accepting recorded the signup's observation, so even the same request cannot be sent again.
+        send(AVERY, signupId, matchId).andExpect(status().isConflict());
         assertThat(requestCount()).isEqualTo(1);
     }
 
     @Test
     void courseSelectionCannotChangeAfterCandidatesHaveBeenGenerated() throws Exception {
-        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (4, 9)");
-        mvc.perform(as(DAVE, put("/api/professors/4/evaluation-signups/1"))
+        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (31, 284)");
+        mvc.perform(as(AVERY, put("/api/professors/31/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sectionId\":9}"))
+                        .content("{\"sectionId\":284}"))
                 .andExpect(status().isConflict());
         assertThat(db.queryForObject(
                         "SELECT section_id FROM evaluation_signup WHERE signup_id = ?", Integer.class, signupId))
-                .isEqualTo(1);
+                .isEqualTo(301);
     }
 
     @Test
@@ -237,12 +253,12 @@ class FacultyObserverRequestIntegrationTests {
             var first = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
-                return service.createFromMatch(4, signupId, matchId, null);
+                return service.createFromMatch(31, signupId, matchId, null);
             });
             var second = executor.submit(() -> {
                 ready.countDown();
                 if (!start.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Start timed out");
-                return service.createFromMatch(4, signupId, matchId, null);
+                return service.createFromMatch(31, signupId, matchId, null);
             });
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             start.countDown();
@@ -250,8 +266,17 @@ class FacultyObserverRequestIntegrationTests {
                     .isEqualTo(second.get(10, TimeUnit.SECONDS).requestId());
             assertThat(requestCount()).isEqualTo(1);
         } finally {
+            // This test commits, so remove the request and the notification it sent to keep data.sql's records.
             db.update("DELETE FROM observer_request WHERE signup_id = ?", signupId);
+            db.update(
+                    "DELETE FROM observer_notification WHERE signup_id = ? AND created_at = TIMESTAMP '2026-10-21 10:00:00'",
+                    signupId);
         }
+    }
+
+    private int observer(int professorId) {
+        return db.queryForObject(
+                "SELECT observer_id FROM observer WHERE professor_id = ? AND cycle_id = 1", Integer.class, professorId);
     }
 
     private ResultActions send(AccountPrincipal professor, int signup, int match) throws Exception {
@@ -262,7 +287,7 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     private ResultActions legacySend(int observer) throws Exception {
-        return mvc.perform(as(DAVE, post("/api/observer-requests"))
+        return mvc.perform(as(AVERY, post("/api/observer-requests"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"signupId\":" + signupId + ",\"observerId\":" + observer + "}"));
     }
