@@ -15,21 +15,12 @@ import {
 import { ActionButton } from "../../components/ActionButton";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
+import { shortDate } from "../../format";
 import { OverdueEvaluations } from "./OverdueEvaluations";
 
 type Reading = Pick<Kpi, "value" | "note">;
 
 const loading: Reading = { value: "—", note: "Loading…" };
-
-// Deadlines are calendar dates such as "2026-10-31", which parse as UTC midnight.
-// Formatting them in UTC keeps the day from slipping back west of Greenwich.
-function shortDate(isoDate: string) {
-  return new Date(isoDate).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 interface SignupData {
   metrics: DashboardMetrics | null;

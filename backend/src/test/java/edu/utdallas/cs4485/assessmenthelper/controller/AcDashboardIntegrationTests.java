@@ -1,8 +1,13 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,6 +16,7 @@ import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverEligibilityService;
+import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -28,6 +34,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -77,6 +84,8 @@ class AcDashboardIntegrationTests {
     }
 
     private static final String METRICS = "/api/ac-dashboard/metrics";
+    private static final String OBSERVATIONS = "/api/ac-dashboard/observations";
+    private static final String REMINDERS = "/api/ac-dashboard/observations/reminders";
     private static final int HOLLIS = 9, LEANDER = 13, ARLO = 26, AVERY = 31, KEIRA = 41;
 
     private static final AccountPrincipal KAIA = new AccountPrincipal(
@@ -179,8 +188,118 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath("$.listSufficiency.total").value(6));
     }
 
+    @Test
+    void committeeTracksEachGeneratedSignupsObservation() throws Exception {
+        String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
+        observations()
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cycleId").value(1))
+                .andExpect(jsonPath("$.cycleLabel").value("Fall 2026"))
+                .andExpect(jsonPath("$.observationDeadline").value("2026-11-15"))
+                .andExpect(jsonPath("$.observations.length()").value(6))
+                .andExpect(jsonPath(leander + ".observee").value("Leander Coldwell"))
+                .andExpect(jsonPath(leander + ".observer").value("Keira Larkspur"))
+                .andExpect(jsonPath(leander + ".observerId").value(KEIRA))
+                .andExpect(jsonPath(leander + ".course").value("CS 3345.001"))
+                .andExpect(jsonPath(leander + ".date").value("2026-11-04"))
+                .andExpect(jsonPath(leander + ".startTime").value("08:30:00"))
+                .andExpect(jsonPath(leander + ".status").value("SCHEDULED"))
+                .andExpect(jsonPath("$.observations[?(@.status == 'AWAITING_OBSERVER')]", hasSize(5)))
+                .andExpect(
+                        jsonPath("$.observations[?(@.status == 'AWAITING_OBSERVER')].observer", everyItem(nullValue())))
+                .andExpect(jsonPath(
+                        "$.observations[?(@.listReleased == true)].observeeId", containsInAnyOrder(LEANDER, AVERY)));
+    }
+
+    @Test
+    void observationStatusFollowsTheDateAndCompletion() throws Exception {
+        String leander = "$.observations[?(@.observeeId == " + LEANDER + ")].status";
+        clock.set("2026-11-04T15:00:00Z");
+        observations().andExpect(jsonPath(leander).value("SCHEDULED"));
+        clock.set("2026-11-05T15:00:00Z");
+        observations().andExpect(jsonPath(leander).value("MISSING"));
+
+        db.update(
+                "UPDATE observation SET status = 'COMPLETED', observee_signed = TRUE, completed_at = TIMESTAMP '2026-11-04 10:00:00' WHERE signup_id = ?",
+                signupOf(LEANDER));
+        observations()
+                .andExpect(jsonPath(leander).value("COMPLETED"))
+                .andExpect(jsonPath("$.observations[?(@.observeeId == " + LEANDER + ")].observeeSigned")
+                        .value(true))
+                .andExpect(jsonPath("$.observations[?(@.observeeId == " + LEANDER + ")].observerSigned")
+                        .value(false))
+                .andExpect(jsonPath("$.observations[?(@.observeeId == " + LEANDER + ")].completedAt")
+                        .value("2026-11-04T10:00:00"));
+
+        // A cancelled signup leaves the list, as it leaves the dashboard's counts.
+        db.update("UPDATE evaluation_signup SET status = 'CANCELLED' WHERE signup_id = ?", signupOf(ARLO));
+        observations().andExpect(jsonPath("$.observations.length()").value(5));
+    }
+
+    @Test
+    void remindersGoToOutstandingObservationsAndReleasedLists() throws Exception {
+        // Leander's scheduled observation reminds him and Keira. Avery's list is released but she has not asked
+        // anyone. The other four lists are not released, so their observees cannot request anyone yet.
+        mvc.perform(as(KAIA, post(REMINDERS)))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{\"sent\":3}", JsonCompareMode.STRICT));
+
+        assertThat(remindersFor(LEANDER))
+                .containsExactly(
+                        "Reminder from the Assessment Committee: your observation of CS 3345.001 by Keira Larkspur is scheduled for Nov 4 at 08:30.");
+        assertThat(remindersFor(KEIRA))
+                .containsExactly(
+                        "Reminder from the Assessment Committee: your observation of Leander Coldwell's CS 3345.001 is scheduled for Nov 4 at 08:30.");
+        assertThat(remindersFor(AVERY))
+                .singleElement()
+                .asString()
+                .startsWith("Reminder from the Assessment Committee: choose an observer for CS 3345.")
+                .endsWith(" and send a request so the observation can happen by the observation deadline, Nov 15.");
+        assertThat(remindersFor(ARLO)).isEmpty();
+    }
+
+    @Test
+    void missingAndCompletedObservationsGetTheRightReminders() throws Exception {
+        clock.set("2026-11-05T15:00:00Z");
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(3));
+        assertThat(remindersFor(KEIRA))
+                .containsExactly(
+                        "Reminder from the Assessment Committee: your observation of Leander Coldwell's CS 3345.001 was scheduled for Nov 4 at 08:30 and has not been completed. Complete it as soon as possible.");
+
+        db.update("UPDATE observation SET status = 'COMPLETED' WHERE signup_id = ?", signupOf(LEANDER));
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(1));
+        assertThat(remindersFor(KEIRA)).hasSize(1);
+    }
+
+    @Test
+    void onlyTheCommitteeCanTrackObservationsOrSendReminders() throws Exception {
+        mvc.perform(get(OBSERVATIONS).with(user(DARIO))).andExpect(status().isForbidden());
+        mvc.perform(get(OBSERVATIONS)).andExpect(status().isUnauthorized());
+        mvc.perform(as(DARIO, post(REMINDERS))).andExpect(status().isForbidden());
+        assertThat(remindersFor(LEANDER)).isEmpty();
+    }
+
     private ResultActions metrics() throws Exception {
         return mvc.perform(get(METRICS).with(user(KAIA)));
+    }
+
+    private ResultActions observations() throws Exception {
+        return mvc.perform(get(OBSERVATIONS).with(user(KAIA)));
+    }
+
+    // Signs the request in and adds a CSRF token the way the frontend gets one. The csrf() helper is not used
+    // because it changes the shared Spring context (see AuthenticationTests).
+    private MockHttpServletRequestBuilder as(AccountPrincipal account, MockHttpServletRequestBuilder request)
+            throws Exception {
+        Cookie token =
+                mvc.perform(get("/api/auth/csrf")).andReturn().getResponse().getCookie("XSRF-TOKEN");
+        return request.with(user(account)).cookie(token).header("X-XSRF-TOKEN", token.getValue());
+    }
+
+    private List<String> remindersFor(int professorId) {
+        return db.queryForList(
+                "SELECT message FROM observer_notification WHERE professor_id = ? AND message LIKE 'Reminder%' ORDER BY notification_id",
+                String.class, professorId);
     }
 
     private ResultActions expectMissing(int count) throws Exception {

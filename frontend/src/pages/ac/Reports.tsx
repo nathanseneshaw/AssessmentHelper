@@ -1,46 +1,123 @@
+import { useEffect, useState } from "react";
+import {
+  type DashboardMetrics,
+  getDashboardMetrics,
+  getObservations,
+  type ObservationTracking,
+  type Ratio,
+} from "../../api/acDashboard";
+import {
+  getOverdueQueue,
+  type OverdueQueue,
+} from "../../api/evaluationEligibility";
+import { type AcState, useObserverData } from "../../api/observerEligibility";
 import { ActionButton } from "../../components/ActionButton";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
 
-const kpis: Kpi[] = [
-  {
-    label: "Eligibility Accuracy",
-    value: "96%",
-    note: "Faculty evaluation KPI",
-  },
-  {
-    label: "Assessment Participation Rate",
-    value: "82%",
-    note: "Assessment participation",
-  },
-  {
-    label: "Observer Utilization Rate",
-    value: "74%",
-    note: "Assessment participation",
-  },
-  { label: "List Sufficiency", value: "91%", note: "Recommendation engine" },
-  { label: "Survey Completion", value: "78%", note: "Completion KPI" },
-];
+// Process feedback is not saved anywhere yet, so there is nothing to measure.
+const surveyCompletion: Kpi = {
+  label: "Survey Completion",
+  value: "—",
+  note: "Not tracked yet",
+};
 
-const executiveMetrics = [
-  { label: "Faculty due for evaluation", value: 18 },
-  { label: "Missing observation count", value: 4 },
-  { label: "Unmatched faculty report", value: 2 },
-  { label: "Overdue evaluation count", value: 8 },
-];
+interface ReportData {
+  metrics: DashboardMetrics;
+  overdue: OverdueQueue;
+  matching: AcState;
+  tracking: ObservationTracking;
+}
 
-const cycleTitle = "Fall 2026 Cycle";
+interface Report {
+  cycleLabel: string;
+  kpis: Kpi[];
+  executiveMetrics: { label: string; value: number }[];
+  cycleSummary: string[];
+}
 
-const cycleSummary = [
-  "18 faculty due",
-  "15 signed up",
-  "13 observations scheduled",
-  "2 unmatched faculty",
-  "9 completed",
-  "4 missing observations",
-];
+function rate(
+  { count, total }: Ratio,
+  counted: string,
+  empty: string,
+): Pick<Kpi, "value" | "note"> {
+  return total === 0
+    ? { value: "—", note: empty }
+    : {
+        value: `${Math.round((count / total) * 100)}%`,
+        note: `${count} of ${total} ${counted}`,
+      };
+}
 
-/** Saves text the page builds from its own data, so the buttons work without a backend. */
+const plural = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`;
+
+function buildReport({
+  metrics,
+  overdue,
+  matching,
+  tracking,
+}: ReportData): Report {
+  const unmatched = matching.signups.filter(
+    (s) => s.candidates.length === 0,
+  ).length;
+  // Every observation with an observer has been scheduled, whether or not it has happened yet.
+  const scheduled = tracking.observations.filter(
+    (o) => o.status !== "AWAITING_OBSERVER",
+  ).length;
+  const completed = tracking.observations.filter(
+    (o) => o.status === "COMPLETED",
+  ).length;
+  const missing = tracking.observations.filter(
+    (o) => o.status === "MISSING",
+  ).length;
+  return {
+    cycleLabel: metrics.cycleLabel,
+    kpis: [
+      {
+        label: "Assessment Participation Rate",
+        ...rate(
+          metrics.participation,
+          "due faculty signed up",
+          "No faculty are due this cycle",
+        ),
+      },
+      {
+        label: "Observer Utilization Rate",
+        ...rate(
+          metrics.observerUtilization,
+          "signups have an observer",
+          "No signups this cycle",
+        ),
+      },
+      {
+        label: "List Sufficiency",
+        ...rate(
+          metrics.listSufficiency,
+          `signups have a full list of ${metrics.listSize}`,
+          "No signups this cycle",
+        ),
+      },
+      surveyCompletion,
+    ],
+    executiveMetrics: [
+      { label: "Faculty due for evaluation", value: metrics.facultyDue },
+      { label: "Missing observation count", value: missing },
+      { label: "Unmatched faculty report", value: unmatched },
+      { label: "Overdue evaluation count", value: overdue.count },
+    ],
+    cycleSummary: [
+      `${metrics.facultyDue} faculty due`,
+      `${metrics.participation.count} signed up`,
+      `${plural(scheduled, "observation", "observations")} scheduled`,
+      `${unmatched} unmatched faculty`,
+      `${completed} completed`,
+      plural(missing, "missing observation", "missing observations"),
+    ],
+  };
+}
+
+/** Saves text the page builds from the loaded report, so the files match what is on screen. */
 function downloadFile(filename: string, type: string, content: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const link = document.createElement("a");
@@ -52,13 +129,14 @@ function downloadFile(filename: string, type: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-function exportReport() {
+function exportReport(report: Report) {
   const cell = (value: string | number) =>
     `"${String(value).replaceAll('"', '""')}"`;
   const rows = [
     ["Section", "Metric", "Value", "Note"],
-    ...kpis.map((kpi) => ["KPI", kpi.label, kpi.value, kpi.note]),
-    ...executiveMetrics.map((metric) => [
+    ["Cycle", "Evaluation cycle", report.cycleLabel, ""],
+    ...report.kpis.map((kpi) => ["KPI", kpi.label, kpi.value, kpi.note]),
+    ...report.executiveMetrics.map((metric) => [
       "Executive dashboard",
       metric.label,
       metric.value,
@@ -72,15 +150,57 @@ function exportReport() {
   );
 }
 
-function downloadSummary() {
+function downloadSummary(report: Report) {
   downloadFile(
-    "fall-2026-cycle-summary.txt",
+    `${report.cycleLabel.toLowerCase().replaceAll(" ", "-")}-cycle-summary.txt`,
     "text/plain",
-    `${[cycleTitle, "", ...cycleSummary].join("\n")}\n`,
+    `${[`${report.cycleLabel} Cycle`, "", ...report.cycleSummary].join("\n")}\n`,
   );
 }
 
+const executiveLabels = [
+  "Faculty due for evaluation",
+  "Missing observation count",
+  "Unmatched faculty report",
+  "Overdue evaluation count",
+];
+
 export function AcReports() {
+  const { data: matching, error: matchingError } =
+    useObserverData<AcState>("/ac");
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [overdue, setOverdue] = useState<OverdueQueue | null>(null);
+  const [tracking, setTracking] = useState<ObservationTracking | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    const fail = () => {
+      if (!controller.signal.aborted) setFailed(true);
+    };
+    getDashboardMetrics(controller.signal).then(setMetrics).catch(fail);
+    getOverdueQueue(controller.signal).then(setOverdue).catch(fail);
+    getObservations(controller.signal).then(setTracking).catch(fail);
+    return () => controller.abort();
+  }, []);
+  // The report is one snapshot: it shows only once every source has loaded, so an export is never half filled.
+  const unavailable = failed || Boolean(matchingError);
+  const report =
+    !unavailable && metrics && overdue && matching && tracking
+      ? buildReport({ metrics, overdue, matching, tracking })
+      : null;
+  const placeholder = unavailable
+    ? { value: "Unavailable", note: "Report data could not be loaded" }
+    : { value: "—", note: "Loading…" };
+  const kpis: Kpi[] =
+    report?.kpis ??
+    [
+      "Assessment Participation Rate",
+      "Observer Utilization Rate",
+      "List Sufficiency",
+    ]
+      .map((label): Kpi => ({ label, ...placeholder }))
+      .concat(surveyCompletion);
+
   return (
     <div>
       <PageHeader
@@ -89,7 +209,8 @@ export function AcReports() {
         action={
           <ActionButton
             tone="orange"
-            onClick={exportReport}
+            disabled={!report}
+            onClick={() => report && exportReport(report)}
             className="min-w-52.5"
           >
             Export Report
@@ -97,20 +218,9 @@ export function AcReports() {
         }
       />
 
-      {/*
-        One row on wide screens, where the last card is a little wider. Below
-        that the labels would wrap, so the cards sit 3 + 2 (or 2 + 2 + 1).
-      */}
-      <div className="mt-10.25 grid gap-4 sm:grid-cols-2 lg:grid-cols-6 2xl:grid-cols-[repeat(4,minmax(0,1fr))_minmax(0,1.32fr)]">
-        {kpis.map((kpi, i) => (
-          <div
-            key={kpi.label}
-            className={`grid 2xl:col-span-1 ${
-              i < 3 ? "lg:col-span-2" : "lg:col-span-3"
-            } ${i === kpis.length - 1 ? "sm:col-span-2" : ""}`}
-          >
-            <KpiCard kpi={kpi} />
-          </div>
+      <div className="mt-10.25 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {kpis.map((kpi) => (
+          <KpiCard key={kpi.label} kpi={kpi} />
         ))}
       </div>
 
@@ -120,7 +230,10 @@ export function AcReports() {
             Executive Dashboard Metrics
           </h2>
           <dl className="mt-9.5 flex flex-col gap-11">
-            {executiveMetrics.map((metric) => (
+            {(
+              report?.executiveMetrics ??
+              executiveLabels.map((label) => ({ label, value: "—" }))
+            ).map((metric) => (
               <div
                 key={metric.label}
                 className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-4"
@@ -136,17 +249,24 @@ export function AcReports() {
 
         <section className="flex flex-col rounded-lg border border-line bg-mist px-6 pt-6 pb-10 lg:pb-18.5">
           <h2 className="font-medium text-[22px] text-brand-green leading-7">
-            {cycleTitle}
+            {report ? `${report.cycleLabel} Cycle` : "Current Cycle"}
           </h2>
           <ul className="mt-8.5 text-lg leading-[1.19]">
-            {cycleSummary.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
+            {report ? (
+              report.cycleSummary.map((item) => <li key={item}>{item}</li>)
+            ) : (
+              <li className="text-muted">
+                {unavailable
+                  ? "The cycle summary could not be loaded."
+                  : "Loading cycle summary…"}
+              </li>
+            )}
           </ul>
           <div className="mt-auto pt-10">
             <ActionButton
               tone="orange"
-              onClick={downloadSummary}
+              disabled={!report}
+              onClick={() => report && downloadSummary(report)}
               className="min-w-59.25"
             >
               Download Summary

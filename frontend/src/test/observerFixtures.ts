@@ -32,6 +32,7 @@ export const signup: Signup = {
   windowStart: "2026-11-01",
   windowEnd: "2026-11-10",
   released: false,
+  observerName: null,
   candidates: Array.from({ length: 5 }, (_, i) => ({
     observerId: i + 2,
     professorId: i + 2,
