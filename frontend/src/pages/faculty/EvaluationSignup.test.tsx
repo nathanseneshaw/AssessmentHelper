@@ -95,8 +95,9 @@ beforeEach(() => {
   emptySections = false;
   heldSections = undefined;
   fakeBackend({
-    // The faculty dashboard behind the dialog loads its own status.
+    // The faculty dashboard behind the dialog loads its own status and observations.
     "/api/observer-eligibility/faculty/3": () => Response.json(faculty),
+    "/api/professors/3/observations": () => Response.json([]),
     "/api/semesters": () => {
       if (catalogFailure) throw new Error("Network unavailable");
       return Response.json([
