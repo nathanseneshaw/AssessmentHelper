@@ -60,6 +60,16 @@ public class ObservationService {
         OBSERVEE
     }
 
+    /** What the audit log records about an observation. Entries are only ever added. */
+    public enum AuditEvent {
+        STARTED,
+        EDITED,
+        SUBMITTED,
+        LOCKED,
+        VIEWED,
+        FORWARDED
+    }
+
     /** A stored answer: a rating (RATING questions only) and comments, either of which may be missing in a draft. */
     public record Answer(int criterionId, Integer rating, String comments) {}
 
@@ -106,7 +116,8 @@ public class ObservationService {
             List<Answer> responses,
             LocalDateTime submittedAt,
             boolean canStart,
-            boolean canEdit) {}
+            boolean canEdit,
+            boolean locked) {}
 
     /** One observation with its people, course and semester, before deciding who may see it. */
     private record Row(
@@ -121,7 +132,15 @@ public class ObservationService {
             Course course,
             LocalDate observationDate,
             LocalTime startTime,
-            LocalDateTime submittedAt) {}
+            LocalDateTime submittedAt) {
+        /**
+         * Nobody signs the form any more, so submitting it is the final signature: from then on the record is locked,
+         * read-only for everyone including the observer and the observee. COMPLETED records are locked too.
+         */
+        boolean locked() {
+            return status == Status.SUBMITTED || status == Status.COMPLETED;
+        }
+    }
 
     // The observer_signed_at column records when the observer submitted the form.
     private static final String OBSERVATIONS = """
@@ -214,9 +233,15 @@ public class ObservationService {
         return null;
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * The form as {@code principal} sees it. Every time someone opens a locked record that is written to the audit log,
+     * so this cannot be a read-only transaction. A refused request is not logged, since nothing was shown.
+     */
     public Detail detail(int observationId, AccountPrincipal principal) {
-        return detail(find(observationId), principal);
+        Row o = find(observationId);
+        Detail detail = detail(o, principal);
+        if (o.locked()) log(observationId, AuditEvent.VIEWED, principal, null);
+        return detail;
     }
 
     /** The form as {@code principal} sees it, with what they may do next. Only the observer ever changes it. */
@@ -238,7 +263,8 @@ public class ObservationService {
                 responses(o.observationId()),
                 o.submittedAt(),
                 role == ViewerRole.OBSERVER && (o.status() == Status.ACCEPTED || o.status() == Status.SCHEDULED),
-                role == ViewerRole.OBSERVER && o.status() == Status.IN_PROGRESS);
+                role == ViewerRole.OBSERVER && o.status() == Status.IN_PROGRESS,
+                o.locked());
     }
 
     private List<Answer> responses(int observationId) {
@@ -268,6 +294,7 @@ public class ObservationService {
                     early ? now.toLocalDate() : o.observationDate(),
                     early || o.startTime() == null ? minute : o.startTime(),
                     observationId);
+            log(observationId, AuditEvent.STARTED, principal, null);
         } else if (o.status() != Status.IN_PROGRESS)
             throw new ConflictException("This observation has already been submitted.");
         return detail(find(observationId), principal);
@@ -278,6 +305,7 @@ public class ObservationService {
         Row o = lock(observationId);
         requireEditable(o, principal);
         store(observationId, checked(answers, templates.template(o.templateId())));
+        log(observationId, AuditEvent.EDITED, principal, null);
         return detail(find(observationId), principal);
     }
 
@@ -305,12 +333,46 @@ public class ObservationService {
                 Status.SUBMITTED.name(),
                 now(),
                 observationId);
+        log(observationId, AuditEvent.SUBMITTED, principal, null);
+        log(observationId, AuditEvent.LOCKED, principal, null);
         notify(
                 o.observee().professorId(),
                 o.signupId(),
                 o.observer().name() + " submitted the observation of "
                         + o.course().label() + ". You can view it now.");
         return detail(find(observationId), principal);
+    }
+
+    /**
+     * An Assessment Committee member forwards the link to a locked record to another professor. The forward is logged
+     * (who sent it, to whom, when) and the recipient is notified. Forwarding does not give the recipient access: the
+     * link opens the secured system, which still decides who may read the record.
+     */
+    public void forward(int observationId, int recipientProfessorId, AccountPrincipal principal) {
+        if (!principal.isCommitteeMember() || principal.user().professorId() == null)
+            throw new AccessDeniedException("Only Assessment Committee members can forward a record.");
+        Row o = find(observationId);
+        if (!o.locked()) throw new ConflictException("Only a locked record can be forwarded.");
+        if (db.queryForObject(
+                        "SELECT COUNT(*) FROM professor WHERE professor_id=?", Integer.class, recipientProfessorId)
+                == 0) throw new NotFoundException("Professor not found.");
+        log(observationId, AuditEvent.FORWARDED, principal, recipientProfessorId);
+        notify(
+                recipientProfessorId,
+                o.signupId(),
+                principal.user().name() + " sent you the observation of "
+                        + o.course().label() + ".");
+    }
+
+    // Appends to the audit log. This is the only code that touches the table, and it only inserts.
+    private void log(int observationId, AuditEvent event, AccountPrincipal principal, Integer recipientProfessorId) {
+        db.update(
+                "INSERT INTO observation_audit_log(observation_id,event_type,actor_professor_id,recipient_professor_id,occurred_at) VALUES (?,?,?,?,?)",
+                observationId,
+                event.name(),
+                principal.user().professorId(),
+                recipientProfessorId,
+                now());
     }
 
     // Only the observer edits the answers, and only between starting the form and submitting it.

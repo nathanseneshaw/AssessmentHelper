@@ -121,6 +121,19 @@ As with the rest of the demo, supplied professor IDs are not authenticated
 identities; server-side authentication/authorization remains necessary before
 production use. Data resets on backend restart.
 
+## Record locking and audit log
+
+Nobody signs the form any more, so the observer's submission is the final signature and
+it locks the record: a `SUBMITTED` or `COMPLETED` observation is read-only for everyone,
+including the observer and the observee, and its detail response has `locked: true`.
+
+Every action on a record is appended to `observation_audit_log` (who, to whom, when):
+`STARTED`, `EDITED`, `SUBMITTED`, `LOCKED`, every `VIEWED` of a locked record, and every
+`FORWARDED` link. The table is insert-only; nothing in the application updates or deletes
+its rows. An Assessment Committee member forwards a locked record with
+`POST /api/observations/{id}/forward` and `{ "recipientProfessorId": 4 }`. Forwarding logs
+the event and notifies the recipient but does not grant access.
+
 ## Overdue evaluation notifications
 
 The Faculty Evaluations page loads all active faculty from

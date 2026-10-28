@@ -3,6 +3,7 @@ package edu.utdallas.cs4485.assessmenthelper.controller;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService;
 import java.util.List;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -22,6 +24,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class ObservationController {
     /** Every answer on the form, for a draft save or the final submit. */
     public record ResponsesBody(List<ObservationService.Answer> responses) {}
+
+    /** The professor an Assessment Committee member forwards a locked record's link to. */
+    public record ForwardBody(Integer recipientProfessorId) {}
 
     private final ObservationService service;
 
@@ -55,6 +60,17 @@ public class ObservationController {
             @RequestBody ResponsesBody body,
             @AuthenticationPrincipal AccountPrincipal principal) {
         return service.submit(observationId, body.responses(), principal);
+    }
+
+    @PostMapping("/observations/{observationId}/forward")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void forward(
+            @PathVariable int observationId,
+            @RequestBody ForwardBody body,
+            @AuthenticationPrincipal AccountPrincipal principal) {
+        if (body == null || body.recipientProfessorId() == null)
+            throw new IllegalArgumentException("Send the professor to forward the record to.");
+        service.forward(observationId, body.recipientProfessorId(), principal);
     }
 
     @GetMapping("/professors/{professorId}/observations")

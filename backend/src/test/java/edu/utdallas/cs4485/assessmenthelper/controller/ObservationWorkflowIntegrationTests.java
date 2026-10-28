@@ -463,6 +463,7 @@ class ObservationWorkflowIntegrationTests {
             assertThat(notificationsTo(leander)).hasSize(1);
         } finally {
             // This test commits, so put the observation back the way data.sql has it.
+            db.update("DELETE FROM observation_audit_log WHERE observation_id = ?", observation);
             db.update("DELETE FROM observation_response WHERE observation_id = ?", observation);
             db.update("DELETE FROM observer_notification WHERE created_at = TIMESTAMP '2026-11-04 10:15:42'");
             db.update(
