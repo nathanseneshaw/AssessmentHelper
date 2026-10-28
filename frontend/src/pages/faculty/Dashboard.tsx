@@ -1,7 +1,16 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { Link, Outlet } from "react-router-dom";
 import {
+  formatDate,
+  formatWhen,
+  type ObservationSummary,
+  professorObservationsPath,
+  STATUS_LABELS,
+  useApiResource,
+} from "../../api/observations";
+import {
   type FacultyState,
+  onObserverChange,
   useObserverData,
 } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
@@ -26,45 +35,117 @@ const summary = [
   },
 ];
 
-const upcoming = [
-  {
-    month: "OCT",
-    day: "03",
-    title: "Observation — CS 4348.501",
-    detail: "Observer: Professor 2",
-    action: "View Details",
-    to: "/faculty/observations/cs4348-501",
-    status: "Scheduled",
-    when: "Oct 3, 10:00 AM",
-    urgent: false,
-  },
-  {
-    month: "SEP",
-    day: "28",
-    title: "Process Feedback Due",
-    detail: "CS 3345.002 observation",
-    action: "Start Survey",
-    to: "/faculty/feedback",
-    status: "Action needed",
-    when: "Due Sep 28",
-    urgent: true,
-  },
-];
+interface UpcomingItem {
+  key: string;
+  /** Empty for an item with no date yet. */
+  month: string;
+  day: string;
+  title: string;
+  detail: string;
+  action: string;
+  /** Read after the action by screen readers, to tell apart the links of several rows. */
+  actionContext?: string;
+  to: string;
+  status: string;
+  when: string;
+  urgent: boolean;
+}
+
+// Process feedback is still a mockup; issue #108 makes it live.
+const feedbackDue: UpcomingItem = {
+  key: "feedback",
+  month: "SEP",
+  day: "28",
+  title: "Process Feedback Due",
+  detail: "CS 3345.002 observation",
+  action: "Start Survey",
+  to: "/faculty/feedback",
+  status: "Action needed",
+  when: "Due Sep 28",
+  urgent: true,
+};
 
 const history = [
   { term: "Spring 2025", detail: "Completed • 2 observations" },
   { term: "Fall 2023", detail: "Completed • 2 observations" },
 ];
 
-const observationsForMe = [
-  { course: "CS 4348.501", detail: "Submitted • Mar 20, 2025" },
-  { course: "CS 4348.501", detail: "Scheduled • Apr 14, 2025" },
-];
+/** "2026-10-03" → OCT and 03. The parts are read as written, so no time zone can move the day. */
+function badge(date: string | null) {
+  const [year, month, day] = (date ?? "").split("-").map(Number);
+  if (!year || !month || !day) return { month: "", day: "" };
+  return {
+    month: new Date(year, month - 1, day)
+      .toLocaleString("en-US", { month: "short" })
+      .toUpperCase(),
+    day: String(day).padStart(2, "0"),
+  };
+}
 
-const observationsForOthers = [
-  { course: "CS 3345.002", detail: "Submitted • Mar 28, 2025" },
-  { course: "CS 3345.002", detail: "Scheduled • Apr 20, 2025" },
-];
+/**
+ * What the professor has to do next: start or continue the observations they make. Soonest first, then the ones
+ * without a date.
+ */
+function observationTasks(observations: ObservationSummary[]): UpcomingItem[] {
+  // ISO dates and times sort as plain strings. An empty one stands for no date, and sorts last.
+  const start = (o: ObservationSummary) =>
+    o.observationDate ? `${o.observationDate}T${o.startTime ?? ""}` : "";
+  const soonest = (a: ObservationSummary, b: ObservationSummary) => {
+    const [x, y] = [start(a), start(b)];
+    if (x === y) return a.observationId - b.observationId;
+    if (!x || !y) return x ? -1 : 1;
+    return x < y ? -1 : 1;
+  };
+  return observations
+    .filter(
+      (o) =>
+        o.role === "OBSERVER" &&
+        (o.status === "ACCEPTED" ||
+          o.status === "SCHEDULED" ||
+          o.status === "IN_PROGRESS"),
+    )
+    .sort(soonest)
+    .map((o) => ({
+      key: `observation-${o.observationId}`,
+      ...badge(o.observationDate),
+      title: `Observation — ${o.courseLabel}`,
+      detail: `Observee: ${o.observeeName}`,
+      action: o.status === "IN_PROGRESS" ? "Continue" : "Start Observation",
+      actionContext: ` (${o.courseLabel})`,
+      to: `/faculty/observations/${o.observationId}`,
+      status: STATUS_LABELS[o.status],
+      when: formatWhen(o.observationDate, o.startTime) ?? "Not scheduled",
+      urgent: false,
+    }));
+}
+
+/** The newest two observations for a dashboard card. The API lists the newest first. */
+function ObservationLines({
+  observations,
+  error,
+  person,
+}: {
+  observations: ObservationSummary[] | null;
+  error: string;
+  person: (observation: ObservationSummary) => string;
+}) {
+  if (error)
+    return <p className="text-ink/60 text-sm">Couldn't load observations.</p>;
+  if (!observations)
+    return <p className="text-ink/60 text-sm">Loading observations...</p>;
+  if (!observations.length)
+    return <p className="text-ink/60 text-sm">No observations yet.</p>;
+  return observations.slice(0, 2).map((o) => (
+    <div key={o.observationId}>
+      <p className="font-semibold text-sm">{o.courseLabel}</p>
+      <p className="text-ink/60 text-xs">{person(o)}</p>
+      <p className="text-ink/60 text-xs">
+        {STATUS_LABELS[o.status]} •{" "}
+        {o.observationDate ? formatDate(o.observationDate) : "Not scheduled"}
+      </p>
+    </div>
+  ));
+}
 
 function SectionCard({
   title,
@@ -102,6 +183,32 @@ export function FacultyDashboard() {
   const { data, error } = useObserverData<FacultyState>(
     id ? `/faculty/${id}` : null,
   );
+  const observations = useApiResource<ObservationSummary[]>(
+    id ? professorObservationsPath(id) : null,
+  );
+  const reloadObservations = observations.reload;
+  // The dialogs above announce their writes, such as an accepted request or a submitted observation.
+  useEffect(() => onObserverChange(reloadObservations), [reloadObservations]);
+  // Submitting an observation notifies the observee, and the status above checks for new notifications, so a
+  // new one means the observations changed too. The first load needs no reload.
+  const newestNotification = data?.notifications?.reduce(
+    (newest, n) => Math.max(newest, n.notificationId),
+    0,
+  );
+  const seenNotification = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (newestNotification === undefined) return;
+    if (
+      seenNotification.current !== undefined &&
+      seenNotification.current !== newestNotification
+    )
+      reloadObservations();
+    seenNotification.current = newestNotification;
+  }, [newestNotification, reloadObservations]);
+  const loaded = id ? observations.data : [];
+  const forMe = loaded?.filter((o) => o.role === "OBSERVEE") ?? null;
+  const forOthers = loaded?.filter((o) => o.role === "OBSERVER") ?? null;
+  const upcoming = [...(loaded ? observationTasks(loaded) : []), feedbackDue];
   const liveSummary = summary.map((item) =>
     item.label === "Observations This Term"
       ? {
@@ -241,26 +348,58 @@ export function FacultyDashboard() {
         <p className="mt-1 mb-4 text-ink/60 text-xs">
           Next observations and action items
         </p>
+        {observations.error && (
+          <p role="alert" className="mb-4 text-brand-red text-sm">
+            {observations.error}{" "}
+            <button
+              type="button"
+              className="underline"
+              onClick={reloadObservations}
+            >
+              Retry
+            </button>
+          </p>
+        )}
         <div className="flex flex-col">
+          {!loaded && !observations.error && (
+            <p className="border-line border-t py-5 text-ink/60 text-sm">
+              Loading observations...
+            </p>
+          )}
+          {!upcoming.length && (
+            <p className="border-line border-t py-5 text-ink/60 text-sm">
+              Nothing upcoming.
+            </p>
+          )}
           {upcoming.map((item) => (
             <div
-              key={item.title}
+              key={item.key}
               className="flex flex-wrap items-center justify-between gap-4 border-line border-t py-5"
             >
               <div className="flex items-center gap-4">
+                {/* The date is repeated in words below the action. */}
                 <div
-                  className={`flex h-12 w-12 flex-col items-center justify-center rounded-md ${
+                  aria-hidden="true"
+                  className={`flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-md ${
                     item.urgent
                       ? "bg-peach text-brand-orange"
-                      : "bg-mist text-brand-green"
+                      : item.month
+                        ? "bg-mist text-brand-green"
+                        : "border border-line bg-white text-ink/60"
                   }`}
                 >
-                  <span className="font-semibold text-[10px]">
-                    {item.month}
-                  </span>
-                  <span className="font-bold text-lg leading-none">
-                    {item.day}
-                  </span>
+                  {item.month ? (
+                    <>
+                      <span className="font-semibold text-[10px]">
+                        {item.month}
+                      </span>
+                      <span className="font-bold text-lg leading-none">
+                        {item.day}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="font-semibold text-xs">TBD</span>
+                  )}
                 </div>
                 <div>
                   <p className="font-semibold">{item.title}</p>
@@ -278,6 +417,9 @@ export function FacultyDashboard() {
                     }`}
                   >
                     {item.action}
+                    {item.actionContext && (
+                      <span className="sr-only">{item.actionContext}</span>
+                    )}
                   </Link>
                   <span
                     className={`rounded-md px-5 py-2 font-medium text-xs ${
@@ -325,12 +467,11 @@ export function FacultyDashboard() {
           viewAllLabel="View All Records"
           viewAllTo="/faculty/observations/me"
         >
-          {observationsForMe.map((item) => (
-            <div key={`${item.course}-${item.detail}`}>
-              <p className="font-semibold text-sm">{item.course}</p>
-              <p className="text-ink/60 text-xs">{item.detail}</p>
-            </div>
-          ))}
+          <ObservationLines
+            observations={forMe}
+            error={observations.error}
+            person={(o) => `Observer: ${o.observerName}`}
+          />
         </SectionCard>
 
         <SectionCard
@@ -339,12 +480,11 @@ export function FacultyDashboard() {
           viewAllLabel="View All Records"
           viewAllTo="/faculty/observations/others"
         >
-          {observationsForOthers.map((item) => (
-            <div key={`${item.course}-${item.detail}`}>
-              <p className="font-semibold text-sm">{item.course}</p>
-              <p className="text-ink/60 text-xs">{item.detail}</p>
-            </div>
-          ))}
+          <ObservationLines
+            observations={forOthers}
+            error={observations.error}
+            person={(o) => `Observee: ${o.observeeName}`}
+          />
         </SectionCard>
       </div>
 

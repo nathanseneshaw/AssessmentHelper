@@ -254,6 +254,24 @@ export function LoginPage() {
                   Password: <code>Faculty123!</code>
                 </p>
               </div>
+              <div>
+                <p className="font-semibold text-neutral-800">
+                  Observation form observer (Keira Larkspur)
+                </p>
+                <p className="break-all">keira.larkspur@example.edu</p>
+                <p>
+                  Password: <code>Faculty123!</code>
+                </p>
+              </div>
+              <div>
+                <p className="font-semibold text-neutral-800">
+                  Observation form observee (Leander Coldwell)
+                </p>
+                <p className="break-all">leander.coldwell@example.edu</p>
+                <p>
+                  Password: <code>Faculty123!</code>
+                </p>
+              </div>
             </div>
           </details>
         </div>

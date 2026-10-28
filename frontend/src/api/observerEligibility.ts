@@ -130,5 +130,10 @@ export function useObserverData<T>(path: string | null) {
 export function observerChanged() {
   window.dispatchEvent(new Event("observer-data-changed"));
 }
+/** Calls `listener` after every observerChanged(), until the returned function is called. */
+export function onObserverChange(listener: () => void) {
+  window.addEventListener("observer-data-changed", listener);
+  return () => window.removeEventListener("observer-data-changed", listener);
+}
 export const observerButton =
   "rounded-lg bg-brand-orange px-5 py-3 text-sm font-medium text-white hover:opacity-90 disabled:bg-btn-gray disabled:cursor-not-allowed";

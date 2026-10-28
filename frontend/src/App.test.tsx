@@ -34,7 +34,7 @@ const FACULTY_DIALOGS = [
   ["/faculty/history", "Evaluation History"],
   ["/faculty/observations/me", "Observation Records for Me"],
   ["/faculty/observations/others", "Observation Records for Others"],
-  ["/faculty/observations/42", "Observation Details"],
+  ["/faculty/observations/42", "Classroom Observation"],
   ["/faculty/feedback", "Process Feedback Survey"],
 ] as const;
 
@@ -73,6 +73,7 @@ beforeEach(() => {
     "/api/overdue-evaluations": EMPTY_QUEUE,
     "/api/observer-eligibility/ac": () => Response.json(ac),
     "/api/observer-eligibility/faculty/2": () => Response.json(faculty),
+    "/api/professors/2/observations": () => Response.json([]),
   });
 });
 

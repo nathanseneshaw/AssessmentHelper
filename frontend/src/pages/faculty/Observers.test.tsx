@@ -54,8 +54,9 @@ beforeEach(() => {
   failSend = false;
   delaySend = undefined;
   fakeBackend({
-    // The faculty dashboard behind the dialog loads its own status.
+    // The faculty dashboard behind the dialog loads its own status and observations.
     "/api/observer-eligibility/faculty/4": () => Response.json(faculty),
+    "/api/professors/4/observations": () => Response.json([]),
     "/api/professors/4/observer-requests": async (init) => {
       if (init?.method === "POST") {
         writes.push(JSON.parse(String(init.body)));

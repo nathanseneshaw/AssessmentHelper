@@ -610,7 +610,8 @@ UPDATE professor p SET
 WHERE p.email IN (SELECT email FROM demo_faculty);
 DROP TABLE demo_faculty;
 
--- Kaia is on the Assessment Committee. Passwords: Committee123! for Kaia and Faculty123! for Dario and Arlo.
+-- Kaia is on the Assessment Committee. Passwords: Committee123! for Kaia and Faculty123! for Dario, Arlo, Keira
+-- and Leander.
 INSERT INTO committee_member (professor_id, start_date, end_date, active_status)
 SELECT professor_id, DATE '2026-01-01', NULL, TRUE FROM professor WHERE email = 'kaia.clearbrook@example.edu';
 
@@ -623,10 +624,34 @@ FROM professor WHERE email = 'dario.hollowell@example.edu';
 INSERT INTO user_account (professor_id, username, email, password_hash, is_active)
 SELECT professor_id, 'aglimmerton', email, '{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW', TRUE
 FROM professor WHERE email = 'arlo.glimmerton@example.edu';
+-- Keira observes Leander in Fall 2026 (see below), so Keira can fill in and submit the observation form, and Leander
+-- can then read the submitted form. They come after the first three so those keep user ids 1 to 3.
+INSERT INTO user_account (professor_id, username, email, password_hash, is_active)
+SELECT professor_id, 'klarkspur', email, '{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW', TRUE
+FROM professor WHERE email = 'keira.larkspur@example.edu';
+INSERT INTO user_account (professor_id, username, email, password_hash, is_active)
+SELECT professor_id, 'lcoldwell', email, '{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW', TRUE
+FROM professor WHERE email = 'leander.coldwell@example.edu';
 
 INSERT INTO observation_template (created_by, template_name, version, created_date, active_status)
 SELECT user_id, 'Standard Classroom Observation', 1, DATE '2024-08-01', TRUE
 FROM user_account WHERE email = 'kaia.clearbrook@example.edu';
+
+-- The form's questions, in the order the form shows them. Ratings run from 1 to 5.
+INSERT INTO observation_criterion (template_id, criterion_text, question_type, required, display_order, rating_min,
+    rating_max)
+SELECT t.template_id, q.criterion_text, q.question_type, q.required, q.display_order, q.rating_min, q.rating_max
+FROM observation_template t CROSS JOIN (VALUES
+    (1, 'Student Engagement',          'RATING', TRUE,  1,    5),
+    (2, 'Preparedness & Organization', 'RATING', TRUE,  1,    5),
+    (3, 'Content Presentation',        'RATING', TRUE,  1,    5),
+    (4, 'Rigor & Depth',               'RATING', TRUE,  1,    5),
+    (5, 'Pace & Time for Questions',   'RATING', TRUE,  1,    5),
+    (6, 'Strengths observed',          'TEXT',   TRUE,  NULL, NULL),
+    (7, 'Suggestions for improvement', 'TEXT',   FALSE, NULL, NULL))
+    AS q(display_order, criterion_text, question_type, required, rating_min, rating_max)
+WHERE t.template_name = 'Standard Classroom Observation' AND t.version = 1
+ORDER BY q.display_order;
 
 -- Completed evaluations from earlier semesters, each in a section the professor taught that semester. With the
 -- ranks and hire dates above, 13 active professors are due in Fall 2026, 8 are overdue and 24 are upcoming.
