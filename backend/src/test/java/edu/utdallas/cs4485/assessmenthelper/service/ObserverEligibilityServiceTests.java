@@ -123,7 +123,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void releaseThenOneRequestAtATimeWithDeclineAndAccept() {
+    void releaseThenMultipleRequestsWithDeclineAndAccept() {
         int target = darioSignsUp();
         var candidates = list(target).candidates();
         assertThat(candidates).hasSize(4);
@@ -146,14 +146,13 @@ class ObserverEligibilityServiceTests {
         var request = requests.create(target, first, null);
         assertThat(requests.create(target, first, null).requestId()).isEqualTo(request.requestId());
         assertThat(notificationCount(firstProfessor)).isEqualTo(before + 1);
-        assertThatThrownBy(() -> requests.create(target, second, null))
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("already has a pending");
+        var next = requests.create(target, second, null);
+        assertThat(next.requestId()).isNotEqualTo(request.requestId());
         assertThatThrownBy(() -> service.respond(secondProfessor, request.requestId(), true))
                 .isInstanceOf(NotFoundException.class);
 
         service.respond(firstProfessor, request.requestId(), false);
-        var next = requests.create(target, second, null);
+        assertThat(requests.create(target, second, null).requestId()).isEqualTo(next.requestId());
         service.respond(secondProfessor, next.requestId(), true);
         assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, target))
                 .isEqualTo(1);

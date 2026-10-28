@@ -100,11 +100,15 @@ public class ObserverRequestService {
         var active = find(signupId, null).stream()
                 .filter(request -> PENDING.equals(request.status()) || CONFIRMED.equals(request.status()))
                 .toList();
-        if (active.size() == 1 && active.getFirst().observerId().equals(observerId)) {
-            return active.getFirst();
+        var existing = active.stream()
+                .filter(request -> request.observerId().equals(observerId))
+                .findFirst();
+        if (existing.isPresent()) return existing.get();
+        if (active.stream().anyMatch(request -> CONFIRMED.equals(request.status()))) {
+            throw new ConflictException("This signup already has a confirmed observer request.");
         }
-        if (!active.isEmpty()) {
-            throw new ConflictException("This signup already has a pending or confirmed observer request.");
+        if (active.size() >= 5) {
+            throw new ConflictException("You can have up to 5 pending observer requests per signup.");
         }
         eligibility.requireEligible(signupId, observerId);
         var saved = repository.save(new ObserverRequest(null, signupId, observerId, now, expires, null, PENDING));
@@ -225,7 +229,18 @@ public class ObserverRequestService {
             return load(requestId);
         }
         lockSignup(signupId);
-        return repository.save(withStatus(requirePending(requestId), CONFIRMED, now()));
+        var confirmed = repository.save(withStatus(requirePending(requestId), CONFIRMED, now()));
+        repository.findBySignupId(signupId).stream()
+                .filter(request -> PENDING.equals(request.status()))
+                .forEach(request -> repository.save(new ObserverRequest(
+                        request.requestId(),
+                        request.signupId(),
+                        request.observerId(),
+                        request.requestDate(),
+                        now(),
+                        request.responseDate(),
+                        EXPIRED)));
+        return confirmed;
     }
     /**
      * The observer declines the request.

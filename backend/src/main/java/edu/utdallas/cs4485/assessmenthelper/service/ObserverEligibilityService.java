@@ -653,6 +653,12 @@ public class ObserverEligibilityService {
                 accept ? "CONFIRMED" : "DECLINED",
                 LocalDateTime.now(clock),
                 requestId);
+        if (accept) {
+            db.update(
+                    "UPDATE observer_request SET status='EXPIRED',expiration_date=? WHERE signup_id=? AND status='PENDING'",
+                    LocalDateTime.now(clock),
+                    signupId);
+        }
         if (accept)
             db.update(
                     "INSERT INTO observation(signup_id,observer_id,template_id,status) VALUES (?,?,?,'ACCEPTED')",

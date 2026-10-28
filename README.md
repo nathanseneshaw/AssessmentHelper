@@ -111,7 +111,7 @@ ISO date/time; the default is seven days. Times use America/Chicago. The sender
 must own the signup; the selected match must be proposed for that signup, with an
 active observer and professor in the same cycle, excluding self-observation.
 Closed, inactive, completed, or already scheduled evaluations reject new requests.
-One pending or confirmed request is allowed per signup. Repeated sends to the
+Up to five pending observer requests are allowed per signup. Faculty can select up to five observers at once; existing pending requests count toward this limit. The first acceptance confirms one observer and expires the remaining pending requests. Repeated sends to the
 same observer return the existing active request without extending its expiration.
 After expiration, a new request may be sent and the old one remains in history.
 Concurrent sends are serialized. Course selection becomes locked once candidates
