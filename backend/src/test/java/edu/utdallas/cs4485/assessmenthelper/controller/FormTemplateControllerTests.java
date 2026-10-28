@@ -77,7 +77,7 @@ class FormTemplateControllerTests {
                         "SELECT COUNT(*) FROM observation_criterion WHERE template_id=?",
                         Integer.class,
                         original.templateId()))
-                .isEqualTo(6);
+                .isEqualTo(original.criteria().size());
         assertThat(db.queryForObject(
                         "SELECT COUNT(*) FROM observation_template WHERE active_status=TRUE", Integer.class))
                 .isEqualTo(1);
@@ -171,5 +171,17 @@ class FormTemplateControllerTests {
         assertThat(fourth.version()).isEqualTo(third.version() + 1);
         assertThat(service.history()).hasSize(4);
         assertThat(service.history().get(1)).isEqualTo(third);
+    }
+
+    @Test
+    void seedHasNineUniqueCriteriaWithSevenIncluded() {
+        var criteria = service.current().criteria();
+        assertThat(criteria).hasSize(9);
+        assertThat(criteria.stream().map(FormTemplateService.Criterion::title).toList())
+                .doesNotHaveDuplicates();
+        assertThat(criteria.stream()
+                        .filter(FormTemplateService.Criterion::selected)
+                        .toList())
+                .hasSize(7);
     }
 }

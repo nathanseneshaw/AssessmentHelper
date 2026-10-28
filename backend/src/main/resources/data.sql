@@ -639,8 +639,9 @@ FROM user_account WHERE email = 'kaia.clearbrook@example.edu';
 
 -- The form's questions, in the order the form shows them. Ratings run from 1 to 5.
 INSERT INTO observation_criterion (template_id, criterion_text, question_type, required, display_order, rating_min,
-    rating_max)
-SELECT t.template_id, q.criterion_text, q.question_type, q.required, q.display_order, q.rating_min, q.rating_max
+    rating_max, notes_enabled)
+SELECT t.template_id, q.criterion_text, q.question_type, q.required, q.display_order, q.rating_min, q.rating_max,
+    q.criterion_text IN ('Student Engagement', 'Preparedness & Organization', 'Pace & Time for Questions')
 FROM observation_template t CROSS JOIN (VALUES
     (1, 'Student Engagement',          'RATING', TRUE,  1,    5),
     (2, 'Preparedness & Organization', 'RATING', TRUE,  1,    5),
@@ -831,15 +832,11 @@ FROM demo_story d JOIN professor p ON p.email = 'avery.hazelwood@example.edu';
 DROP TABLE demo_story;
 DROP TABLE demo_cycle;
 
--- Initial criteria shared by the committee; saved edits create a new template version.
+-- Additional unique criteria available in the editor, excluded from the initial observation form.
 INSERT INTO observation_criterion(template_id,criterion_text,question_type,required,display_order,rating_min,rating_max,selected,notes_enabled)
-SELECT t.template_id,c.title,'RATING',TRUE,c.sort_order,1,5,c.selected,c.notes
+SELECT t.template_id,c.title,'RATING',TRUE,c.sort_order,1,5,FALSE,FALSE
 FROM observation_template t CROSS JOIN (VALUES
-    ('Student Engagement',1,TRUE,TRUE),
-    ('Preparedness & Organization',2,TRUE,TRUE),
-    ('Content Preparation',3,FALSE,FALSE),
-    ('Rigor & Depth',4,FALSE,FALSE),
-    ('Pace & Time for Questions',5,TRUE,TRUE),
-    ('Clarity and Audibility',6,FALSE,FALSE)
-) c(title,sort_order,selected,notes)
+    ('Content Preparation',8),
+    ('Clarity and Audibility',9)
+) c(title,sort_order)
 WHERE t.active_status=TRUE;

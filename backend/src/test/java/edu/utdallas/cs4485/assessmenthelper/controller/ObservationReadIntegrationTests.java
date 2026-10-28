@@ -200,7 +200,7 @@ class ObservationReadIntegrationTests {
                 SELECT o.observation_id, q.criterion_id, CASE WHEN q.question_type = 'RATING' THEN 4 END,
                     'Notes on ' || q.criterion_text
                 FROM observation o JOIN observation_criterion q ON q.template_id = o.template_id
-                WHERE o.observation_id = ?
+                WHERE o.observation_id = ? AND q.selected=TRUE
                 """, completed);
         List<Map<String, Object>> stored = db.queryForList("""
                 SELECT r.criterion_id, r.rating, r.comments FROM observation_response r

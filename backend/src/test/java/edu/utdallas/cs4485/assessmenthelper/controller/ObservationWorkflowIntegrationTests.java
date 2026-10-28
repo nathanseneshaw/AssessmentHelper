@@ -109,7 +109,7 @@ class ObservationWorkflowIntegrationTests {
                 """, Integer.class);
         questions = db.queryForList("""
                 SELECT q.criterion_id FROM observation_criterion q JOIN observation o ON o.template_id = q.template_id
-                WHERE o.observation_id = ? ORDER BY q.display_order
+                WHERE o.observation_id = ? AND q.selected=TRUE ORDER BY q.display_order
                 """, Integer.class, observation);
     }
 
