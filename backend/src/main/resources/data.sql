@@ -830,3 +830,16 @@ FROM demo_story d JOIN professor p ON p.email = 'avery.hazelwood@example.edu';
 
 DROP TABLE demo_story;
 DROP TABLE demo_cycle;
+
+-- Initial criteria shared by the committee; saved edits create a new template version.
+INSERT INTO observation_criterion(template_id,criterion_text,question_type,required,display_order,rating_min,rating_max,selected,notes_enabled)
+SELECT t.template_id,c.title,'RATING',TRUE,c.sort_order,1,5,c.selected,c.notes
+FROM observation_template t CROSS JOIN (VALUES
+    ('Student Engagement',1,TRUE,TRUE),
+    ('Preparedness & Organization',2,TRUE,TRUE),
+    ('Content Preparation',3,FALSE,FALSE),
+    ('Rigor & Depth',4,FALSE,FALSE),
+    ('Pace & Time for Questions',5,TRUE,TRUE),
+    ('Clarity and Audibility',6,FALSE,FALSE)
+) c(title,sort_order,selected,notes)
+WHERE t.active_status=TRUE;

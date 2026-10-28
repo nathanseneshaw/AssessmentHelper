@@ -182,7 +182,9 @@ CREATE TABLE IF NOT EXISTS observation_criterion (
     required BOOLEAN NOT NULL DEFAULT TRUE,
     display_order INT,
     rating_min INT,
-    rating_max INT
+    rating_max INT,
+    selected BOOLEAN NOT NULL DEFAULT TRUE,
+    notes_enabled BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS observation (
