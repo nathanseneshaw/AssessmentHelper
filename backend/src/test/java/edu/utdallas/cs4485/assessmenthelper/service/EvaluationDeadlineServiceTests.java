@@ -135,8 +135,14 @@ class EvaluationDeadlineServiceTests {
     @Test
     void inactiveProfessorIsNeverOverdue() {
         Professor professor = db.insert(new Professor(
-                null, department.departmentId(), "ASSISTANT", "Test", "Professor",
-                "i" + System.nanoTime() + "@test.edu", null, false));
+                null,
+                department.departmentId(),
+                "ASSISTANT",
+                "Test",
+                "Professor",
+                "i" + System.nanoTime() + "@test.edu",
+                null,
+                false));
         completeEvaluation(professor, LocalDateTime.of(2025, 1, 1, 9, 0));
 
         EvaluationDeadline deadline = service.findByProfessor(professor.professorId());

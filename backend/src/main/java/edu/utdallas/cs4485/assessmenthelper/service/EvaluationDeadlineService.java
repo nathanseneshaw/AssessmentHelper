@@ -80,7 +80,8 @@ public class EvaluationDeadlineService {
                     .toList();
             if (current.size() != 1) {
                 throw new ResponseStatusException(
-                        HttpStatus.CONFLICT, "No unique semester contains today's date. Configure semester dates first.");
+                        HttpStatus.CONFLICT,
+                        "No unique semester contains today's date. Configure semester dates first.");
             }
             var result = EvaluationDueRules.calculate(anchor, policy.evaluationIntervalYears(), current.getFirst());
             nextDue = result.nextDue();
