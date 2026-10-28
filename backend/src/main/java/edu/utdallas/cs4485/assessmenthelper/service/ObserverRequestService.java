@@ -229,18 +229,7 @@ public class ObserverRequestService {
             return load(requestId);
         }
         lockSignup(signupId);
-        var confirmed = repository.save(withStatus(requirePending(requestId), CONFIRMED, now()));
-        repository.findBySignupId(signupId).stream()
-                .filter(request -> PENDING.equals(request.status()))
-                .forEach(request -> repository.save(new ObserverRequest(
-                        request.requestId(),
-                        request.signupId(),
-                        request.observerId(),
-                        request.requestDate(),
-                        now(),
-                        request.responseDate(),
-                        EXPIRED)));
-        return confirmed;
+        return repository.save(withStatus(requirePending(requestId), CONFIRMED, now()));
     }
     /**
      * The observer declines the request.

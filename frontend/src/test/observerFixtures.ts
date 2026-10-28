@@ -13,6 +13,7 @@ export const cycle: Cycle = {
   observationDeadline: "2026-11-15",
   signupOpen: true,
   requestsOpen: true,
+  candidateListsOpen: false,
 };
 export const section = {
   sectionId: 1,

@@ -9,7 +9,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { Modal } from "../../components/Modal";
 
 const buttonClass =
-  "rounded-lg bg-brand-green px-4 py-2 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-50";
+  "rounded-lg bg-brand-orange px-4 py-2 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:bg-btn-gray";
 const statusLabels = {
   PENDING: "Pending",
   CONFIRMED: "Confirmed",
@@ -219,8 +219,8 @@ function RequestForm({ professorId }: { professorId: number }) {
           {activeRequests.length > 0 && (
             <p className="rounded-lg bg-mist p-3 text-sm">
               {confirmed
-                ? `${confirmed.observerName} has confirmed this request.`
-                : `${activeRequests.length} of 5 requests pending. The first acceptance confirms your observer and expires the other pending requests.`}
+                ? `${activeRequests.filter(({ request }) => request.status === "CONFIRMED").length} confirmed; ${activeRequests.filter(({ request }) => request.status === "PENDING").length} pending. Other observers can still respond to their requests.`
+                : `${activeRequests.length} of 5 requests pending. Each observer can respond independently.`}
             </p>
           )}
           {!blocked && (

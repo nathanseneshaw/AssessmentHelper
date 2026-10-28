@@ -74,6 +74,16 @@ class ObserverRequestServiceTests {
     }
 
     @Test
+    void acceptingUnmanagedRequestLeavesOtherRequestsUnchanged() {
+        var first = service.create(signup.signupId(), observer.observerId(), null);
+        var other = db.insert(new ObserverRequest(
+                null, signup.signupId(), observer.observerId(), NOW, NOW.plusDays(7), null, "PENDING"));
+        service.confirm(first.requestId());
+        assertThat(service.findById(other.requestId())).isEqualTo(other);
+        assertThat(service.confirm(other.requestId()).status()).isEqualTo("CONFIRMED");
+    }
+
+    @Test
     void createStartsPendingWithDefaultWeekLongWindow() {
         ObserverRequest request = service.create(signup.signupId(), observer.observerId(), null);
 

@@ -348,3 +348,22 @@ test("a partial failure preserves sent requests and retries only unsent selectio
   await screen.findByText("Requests recorded for Observer 2.");
   expect(writes.map((write) => write.matchId)).toEqual([2, 3, 3]);
 });
+
+test("shows confirmed and pending requests together without stopping pending responses", async () => {
+  if (!options[0]) throw new Error("Missing fixture");
+  options[0].requests = [
+    {
+      observerName: "Alice Alice",
+      request: { ...request, status: "CONFIRMED" },
+    },
+    {
+      observerName: "Observer 2",
+      request: { ...request, requestId: 51, observerId: 2 },
+    },
+  ];
+  open();
+  await screen.findByText(/1 confirmed; 1 pending/);
+  expect(screen.getByText("Confirmed")).toBeDefined();
+  expect(screen.getByText("Pending")).toBeDefined();
+  expect(screen.getByText(/Other observers can still respond/)).toBeDefined();
+});

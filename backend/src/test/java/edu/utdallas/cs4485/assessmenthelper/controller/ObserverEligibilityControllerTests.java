@@ -150,6 +150,9 @@ class ObserverEligibilityControllerTests {
                         jsonPath("$[0].unavailableReason").value("Your observer list is awaiting committee review."));
 
         mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/release")))
+                .andExpect(status().isConflict());
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/release")))
                 .andExpect(status().isNoContent());
         int arloMatch = db.queryForObject("""
                 SELECT m.match_id FROM observer_match m JOIN observer o ON o.observer_id = m.observer_id

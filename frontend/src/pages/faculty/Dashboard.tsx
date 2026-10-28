@@ -11,6 +11,7 @@ import {
 import {
   type FacultyState,
   onObserverChange,
+  observerButton,
   useObserverData,
 } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
@@ -234,18 +235,24 @@ export function FacultyDashboard() {
           </p>
         </div>
         <div className="flex gap-3">
-          <Link
-            to="/faculty/observers"
-            className="rounded-lg bg-btn-gray px-5 py-3 font-medium text-sm text-white hover:opacity-90"
-          >
-            View Generated Observers
-          </Link>
-          <Link
-            to="/faculty/signup"
-            className="rounded-lg bg-btn-gray px-5 py-3 font-medium text-sm text-white hover:opacity-90"
-          >
-            Sign Up for Evaluation
-          </Link>
+          {data?.signup?.released && !error ? (
+            <Link to="/faculty/observers" className={observerButton}>
+              View Generated Observers
+            </Link>
+          ) : (
+            <button type="button" disabled className={observerButton}>
+              View Generated Observers
+            </button>
+          )}
+          {data?.cycle?.signupOpen && !error ? (
+            <Link to="/faculty/signup" className={observerButton}>
+              Sign Up for Evaluation
+            </Link>
+          ) : (
+            <button type="button" disabled className={observerButton}>
+              Sign Up for Evaluation
+            </button>
+          )}
         </div>
       </div>
 

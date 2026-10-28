@@ -232,23 +232,24 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     @Test
-    void acceptanceExpiresOtherPendingRequests() throws Exception {
-        send(AVERY, signupId, matchId).andExpect(status().isCreated());
-        legacySend(leander).andExpect(status().isCreated());
-        int acceptedId = db.queryForObject(
-                "SELECT request_id FROM observer_request WHERE signup_id=? AND observer_id=?",
-                Integer.class,
-                signupId,
-                keira);
-        service.confirm(acceptedId);
-        assertThat(db.queryForObject(
-                        "SELECT status FROM observer_request WHERE signup_id=? AND observer_id=?",
-                        String.class,
-                        signupId,
-                        leander))
-                .isEqualTo("EXPIRED");
+    void acceptancePreservesOtherRequestsAndAllowsAnotherAcceptance() throws Exception {
+        var first = service.createFromMatch(31, signupId, matchId, null);
+        var second = service.create(signupId, leander, null);
+        var thirdCandidate = service.options(31).getFirst().candidates().stream()
+                .filter(candidate -> !candidate.observerId().equals(keira)
+                        && !candidate.observerId().equals(leander))
+                .findFirst()
+                .orElseThrow();
+        var third = service.create(signupId, thirdCandidate.observerId(), null);
+        service.confirm(first.requestId());
+        assertThat(service.findById(second.requestId())).isEqualTo(second);
+        assertThat(service.findById(third.requestId())).isEqualTo(third);
+        assertThat(service.confirm(second.requestId()).status()).isEqualTo("CONFIRMED");
+        assertThat(service.findById(first.requestId()).status()).isEqualTo("CONFIRMED");
+        assertThat(service.findById(third.requestId())).isEqualTo(third);
+        assertThat(service.decline(third.requestId()).status()).isEqualTo("DECLINED");
         assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, signupId))
-                .isEqualTo(1);
+                .isEqualTo(2);
     }
 
     @Test

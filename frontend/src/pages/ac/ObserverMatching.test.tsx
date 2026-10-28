@@ -50,6 +50,8 @@ async function open() {
 }
 
 test("loads persisted candidates and releases the reviewed list", async () => {
+  state.cycle.signupOpen = false;
+  state.cycle.candidateListsOpen = true;
   await open();
   const card = screen
     .getByRole("heading", { name: "Eligible observers" })
@@ -95,4 +97,15 @@ test("reports a failed load without inventing candidates", async () => {
   render(<App />);
   await screen.findByText(/Backend unavailable/);
   expect(screen.queryByText("Professor 2")).toBeNull();
+});
+
+test("send stays disabled and gray until signup closes", async () => {
+  await open();
+  const send = screen.getByRole("button", {
+    name: "Send Candidate List",
+  }) as HTMLButtonElement;
+  expect(send.disabled).toBe(true);
+  expect(send.className).toContain("disabled:bg-btn-gray");
+  fireEvent.click(send);
+  expect(posts).toHaveLength(0);
 });

@@ -19,7 +19,7 @@ import { Modal } from "../../components/Modal";
 const selectClass =
   "mt-1 w-full rounded-lg border border-line bg-white px-3 py-2 text-sm disabled:bg-mist disabled:text-ink/50";
 const buttonClass =
-  "rounded-lg bg-brand-green px-4 py-2 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-50";
+  "rounded-lg bg-brand-orange px-4 py-2 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:bg-btn-gray";
 
 function SelectionForm({ professorId }: { professorId: number }) {
   const [semesters, setSemesters] = useState<Semester[]>([]);
