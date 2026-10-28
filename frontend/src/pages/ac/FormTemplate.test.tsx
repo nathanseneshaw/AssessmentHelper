@@ -333,5 +333,5 @@ test("record preview follows current version criteria and optional notes setting
   expect(within(dialog).getByText("Notes disabled")).toBeDefined();
   expect(within(dialog).queryByText("Hidden criterion")).toBeNull();
   expect(within(dialog).queryByText("Student Engagement")).toBeNull();
-  expect(within(dialog).getByText(/Current version 4/)).toBeDefined();
+  expect(within(dialog).getByText(/Current Version:\s*4/)).toBeDefined();
 });
