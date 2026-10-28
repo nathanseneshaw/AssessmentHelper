@@ -154,6 +154,13 @@ export function AcObserverMatching() {
                 <li>Active professor signed up for evaluation</li>
               </ol>
               <div className="mt-auto pt-10">
+                {!data.cycle.candidateListsOpen && !signup.released && (
+                  <p className="mb-3 text-sm text-muted">
+                    Candidate lists can be sent after the signup deadline (
+                    {data.cycle.signupDeadline}, America/Chicago), while
+                    observations are open.
+                  </p>
+                )}
                 <button
                   type="button"
                   className={observerButton}
@@ -162,7 +169,7 @@ export function AcObserverMatching() {
                     !!error ||
                     signup.released ||
                     !signup.candidates.length ||
-                    !data.cycle.requestsOpen
+                    !data.cycle.candidateListsOpen
                   }
                   onClick={() => void act(true)}
                 >

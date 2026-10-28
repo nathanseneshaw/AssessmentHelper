@@ -14,7 +14,7 @@ import {
   sessionUser,
   signInAs,
 } from "./test/fakeBackend";
-import { ac, faculty } from "./test/observerFixtures";
+import { ac, faculty, signup } from "./test/observerFixtures";
 
 const AC_PAGES = [
   ["/ac", "Assessment Committee Dashboard"],
@@ -235,6 +235,10 @@ describe("faculty", () => {
   });
 
   test("dialogs open from the dashboard and close with Close or Escape", async () => {
+    fakeBackend({
+      "/api/observer-eligibility/faculty/2": () =>
+        Response.json({ ...faculty, signup: { ...signup, released: true } }),
+    });
     renderAt("/faculty", "professor");
 
     fireEvent.click(

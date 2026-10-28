@@ -41,7 +41,7 @@ public class ObservationTemplateService {
     private List<Criterion> criteria(int templateId) {
         return db.query(
                 """
-                SELECT * FROM observation_criterion WHERE template_id=? ORDER BY display_order, criterion_id
+                SELECT * FROM observation_criterion WHERE template_id=? AND selected=TRUE ORDER BY display_order, criterion_id
                 """,
                 (r, n) -> new Criterion(
                         r.getInt("criterion_id"),

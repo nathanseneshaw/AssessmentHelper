@@ -51,7 +51,8 @@ public class ObserverEligibilityService {
             LocalDate observationDeadline,
             LocalDate feedbackDeadline,
             boolean signupOpen,
-            boolean requestsOpen) {}
+            boolean requestsOpen,
+            boolean candidateListsOpen) {}
 
     public record Person(int professorId, String name, String department) {}
 
@@ -130,6 +131,11 @@ public class ObserverEligibilityService {
                                 && date(r, "signup_deadline") != null
                                 && !today.isAfter(date(r, "signup_deadline")),
                         "OPEN".equals(r.getString("status"))
+                                && date(r, "observation_deadline") != null
+                                && !today.isAfter(date(r, "observation_deadline")),
+                        "OPEN".equals(r.getString("status"))
+                                && date(r, "signup_deadline") != null
+                                && today.isAfter(date(r, "signup_deadline"))
                                 && date(r, "observation_deadline") != null
                                 && !today.isAfter(date(r, "observation_deadline"))),
                 args);
@@ -526,6 +532,8 @@ public class ObserverEligibilityService {
         if (!c.requestsOpen()) throw new ConflictException("The observation period is closed.");
         Signup s = managedSignup(signupId, c);
         if (s.released()) return;
+        if (!c.candidateListsOpen())
+            throw new ConflictException("Candidate lists can only be sent after the signup deadline ends.");
         if (s.candidates().isEmpty())
             throw new ConflictException("No eligible observers. The committee must resolve this signup.");
         var eligible = eligible(s, c);
@@ -621,7 +629,7 @@ public class ObserverEligibilityService {
                 c.cycleId());
     }
 
-    /** Accepting records the signup's one observation; declining lets the observee request someone else. */
+    /** Each acceptance records that observer's observation without changing other requests. */
     public void respond(int professorId, int requestId, boolean accept) {
         int signupId = db
                 .queryForList("SELECT signup_id FROM observer_request WHERE request_id=?", Integer.class, requestId)
@@ -640,8 +648,12 @@ public class ObserverEligibilityService {
         if (accept) {
             if (!eligible(managedSignup(signupId, c), c).contains(observer))
                 throw new ConflictException("You are no longer eligible for this observation.");
-            if (db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, signupId) > 0)
-                throw new ConflictException("An observation is already scheduled for this signup.");
+            if (db.queryForObject(
+                            "SELECT COUNT(*) FROM observation WHERE signup_id=? AND observer_id=?",
+                            Integer.class,
+                            signupId,
+                            observer)
+                    > 0) throw new ConflictException("This observer already has an observation for this signup.");
         }
         var templates = db.queryForList(
                 "SELECT template_id FROM observation_template WHERE active_status=TRUE ORDER BY version DESC,template_id DESC",

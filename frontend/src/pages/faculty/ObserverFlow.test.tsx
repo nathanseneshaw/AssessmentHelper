@@ -10,7 +10,7 @@ import {
 import { App } from "../../App";
 import type { FacultyState } from "../../api/observerEligibility";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
-import { faculty, section } from "../../test/observerFixtures";
+import { faculty, section, signup } from "../../test/observerFixtures";
 
 let state: FacultyState;
 let sent: { path: string; body: Record<string, unknown> }[];
@@ -126,4 +126,40 @@ test("sessions without a faculty profile load nothing instead of using another p
     String(input).includes("/api/observer-eligibility/"),
   );
   expect(observerCalls).toHaveLength(0);
+});
+
+test("generated observers stay disabled until the committee sends the list", async () => {
+  state.signup = { ...signup, released: false };
+  open("/faculty");
+  await screen.findByText("Professor 1", { selector: "p.font-semibold" });
+  const button = screen.getByRole("button", {
+    name: "View Generated Observers",
+  }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  expect(window.location.pathname).toBe("/faculty");
+});
+
+test("a sent list enables the orange generated observers link", async () => {
+  state.signup = { ...signup, released: true };
+  open("/faculty");
+  const link = await screen.findByRole("link", {
+    name: "View Generated Observers",
+  });
+  expect(link.className).toContain("bg-brand-orange");
+  fireEvent.click(link);
+  expect(window.location.pathname).toBe("/faculty/observers");
+});
+
+test("signup is disabled once the signup period closes", async () => {
+  state.cycle.signupOpen = false;
+  open("/faculty");
+  await screen.findByText("Professor 1", { selector: "p.font-semibold" });
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Sign Up for Evaluation",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });

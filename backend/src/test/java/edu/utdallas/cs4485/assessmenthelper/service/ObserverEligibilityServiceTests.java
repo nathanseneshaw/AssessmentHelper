@@ -87,6 +87,29 @@ class ObserverEligibilityServiceTests {
         return service.facultyState(professorId).notifications().size();
     }
 
+    void releaseAfterDeadline(int signupId) {
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        service.release(signupId);
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-31' WHERE cycle_id=1");
+    }
+
+    @Test
+    void releaseWaitsUntilTheDayAfterSignupDeadline() {
+        int target = darioSignsUp();
+        assertThat(service.cycle().candidateListsOpen()).isFalse();
+        assertThatThrownBy(() -> service.release(target))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("after the signup deadline");
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-21' WHERE cycle_id=1");
+        assertThat(service.cycle().candidateListsOpen()).isFalse();
+        assertThatThrownBy(() -> service.release(target)).isInstanceOf(ConflictException.class);
+        assertThat(list(target).released()).isFalse();
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        assertThat(service.cycle().candidateListsOpen()).isTrue();
+        service.release(target);
+        assertThat(list(target).released()).isTrue();
+    }
+
     @Test
     void listsAreCappedAtFiveStayStableAndReleasedListsStopGrowing() {
         int dario = darioSignsUp();
@@ -101,7 +124,7 @@ class ObserverEligibilityServiceTests {
         assertThat(candidateIds(dario)).containsExactlyElementsOf(darioIds);
         assertThat(candidateIds(KEIRA_SIGNUP)).containsExactlyElementsOf(keiraIds);
         assertThat(service.facultyState(DARIO).signup().candidates()).isEmpty();
-        service.release(dario);
+        releaseAfterDeadline(dario);
         assertThat(service.facultyState(DARIO).signup().candidates()).hasSize(4);
         // Hollis becomes eligible by teaching a CS 3345 section (TR 17:30), but Dario's list has been sent.
         db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (?, 300)", HOLLIS);
@@ -123,7 +146,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void releaseThenOneRequestAtATimeWithDeclineAndAccept() {
+    void releaseThenMultipleRequestsWithDeclineAndAccept() {
         int target = darioSignsUp();
         var candidates = list(target).candidates();
         assertThat(candidates).hasSize(4);
@@ -137,7 +160,7 @@ class ObserverEligibilityServiceTests {
         assertThatThrownBy(() -> requests.create(target, first, null))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("awaiting committee review");
-        service.release(target);
+        releaseAfterDeadline(target);
         assertThat(notificationCount(DARIO)).isEqualTo(1);
         assertThat(options(DARIO).candidates()).hasSize(4);
         assertThat(options(DARIO).unavailableReason()).isNull();
@@ -146,14 +169,13 @@ class ObserverEligibilityServiceTests {
         var request = requests.create(target, first, null);
         assertThat(requests.create(target, first, null).requestId()).isEqualTo(request.requestId());
         assertThat(notificationCount(firstProfessor)).isEqualTo(before + 1);
-        assertThatThrownBy(() -> requests.create(target, second, null))
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("already has a pending");
+        var next = requests.create(target, second, null);
+        assertThat(next.requestId()).isNotEqualTo(request.requestId());
         assertThatThrownBy(() -> service.respond(secondProfessor, request.requestId(), true))
                 .isInstanceOf(NotFoundException.class);
 
         service.respond(firstProfessor, request.requestId(), false);
-        var next = requests.create(target, second, null);
+        assertThat(requests.create(target, second, null).requestId()).isEqualTo(next.requestId());
         service.respond(secondProfessor, next.requestId(), true);
         assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, target))
                 .isEqualTo(1);
@@ -170,7 +192,7 @@ class ObserverEligibilityServiceTests {
     @Test
     void confirmingThroughTheRequestApiRecordsTheObservation() {
         int target = darioSignsUp();
-        service.release(target);
+        releaseAfterDeadline(target);
         var request =
                 requests.create(target, list(target).candidates().getFirst().observerId(), null);
         assertThat(requests.confirm(request.requestId()).status()).isEqualTo("CONFIRMED");
@@ -206,7 +228,7 @@ class ObserverEligibilityServiceTests {
         // Candidates exist, so the selection is locked.
         assertThatThrownBy(() -> signups.save(DARIO, FALL_2026, 298, LocalDate.of(2026, 11, 10)))
                 .isInstanceOf(ConflictException.class);
-        service.release(target);
+        releaseAfterDeadline(target);
         int self = db.queryForObject(
                 "SELECT observer_id FROM observer WHERE professor_id = ? AND cycle_id = 1", Integer.class, DARIO);
         assertThatThrownBy(() -> requests.create(target, self, null)).isInstanceOf(ConflictException.class);

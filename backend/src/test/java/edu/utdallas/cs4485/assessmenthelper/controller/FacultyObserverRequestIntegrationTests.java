@@ -202,16 +202,16 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     @Test
-    void blocksAnotherCandidateUntilExpirationAndKeepsExpiredHistory() throws Exception {
+    void allowsAnotherCandidateAndKeepsExpiredHistory() throws Exception {
         send(AVERY, signupId, matchId).andExpect(status().isCreated());
-        legacySend(leander).andExpect(status().isConflict());
+        legacySend(leander).andExpect(status().isCreated());
         db.update(
                 "UPDATE observer_request SET expiration_date = TIMESTAMP '2026-10-20 10:00:00' WHERE signup_id = ?",
                 signupId);
         mvc.perform(as(AVERY, get("/api/professors/31/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("EXPIRED"));
         legacySend(leander).andExpect(status().isCreated());
-        assertThat(requestCount()).isEqualTo(2);
+        assertThat(requestCount()).isEqualTo(3);
     }
 
     @Test
@@ -229,6 +229,42 @@ class FacultyObserverRequestIntegrationTests {
         // Accepting recorded the signup's observation, so even the same request cannot be sent again.
         send(AVERY, signupId, matchId).andExpect(status().isConflict());
         assertThat(requestCount()).isEqualTo(1);
+    }
+
+    @Test
+    void acceptancePreservesOtherRequestsAndAllowsAnotherAcceptance() throws Exception {
+        var first = service.createFromMatch(31, signupId, matchId, null);
+        var second = service.create(signupId, leander, null);
+        var thirdCandidate = service.options(31).getFirst().candidates().stream()
+                .filter(candidate -> !candidate.observerId().equals(keira)
+                        && !candidate.observerId().equals(leander))
+                .findFirst()
+                .orElseThrow();
+        var third = service.create(signupId, thirdCandidate.observerId(), null);
+        service.confirm(first.requestId());
+        assertThat(service.findById(second.requestId())).isEqualTo(second);
+        assertThat(service.findById(third.requestId())).isEqualTo(third);
+        assertThat(service.confirm(second.requestId()).status()).isEqualTo("CONFIRMED");
+        assertThat(service.findById(first.requestId()).status()).isEqualTo("CONFIRMED");
+        assertThat(service.findById(third.requestId())).isEqualTo(third);
+        assertThat(service.decline(third.requestId()).status()).isEqualTo("DECLINED");
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, signupId))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void fivePendingRequestsBlockSixthButAllowRetry() throws Exception {
+        // Populate four pending requests to exercise the limit independently of generated pool size.
+        db.update("""
+                INSERT INTO observer_request(signup_id,observer_id,request_date,expiration_date,status)
+                SELECT ?,observer_id,TIMESTAMP '2026-10-21 10:00:00',TIMESTAMP '2026-10-28 10:00:00','PENDING'
+                FROM observer WHERE observer_id NOT IN (?,?) ORDER BY observer_id LIMIT 4
+                """, signupId, keira, leander);
+        send(AVERY, signupId, matchId).andExpect(status().isCreated());
+        send(AVERY, signupId, matchId).andExpect(status().isCreated());
+        assertThat(requestCount()).isEqualTo(5);
+        legacySend(leander).andExpect(status().isConflict());
+        assertThat(requestCount()).isEqualTo(5);
     }
 
     @Test

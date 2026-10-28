@@ -9,7 +9,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { Modal } from "../../components/Modal";
 
 const buttonClass =
-  "rounded-lg bg-brand-green px-4 py-2 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-50";
+  "rounded-lg bg-brand-orange px-4 py-2 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:bg-btn-gray";
 const statusLabels = {
   PENDING: "Pending",
   CONFIRMED: "Confirmed",
@@ -36,7 +36,7 @@ function dateTime(value: string) {
 function RequestForm({ professorId }: { professorId: number }) {
   const [options, setOptions] = useState<RequestOptions[]>([]);
   const [signupId, setSignupId] = useState("");
-  const [matchId, setMatchId] = useState("");
+  const [matchIds, setMatchIds] = useState<string[]>([]);
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -53,7 +53,7 @@ function RequestForm({ professorId }: { professorId: number }) {
     setLoadError("");
     setSendError("");
     setSuccess("");
-    setMatchId("");
+    setMatchIds([]);
     getRequestOptions(professorId)
       .then((result) => {
         if (current !== version.current) return;
@@ -80,48 +80,67 @@ function RequestForm({ professorId }: { professorId: number }) {
   }, [professorId, refresh]);
 
   const selected = options.find((item) => String(item.signupId) === signupId);
-  const candidate = selected?.candidates.find(
-    (item) => String(item.matchId) === matchId,
+  const candidates =
+    selected?.candidates.filter((item) =>
+      matchIds.includes(String(item.matchId)),
+    ) ?? [];
+  const activeRequests =
+    selected?.requests.filter(
+      ({ request }) =>
+        request.status === "PENDING" || request.status === "CONFIRMED",
+    ) ?? [];
+  const confirmed = activeRequests.find(
+    ({ request }) => request.status === "CONFIRMED",
   );
-  const activeRequest = selected?.requests.find(
-    ({ request }) =>
-      request.status === "PENDING" || request.status === "CONFIRMED",
+  const remaining = Math.max(0, 5 - activeRequests.length);
+  const blocked = Boolean(
+    selected?.unavailableReason || confirmed || remaining === 0,
   );
-  const blocked = Boolean(selected?.unavailableReason || activeRequest);
 
   async function send() {
-    if (!selected || !candidate || blocked || sendingRef.current) return;
+    if (
+      !selected ||
+      candidates.length === 0 ||
+      candidates.length > remaining ||
+      blocked ||
+      sendingRef.current
+    )
+      return;
     sendingRef.current = true;
     setSending(true);
     setSendError("");
     setSuccess("");
     const current = version.current;
     try {
-      const saved = await sendObserverRequest(
-        professorId,
-        selected.signupId,
-        candidate.matchId,
-      );
-      if (current !== version.current) return;
-      setOptions((previous) =>
-        previous.map((item) =>
-          item.signupId === saved.signupId
-            ? {
-                ...item,
-                requests: [
-                  ...item.requests.filter(
-                    ({ request }) => request.requestId !== saved.requestId,
-                  ),
-                  { request: saved, observerName: candidate.observerName },
-                ],
-              }
-            : item,
-        ),
-      );
+      for (const candidate of candidates) {
+        const saved = await sendObserverRequest(
+          professorId,
+          selected.signupId,
+          candidate.matchId,
+        );
+        if (current !== version.current) return;
+        setOptions((previous) =>
+          previous.map((item) =>
+            item.signupId === saved.signupId
+              ? {
+                  ...item,
+                  requests: [
+                    ...item.requests.filter(
+                      ({ request }) => request.requestId !== saved.requestId,
+                    ),
+                    { request: saved, observerName: candidate.observerName },
+                  ],
+                }
+              : item,
+          ),
+        );
+        setMatchIds((previous) =>
+          previous.filter((id) => id !== String(candidate.matchId)),
+        );
+      }
       setSuccess(
-        `Request recorded for ${candidate.observerName}. Status: ${statusLabels[saved.status]}.`,
+        `Requests recorded for ${candidates.map((candidate) => candidate.observerName).join(", ")}.`,
       );
-      setMatchId("");
     } catch (error) {
       if (current === version.current) setSendError(message(error));
     } finally {
@@ -134,7 +153,7 @@ function RequestForm({ professorId }: { professorId: number }) {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <p className="text-ink/60 text-sm">
-          Choose a proposed observer for your saved evaluation signup.
+          Choose up to 5 proposed observers for your saved evaluation signup.
         </p>
         <button
           type="button"
@@ -179,7 +198,7 @@ function RequestForm({ professorId }: { professorId: number }) {
               disabled={sending}
               onChange={(event) => {
                 setSignupId(event.target.value);
-                setMatchId("");
+                setMatchIds([]);
                 setSendError("");
                 setSuccess("");
               }}
@@ -197,11 +216,11 @@ function RequestForm({ professorId }: { professorId: number }) {
               {selected.unavailableReason}
             </p>
           )}
-          {activeRequest && (
+          {activeRequests.length > 0 && (
             <p className="rounded-lg bg-mist p-3 text-sm">
-              {activeRequest.request.status === "CONFIRMED"
-                ? `${activeRequest.observerName} has confirmed this request.`
-                : `Waiting for ${activeRequest.observerName} to respond. A new request can be sent if this one is declined or expires.`}
+              {confirmed
+                ? `${activeRequests.filter(({ request }) => request.status === "CONFIRMED").length} confirmed; ${activeRequests.filter(({ request }) => request.status === "PENDING").length} pending. Other observers can still respond to their requests.`
+                : `${activeRequests.length} of 5 requests pending. Each observer can respond independently.`}
             </p>
           )}
           {!blocked && (
@@ -220,12 +239,28 @@ function RequestForm({ professorId }: { professorId: number }) {
                       className="flex cursor-pointer items-center gap-3 rounded-lg border border-line p-3"
                     >
                       <input
-                        type="radio"
+                        type="checkbox"
                         name="observer"
                         value={item.matchId}
-                        checked={matchId === String(item.matchId)}
+                        checked={matchIds.includes(String(item.matchId))}
+                        disabled={
+                          activeRequests.some(
+                            ({ request }) =>
+                              request.observerId === item.observerId,
+                          ) ||
+                          (!matchIds.includes(String(item.matchId)) &&
+                            matchIds.length >= remaining)
+                        }
                         onChange={(event) => {
-                          setMatchId(event.target.value);
+                          const id = event.target.value;
+                          const checked = event.target.checked;
+                          setMatchIds((previous) =>
+                            checked
+                              ? previous.length < remaining
+                                ? [...previous, id]
+                                : previous
+                              : previous.filter((value) => value !== id),
+                          );
                           setSendError("");
                         }}
                       />
@@ -241,16 +276,14 @@ function RequestForm({ professorId }: { professorId: number }) {
                   ))}
                 </div>
               )}
-              {candidate && (
-                <p className="mt-3 text-ink/70 text-sm">
-                  Request an evaluation from {candidate.observerName} for{" "}
-                  {selected.courseLabel}. The response window is 7 days.
-                </p>
-              )}
+              <p className="mt-3 text-ink/70 text-sm">
+                {matchIds.length} selected; up to {remaining} more requests
+                available. The response window is 7 days.
+              </p>
               <button
                 type="button"
                 onClick={send}
-                disabled={!candidate || sending}
+                disabled={candidates.length === 0 || sending}
                 className={`mt-4 ${buttonClass}`}
               >
                 {sending ? "Sending request…" : "Send evaluation request"}
@@ -259,7 +292,8 @@ function RequestForm({ professorId }: { professorId: number }) {
           )}
           {sendError && (
             <p role="alert" className="rounded-lg bg-peach p-3 text-sm">
-              {sendError} You can retry or refresh the status.
+              {sendError} Any requests already sent remain in the history. You
+              can retry the remaining selections or refresh the status.
             </p>
           )}
           {success && (

@@ -11,6 +11,7 @@ export interface Cycle {
   feedbackDeadline?: string;
   signupOpen: boolean;
   requestsOpen: boolean;
+  candidateListsOpen: boolean;
 }
 export interface Person {
   professorId: number;
