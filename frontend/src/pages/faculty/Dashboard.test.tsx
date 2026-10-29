@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { App } from "../../App";
+import type { EvaluationDeadline } from "../../api/evaluations";
 import type { ObservationSummary } from "../../api/observations";
 import {
   type FacultyState,
@@ -20,20 +21,32 @@ import {
   oliviaObservations,
 } from "../../test/facultyObservationFixtures";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
+import { signup } from "../../test/observerFixtures";
 
 let state: FacultyState;
 let list: ObservationSummary[];
 let failures: Response[];
+let deadline: EvaluationDeadline;
 
 beforeEach(() => {
   state = facultyStateFor(OLIVIA);
   list = oliviaObservations();
   failures = [];
+  deadline = {
+    professorId: OLIVIA.professorId,
+    professorRank: "ASSOCIATE",
+    evaluationIntervalYears: 2,
+    lastEvaluationDate: "2025-03-10",
+    nextDueDate: "2027-03-10",
+    overdue: false,
+  };
   fakeBackend({
     [`/api/observer-eligibility/faculty/${OLIVIA.professorId}`]: () =>
       Response.json(state),
     [`/api/professors/${OLIVIA.professorId}/observations`]: () =>
       failures.shift() ?? Response.json(list),
+    [`/api/professors/${OLIVIA.professorId}/evaluation-deadline`]: () =>
+      Response.json(deadline),
   });
   signInAs("professor", OLIVIA);
 });
@@ -233,4 +246,73 @@ test("a new notification reloads the observations", async () => {
       "Submitted • Oct 27, 2026",
     ]),
   );
+});
+
+function summaryCard(label: string) {
+  const card = screen.getByText(label).parentElement;
+  return [...(card?.querySelectorAll("p") ?? [])].map((p) => p.textContent);
+}
+
+test("the summary cards show the professor's schedule and next due date", async () => {
+  await openDashboard();
+  await screen.findByText("Every 2 Years");
+
+  expect(summaryCard("Evaluation Status")).toEqual([
+    "Evaluation Status",
+    "Up to Date",
+    "Nothing due in Fall 2026",
+  ]);
+  expect(summaryCard("Cycle")).toEqual([
+    "Cycle",
+    "Every 2 Years",
+    "Associate professor schedule",
+  ]);
+  expect(summaryCard("Next Due")).toEqual([
+    "Next Due",
+    "Mar 2027",
+    "Last evaluated Mar 10, 2025",
+  ]);
+  expect(
+    screen.getByText("Associate Professor • Computer Science"),
+  ).toBeTruthy();
+  expect(screen.getByText("OO")).toBeTruthy();
+});
+
+test("the evaluation status follows the deadline and this cycle's sign-up", async () => {
+  const cases: [
+    Partial<EvaluationDeadline>,
+    FacultyState["signup"],
+    string[],
+  ][] = [
+    [
+      { nextDueDate: "2026-05-01", overdue: true },
+      null,
+      ["Overdue", "Was due May 2026"],
+    ],
+    [
+      { nextDueDate: "2026-11-01" },
+      null,
+      ["Due This Cycle", "Sign up by Oct 31, 2026"],
+    ],
+    [
+      { nextDueDate: "2026-11-01" },
+      signup,
+      ["In Progress", "Signed up for Fall 2026"],
+    ],
+    [
+      { lastEvaluationDate: "2026-10-20", nextDueDate: "2028-10-20" },
+      signup,
+      ["Completed", "Fall 2026 evaluation"],
+    ],
+  ];
+  const base = deadline;
+  for (const [changes, currentSignup, expected] of cases) {
+    deadline = { ...base, ...changes };
+    state.signup = currentSignup;
+    await openDashboard();
+    await waitFor(() =>
+      expect(summaryCard("Evaluation Status").slice(1)).toEqual(expected),
+    );
+    cleanup();
+  }
 });

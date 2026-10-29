@@ -18,6 +18,18 @@ export interface EvaluationRecord {
   lastObservationCompletedAt: string | null;
 }
 
+export interface EvaluationDeadline {
+  professorId: number;
+  professorRank: string | null;
+  evaluationIntervalYears: number | null;
+  lastEvaluationDate: string | null;
+  nextDueDate: string | null;
+  overdue: boolean;
+}
+
+export const evaluationDeadlinePath = (professorId: number) =>
+  `/api/professors/${professorId}/evaluation-deadline`;
+
 export function getEvaluationPolicies(): Promise<EvaluationPolicy[]> {
   return apiFetch<EvaluationPolicy[]>("/api/evaluation-policies");
 }

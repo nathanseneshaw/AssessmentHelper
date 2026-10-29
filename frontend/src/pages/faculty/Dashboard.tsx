@@ -1,6 +1,10 @@
 import { type ReactNode, useEffect, useRef } from "react";
 import { Link, Outlet } from "react-router-dom";
 import {
+  type EvaluationDeadline,
+  evaluationDeadlinePath,
+} from "../../api/evaluations";
+import {
   formatDate,
   formatWhen,
   type ObservationSummary,
@@ -10,31 +14,118 @@ import {
 } from "../../api/observations";
 import {
   type FacultyState,
-  onObserverChange,
   observerButton,
+  onObserverChange,
   useObserverData,
 } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
 
-const summary = [
-  {
-    label: "Evaluation Status",
-    value: "In Progress",
-    note: "Current evaluation cycle",
-    highlight: true,
-  },
-  {
-    label: "Cycle",
-    value: "Every 2 Years",
-    note: "Associate professor schedule",
-  },
-  { label: "Next Due", value: "Mar 2027", note: "Spring 2027 semester" },
-  {
+interface SummaryItem {
+  label: string;
+  value: string;
+  note: string;
+  highlight?: boolean;
+}
+
+const RANKS: Record<string, string> = {
+  ASSISTANT: "Assistant",
+  ASSOCIATE: "Associate",
+  FULL: "Full",
+};
+
+function monthYear(date: string) {
+  const [year = 0, month = 1] = date.split("-").map(Number);
+  return new Date(year, month - 1).toLocaleString("en-US", {
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function evaluationStatus(
+  state: FacultyState,
+  deadline: EvaluationDeadline,
+): SummaryItem {
+  const label = "Evaluation Status";
+  const { cycle } = state;
+  if (deadline.overdue)
+    return {
+      label,
+      value: "Overdue",
+      note: deadline.nextDueDate
+        ? `Was due ${monthYear(deadline.nextDueDate)}`
+        : "Missed an earlier cycle",
+      highlight: true,
+    };
+  // ISO dates compare as plain strings.
+  if (
+    deadline.lastEvaluationDate &&
+    deadline.lastEvaluationDate >= cycle.startDate
+  )
+    return { label, value: "Completed", note: `${cycle.label} evaluation` };
+  if (state.signup)
+    return {
+      label,
+      value: "In Progress",
+      note: `Signed up for ${cycle.label}`,
+    };
+  if (deadline.nextDueDate && deadline.nextDueDate <= cycle.observationDeadline)
+    return {
+      label,
+      value: "Due This Cycle",
+      note: `Sign up by ${formatDate(cycle.signupDeadline)}`,
+      highlight: true,
+    };
+  return { label, value: "Up to Date", note: `Nothing due in ${cycle.label}` };
+}
+
+function summaryItems(
+  state: FacultyState | null,
+  deadline: EvaluationDeadline | null,
+  pendingNote: string,
+): SummaryItem[] {
+  const observations: SummaryItem = {
     label: "Observations This Term",
-    value: "2",
-    note: "One submitted • one scheduled",
-  },
-];
+    value: String(
+      state?.outgoing?.filter((r) => r.status === "CONFIRMED").length ?? 0,
+    ),
+    note: "Accepted observer requests",
+  };
+  if (!state || !deadline)
+    return [
+      ...["Evaluation Status", "Cycle", "Next Due"].map((label) => ({
+        label,
+        value: "—",
+        note: pendingNote,
+      })),
+      observations,
+    ];
+  const rank = deadline.professorRank && RANKS[deadline.professorRank];
+  const years = deadline.evaluationIntervalYears;
+  return [
+    evaluationStatus(state, deadline),
+    {
+      label: "Cycle",
+      value: years ? `Every ${years} Year${years === 1 ? "" : "s"}` : "Not set",
+      note: rank ? `${rank} professor schedule` : "No rank on record",
+    },
+    {
+      label: "Next Due",
+      value: deadline.nextDueDate ? monthYear(deadline.nextDueDate) : "Not set",
+      note: deadline.lastEvaluationDate
+        ? `Last evaluated ${formatDate(deadline.lastEvaluationDate)}`
+        : "No evaluation on record",
+    },
+    observations,
+  ];
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
 
 interface UpcomingItem {
   key: string;
@@ -187,6 +278,9 @@ export function FacultyDashboard() {
   const observations = useApiResource<ObservationSummary[]>(
     id ? professorObservationsPath(id) : null,
   );
+  const deadline = useApiResource<EvaluationDeadline>(
+    id ? evaluationDeadlinePath(id) : null,
+  );
   const reloadObservations = observations.reload;
   // The dialogs above announce their writes, such as an accepted request or a submitted observation.
   useEffect(() => onObserverChange(reloadObservations), [reloadObservations]);
@@ -210,17 +304,17 @@ export function FacultyDashboard() {
   const forMe = loaded?.filter((o) => o.role === "OBSERVEE") ?? null;
   const forOthers = loaded?.filter((o) => o.role === "OBSERVER") ?? null;
   const upcoming = [...(loaded ? observationTasks(loaded) : []), feedbackDue];
-  const liveSummary = summary.map((item) =>
-    item.label === "Observations This Term"
-      ? {
-          ...item,
-          value: String(
-            data?.outgoing?.filter((r) => r.status === "CONFIRMED").length ?? 0,
-          ),
-          note: "Accepted observer requests",
-        }
-      : item,
+  const summary = summaryItems(
+    data,
+    deadline.data,
+    !id
+      ? "No faculty profile"
+      : deadline.error || error
+        ? "Couldn't load"
+        : "Loading...",
   );
+  const rank =
+    deadline.data?.professorRank && RANKS[deadline.data.professorRank];
   return (
     <div className="mx-auto max-w-6xl">
       <p className="font-semibold text-brand-green text-xs tracking-wide">
@@ -259,14 +353,16 @@ export function FacultyDashboard() {
       <div className="mt-6 flex items-center justify-between border-line border-b pb-5">
         <div className="flex items-center gap-4">
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-mist font-medium text-brand-green text-sm">
-            P1
+            {initials(data?.professor?.name ?? user?.name ?? "")}
           </div>
           <div>
             <p className="font-semibold">
               {data?.professor?.name ?? "Loading professor..."}
             </p>
             <p className="text-ink/60 text-xs">
-              Associate Professor • School of ECS
+              {[rank && `${rank} Professor`, data?.professor?.department]
+                .filter(Boolean)
+                .join(" • ")}
             </p>
           </div>
         </div>
@@ -332,7 +428,7 @@ export function FacultyDashboard() {
       )}
       <h2 className="mt-6 mb-3 text-ink/70 text-sm">Evaluation summary</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {liveSummary.map((item) => (
+        {summary.map((item) => (
           <div
             key={item.label}
             className="rounded-xl border border-line bg-white p-5"
