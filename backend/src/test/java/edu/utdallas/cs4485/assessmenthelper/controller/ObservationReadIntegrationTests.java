@@ -106,11 +106,14 @@ class ObservationReadIntegrationTests {
                 .andExpect(jsonPath("$.submittedAt").value(nullValue()))
                 .andExpect(jsonPath("$.canStart").value(true))
                 .andExpect(jsonPath("$.canEdit").value(false))
-                // Nobody signs the form any more, so none of the signature fields are sent.
+                // The raw signature flags are not sent; only what the viewer may do next and the observee's part.
                 .andExpect(jsonPath("$.observerSigned").doesNotExist())
                 .andExpect(jsonPath("$.observeeSigned").doesNotExist())
                 .andExpect(jsonPath("$.completedAt").doesNotExist())
-                .andExpect(jsonPath("$.canSign").doesNotExist());
+                .andExpect(jsonPath("$.canSign").value(false))
+                .andExpect(jsonPath("$.locked").value(false))
+                .andExpect(jsonPath("$.observeeComments").value(nullValue()))
+                .andExpect(jsonPath("$.observeeSignedAt").value(nullValue()));
     }
 
     @Test
@@ -230,14 +233,27 @@ class ObservationReadIntegrationTests {
     }
 
     @Test
-    void theCommitteeNeverSeesTheForm() throws Exception {
-        for (String status : List.of("ACCEPTED", "SCHEDULED", "IN_PROGRESS", "SUBMITTED", "COMPLETED")) {
+    void theCommitteeReadsOnlyCompletedFormsInItsOwnSchool() throws Exception {
+        for (String status : List.of("ACCEPTED", "SCHEDULED", "IN_PROGRESS", "SUBMITTED")) {
             db.update("UPDATE observation SET status = ? WHERE observation_id = ?", status, scheduled);
             read(kaia, "/api/observations/" + scheduled).andExpect(status().isForbidden());
             read(keira, "/api/observations/" + scheduled).andExpect(status().isOk());
         }
-        read(kaia, "/api/observations/" + completed).andExpect(status().isForbidden());
-        read(kaia, "/api/observations/" + keirasOwn).andExpect(status().isForbidden());
+        db.update("UPDATE observation SET status = 'COMPLETED' WHERE observation_id = ?", scheduled);
+        read(kaia, "/api/observations/" + scheduled)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.viewerRole").value("COMMITTEE"))
+                .andExpect(jsonPath("$.locked").value(true))
+                .andExpect(jsonPath("$.canStart").value(false))
+                .andExpect(jsonPath("$.canEdit").value(false))
+                .andExpect(jsonPath("$.canSign").value(false));
+        read(kaia, "/api/observations/" + completed).andExpect(status().isOk());
+        read(kaia, "/api/observations/" + keirasOwn).andExpect(status().isOk());
+
+        // A committee member from another school has no access, and neither does a professor without the role.
+        AccountPrincipal otherSchool = principal("kaia.clearbrook@example.edu", 2, Role.AC, Role.PROFESSOR);
+        read(otherSchool, "/api/observations/" + completed).andExpect(status().isForbidden());
+        read(dario, "/api/observations/" + completed).andExpect(status().isForbidden());
     }
 
     @Test

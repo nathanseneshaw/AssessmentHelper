@@ -121,6 +121,28 @@ As with the rest of the demo, supplied professor IDs are not authenticated
 identities; server-side authentication/authorization remains necessary before
 production use. Data resets on backend restart.
 
+## Record locking and audit log
+
+Both people sign off on an observation. The observer's submit is their sign-off (status
+`SUBMITTED`): their answers are frozen and the observee is notified. The observee then
+reads the form, optionally leaves comments, and signs off with
+`POST /api/observations/{id}/observee-sign` and `{ "comments": "..." }`. Only the
+observee can call it, and only on a `SUBMITTED` record. That sets the status to
+`COMPLETED`, stores the comments and sign-off time, and locks the record: it is
+read-only for everyone, and its detail response has `locked: true`. While a record is
+`SUBMITTED`, the detail response has `canSign: true` for the observee.
+
+Assessment Committee members can read `COMPLETED` records for observees in their own
+school (`viewerRole: COMMITTEE`) but never edit them.
+
+Every action on a record is appended to `observation_audit_log` (who, to whom, when):
+`STARTED`, `EDITED`, `SUBMITTED`, `OBSERVEE_COMMENTED`, `OBSERVEE_SIGNED`, `LOCKED`, every
+`VIEWED` of a completed record, and every `FORWARDED` link. The table is insert-only;
+nothing in the application updates or deletes its rows. A committee member forwards a
+completed record with `POST /api/observations/{id}/forward` and
+`{ "recipientProfessorId": 4 }`. Forwarding logs the event and notifies the recipient but
+does not grant access.
+
 ## Overdue evaluation notifications
 
 The Faculty Evaluations page loads all active faculty from

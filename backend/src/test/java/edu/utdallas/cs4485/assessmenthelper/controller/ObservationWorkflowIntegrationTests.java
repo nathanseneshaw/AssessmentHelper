@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -84,6 +86,12 @@ class ObservationWorkflowIntegrationTests {
 
     @Autowired
     private ObservationTemplateService templates;
+
+    @Autowired
+    private EvaluationSignupRepository signups;
+
+    @Autowired
+    private ObserveeRepository observees;
 
     // From data.sql: Keira observes Leander's CS 3345.001 on 2026-11-04 at 08:30 and has not started yet. Kaia is on
     // the Assessment Committee in their school; Dario has no part in this observation.
@@ -176,8 +184,8 @@ class ObservationWorkflowIntegrationTests {
                 .andExpect(jsonPath("$.responses[*].criterionId").value(contains(q(1), q(2), q(3), q(4), q(5), q(6))))
                 .andExpect(jsonPath("$.canStart").value(false))
                 .andExpect(jsonPath("$.canEdit").value(false));
-        // The observer's signature columns record the submission, and the observee is told the form is ready to
-        // read. Nothing is signed for the observee, and the evaluation itself is left as it was.
+        // The observer's signature columns record the submission, and the observee is asked to review and sign off.
+        // Nothing is signed for the observee yet, and the evaluation itself is left as it was.
         Map<String, Object> row = db.queryForMap(
                 "SELECT observer_signed, observee_signed, observee_signed_at, completed_at FROM observation WHERE observation_id = ?",
                 observation);
@@ -190,11 +198,13 @@ class ObservationWorkflowIntegrationTests {
                         observation))
                 .isEqualTo(LocalDateTime.parse(NOW));
         assertThat(notificationsTo(leander))
-                .containsExactly("Keira Larkspur submitted the observation of CS 3345.001. You can view it now.");
+                .containsExactly(
+                        "Keira Larkspur submitted the observation of CS 3345.001. Please review it and sign off.");
         assertThat(notificationsTo(keira)).isEmpty();
         assertThat(evaluationStatus()).isEqualTo(evaluation);
 
-        // Now the observee reads the same answers, and the observer reopens them read-only; the committee does not.
+        // Now the observee reads the same answers, and the observer reopens them read-only. The committee only reads
+        // a record once the observee has signed off.
         read(leander)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.viewerRole").value("OBSERVEE"))
@@ -202,7 +212,9 @@ class ObservationWorkflowIntegrationTests {
                 .andExpect(jsonPath("$.submittedAt").value(NOW))
                 .andExpect(jsonPath("$.responses.length()").value(6))
                 .andExpect(jsonPath("$.canStart").value(false))
-                .andExpect(jsonPath("$.canEdit").value(false));
+                .andExpect(jsonPath("$.canEdit").value(false))
+                .andExpect(jsonPath("$.canSign").value(true))
+                .andExpect(jsonPath("$.locked").value(false));
         read(keira)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.viewerRole").value("OBSERVER"))
@@ -276,12 +288,13 @@ class ObservationWorkflowIntegrationTests {
     }
 
     @Test
-    void theObserveeHasNothingToSign() throws Exception {
+    void theObserveeSignsOffAfterTheObserverSubmitsButNeverEditsTheAnswers() throws Exception {
         start(keira).andExpect(status().isOk());
         submit(keira, complete()).andExpect(status().isOk());
-        for (AccountPrincipal anyone : List.of(leander, keira, kaia)) {
-            write(anyone, post("/api/observations/" + observation + "/sign")).andExpect(status().isNotFound());
-        }
+        // The observee sees the form with the sign-off available, but can still not change the answers. Signing off
+        // is covered in ObservationLockingIntegrationTests.
+        read(leander).andExpect(status().isOk()).andExpect(jsonPath("$.canSign").value(true));
+        read(keira).andExpect(status().isOk()).andExpect(jsonPath("$.canSign").value(false));
         assertThat(statusOf()).isEqualTo("SUBMITTED");
         assertThat(db.queryForObject(
                         "SELECT observee_signed FROM observation WHERE observation_id = ?", Boolean.class, observation))
@@ -383,7 +396,11 @@ class ObservationWorkflowIntegrationTests {
     void startingBeforeThePlannedDayRecordsTodayAndTheCurrentMinute() {
         // A week before Leander's class, at 09:05:30 in Dallas: the observation is happening now, not on Nov 4.
         var weekEarly = new ObservationService(
-                db, templates, Clock.fixed(Instant.parse("2026-10-28T14:05:30Z"), ZoneId.of("America/Chicago")));
+                db,
+                templates,
+                signups,
+                observees,
+                Clock.fixed(Instant.parse("2026-10-28T14:05:30Z"), ZoneId.of("America/Chicago")));
         var started = weekEarly.start(observation, keira);
         assertThat(started.status()).isEqualTo(ObservationService.Status.IN_PROGRESS);
         assertThat(started.observationDate()).isEqualTo(LocalDate.of(2026, 10, 28));
@@ -463,6 +480,7 @@ class ObservationWorkflowIntegrationTests {
             assertThat(notificationsTo(leander)).hasSize(1);
         } finally {
             // This test commits, so put the observation back the way data.sql has it.
+            db.update("DELETE FROM observation_audit_log WHERE observation_id = ?", observation);
             db.update("DELETE FROM observation_response WHERE observation_id = ?", observation);
             db.update("DELETE FROM observer_notification WHERE created_at = TIMESTAMP '2026-11-04 10:15:42'");
             db.update(
