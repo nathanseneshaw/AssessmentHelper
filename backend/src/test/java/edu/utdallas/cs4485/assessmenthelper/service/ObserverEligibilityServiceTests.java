@@ -110,6 +110,92 @@ class ObserverEligibilityServiceTests {
         assertThat(list(target).released()).isTrue();
     }
 
+    void historicalCourse(int professorId, LocalDate start, LocalDate end) {
+        db.update(
+                "INSERT INTO semester (term, academic_year, start_date, end_date) VALUES ('History test', ?, ?, ?)",
+                start.getYear(),
+                start,
+                end);
+        int semester = db.queryForObject("SELECT MAX(semester_id) FROM semester", Integer.class);
+        int course = db.queryForObject("SELECT course_id FROM course_section WHERE section_id=298", Integer.class);
+        db.update(
+                "INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time) VALUES (?, ?, 'HIST', 'TR', '13:00:00', '14:15:00')",
+                course,
+                semester);
+        int section = db.queryForObject("SELECT MAX(section_id) FROM course_section", Integer.class);
+        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (?, ?)", professorId, section);
+    }
+
+    void clearPriorTeaching(int professorId) {
+        db.update(
+                "DELETE FROM teaching_history WHERE professor_id=? AND section_id IN (SELECT section_id FROM course_section WHERE semester_id<>?)",
+                professorId,
+                FALL_2026);
+    }
+
+    @Test
+    void teachingAtTwoYearBoundaryQualifiesWithoutUsingHistoricalTimesForAvailability() {
+        clearPriorTeaching(HOLLIS);
+        LocalDate cutoff = service.cycle().startDate().minusYears(2);
+        historicalCourse(HOLLIS, cutoff.minusMonths(4), cutoff);
+        signup(HOLLIS, 284);
+        int target = darioSignsUp();
+        assertThat(candidateProfessors(target)).contains(HOLLIS);
+        assertThat(list(target).candidates().stream()
+                        .filter(c -> c.professorId() == HOLLIS)
+                        .findFirst()
+                        .orElseThrow()
+                        .qualifyingCourses())
+                .anyMatch(course -> course.contains("HIST"));
+    }
+
+    @Test
+    void teachingOlderThanTwoYearsAndFutureTeachingDoNotQualify() {
+        clearPriorTeaching(HOLLIS);
+        LocalDate cutoff = service.cycle().startDate().minusYears(2);
+        historicalCourse(HOLLIS, cutoff.minusMonths(4), cutoff.minusDays(1));
+        historicalCourse(
+                HOLLIS,
+                service.cycle().startDate().plusMonths(6),
+                service.cycle().startDate().plusMonths(9));
+        signup(HOLLIS, 284);
+        assertThat(candidateProfessors(darioSignsUp())).doesNotContain(HOLLIS);
+    }
+
+    @Test
+    void deadlinesUpdateCycleAndDefaultWindows() {
+        var updated = service.updateDeadlines(
+                1,
+                new ObserverEligibilityService.Deadlines(
+                        LocalDate.parse("2026-10-30"), LocalDate.parse("2026-11-20"), LocalDate.parse("2026-12-05")));
+        assertThat(updated.signupDeadline()).isEqualTo(LocalDate.parse("2026-10-30"));
+        assertThat(updated.observationDeadline()).isEqualTo(LocalDate.parse("2026-11-20"));
+        assertThat(updated.feedbackDeadline()).isEqualTo(LocalDate.parse("2026-12-05"));
+        assertThat(list(KEIRA_SIGNUP).windowStart()).isEqualTo(LocalDate.parse("2026-10-31"));
+        assertThat(list(KEIRA_SIGNUP).windowEnd()).isEqualTo(LocalDate.parse("2026-11-20"));
+        assertThat(service.facultyState(LEANDER).cycle().feedbackDeadline()).isEqualTo(updated.feedbackDeadline());
+    }
+
+    @Test
+    void deadlinesRejectInvalidOrderAndDatesThatExcludeScheduledObservations() {
+        assertThatThrownBy(() -> service.updateDeadlines(
+                        1,
+                        new ObserverEligibilityService.Deadlines(
+                                LocalDate.parse("2026-11-01"),
+                                LocalDate.parse("2026-10-31"),
+                                LocalDate.parse("2026-12-01"))))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.updateDeadlines(
+                        1,
+                        new ObserverEligibilityService.Deadlines(
+                                LocalDate.parse("2026-10-31"),
+                                LocalDate.parse("2026-11-02"),
+                                LocalDate.parse("2026-12-01"))))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("existing observation date");
+        assertThat(service.cycle().observationDeadline()).isEqualTo(LocalDate.parse("2026-11-15"));
+    }
+
     @Test
     void listsAreCappedAtFiveStayStableAndReleasedListsStopGrowing() {
         int dario = darioSignsUp();
@@ -134,6 +220,7 @@ class ObserverEligibilityServiceTests {
 
     @Test
     void filtersDepartmentLevelActivitySemesterAndTeachingOverlap() {
+        clearPriorTeaching(HOLLIS);
         db.update("UPDATE professor SET department_id = 2 WHERE professor_id = ?", ARLO);
         db.update("UPDATE professor SET active_status = FALSE WHERE professor_id = ?", AVERY);
         db.update("UPDATE observer SET active_status = FALSE WHERE professor_id = ? AND cycle_id = 1", KEIRA);
@@ -263,6 +350,6 @@ class ObserverEligibilityServiceTests {
                         .findFirst()
                         .orElseThrow()
                         .qualifyingCourses())
-                .containsExactly("CS 3345.008 - Data Structures and Foundations of Algorithmic Analysis");
+                .contains("CS 3345.008 - Fall 2026");
     }
 }

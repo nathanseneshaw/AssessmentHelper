@@ -95,6 +95,8 @@ class EvaluationSignupIntegrationTests {
 
     @Test
     void createsReadsRetriesAndUpdatesOnePendingSignup() throws Exception {
+        // Keep this editable-signup scenario without candidates; matching otherwise locks the course selection.
+        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
         mvc.perform(as(HOLLIS, get("/api/professors/9/evaluation-signups/13"))).andExpect(status().isNoContent());
         int originalCount = countSignups();
         var first = mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))

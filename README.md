@@ -121,6 +121,7 @@ As with the rest of the demo, supplied professor IDs are not authenticated
 identities; server-side authentication/authorization remains necessary before
 production use. Data resets on backend restart.
 
+<<<<<<< HEAD
 ## Record locking and audit log
 
 Both people sign off on an observation. The observer's submit is their sign-off (status
@@ -142,6 +143,30 @@ nothing in the application updates or deletes its rows. A committee member forwa
 completed record with `POST /api/observations/{id}/forward` and
 `{ "recipientProfessorId": 4 }`. Forwarding logs the event and notifies the recipient but
 does not grant access.
+=======
+## Observer teaching history and cycle deadlines
+
+An observer may qualify by teaching the same course level in the same department
+this semester or within the prior two years. The lookback is measured from the
+evaluation semester's start date; a historical semester qualifies if it overlaps
+that two-year window. Future semesters do not qualify. Schedule conflicts still
+use only the current semester's teaching assignments. The other observer rules
+(active faculty and observer, current-cycle signup, and no self-observation)
+continue to apply.
+
+On the AC dashboard, **Edit Deadlines** changes the current cycle's signup,
+observation, and feedback deadlines. Changes apply to the whole cycle. Signup
+must be on or after semester start, observation after signup, and feedback after
+observation. The server rejects dates that exclude an existing observation or
+leave an existing signup without an observation window. Default observation
+windows follow the new deadline; custom end dates are preserved or shortened to
+fit. Saved feedback is retained when deadlines change.
+
+`PUT /api/observer-eligibility/cycles/{cycleId}/deadlines` accepts
+`signupDeadline`, `observationDeadline`, and `feedbackDeadline` as ISO dates.
+Only authenticated AC members can update deadlines.
+
+>>>>>>> 0c4ef60 (Allow AC deadline editing and expand observer eligibility to two years of teaching history)
 ## Process feedback survey
 
 Observees submit one survey per evaluation cycle from the faculty dashboard's

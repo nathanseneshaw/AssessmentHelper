@@ -58,7 +58,8 @@ test("loads persisted candidates and releases the reviewed list", async () => {
     .closest("section");
   if (!card) throw Error("Missing card");
   expect(within(card).getAllByRole("listitem")).toHaveLength(5);
-  expect(within(card).getByText("CS 3346.002 - Data Structures")).toBeDefined();
+  expect(within(card).getByText("CS 3346.002 - Fall 2025")).toBeDefined();
+  expect(within(card).queryByText("CS 3346.002 - Data Structures")).toBeNull();
   expect(within(card).queryByText(/3000-level/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Send Candidate List" }));
   await screen.findByRole("button", { name: "Candidate List Sent" });
