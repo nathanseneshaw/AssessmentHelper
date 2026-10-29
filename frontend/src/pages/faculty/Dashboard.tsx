@@ -245,7 +245,9 @@ export function FacultyDashboard() {
     ...(loaded ? observationTasks(loaded) : []),
     ...feedbackTasks,
   ];
-  const dueCount = upcoming.filter((item) => item.status !== "Submitted").length;
+  const dueCount = upcoming.filter(
+    (item) => item.status !== "Submitted",
+  ).length;
   const liveSummary = summary.map((item) =>
     item.label === "Observations This Term"
       ? {
