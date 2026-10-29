@@ -38,7 +38,7 @@ export const signup: Signup = {
     name: `Professor ${i + 2}`,
     department: "Computer Science",
     level: "3000-level",
-    qualifyingCourses: [`CS 3346.00${i + 2} - Data Structures`],
+    qualifyingCourses: [`CS 3346.00${i + 2} - Fall 2025`],
   })),
 };
 export const ac: AcState = {

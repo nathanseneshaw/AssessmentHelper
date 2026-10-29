@@ -259,7 +259,8 @@ public class ObserverEligibilityService {
         return db
                 .query(
                         """
-                SELECT DISTINCT c.course_code, c.course_number, c.course_name, s.section_number,
+                SELECT DISTINCT c.course_code, c.course_number, s.section_number,
+                    taught_sem.term, taught_sem.academic_year, taught_sem.start_date,
                     target_course.course_number AS target_number
                 FROM evaluation_signup es
                 JOIN observee oe ON oe.observee_id=es.observee_id
@@ -267,13 +268,18 @@ public class ObserverEligibilityService {
                 JOIN course_section target_section ON target_section.section_id=es.section_id
                 JOIN course target_course ON target_course.course_id=target_section.course_id
                 JOIN teaching_history t ON t.professor_id=?
-                JOIN course_section s ON s.section_id=t.section_id AND s.semester_id=target_section.semester_id
+                JOIN course_section s ON s.section_id=t.section_id
+                JOIN semester taught_sem ON taught_sem.semester_id=s.semester_id
+                JOIN semester target_sem ON target_sem.semester_id=target_section.semester_id
                 JOIN course c ON c.course_id=s.course_id AND c.department_id=target_prof.department_id
-                WHERE es.signup_id=? ORDER BY c.course_code, c.course_number, s.section_number
+                WHERE es.signup_id=? AND taught_sem.start_date<=target_sem.start_date
+                    AND taught_sem.end_date>=DATEADD('YEAR', -2, target_sem.start_date)
+                ORDER BY c.course_code, c.course_number, s.section_number, taught_sem.start_date
                 """,
                         (r, n) -> level(r.getString("course_number")) == level(r.getString("target_number"))
                                 ? r.getString("course_code") + " " + r.getString("course_number") + "."
-                                        + r.getString("section_number") + " - " + r.getString("course_name")
+                                        + r.getString("section_number") + " - " + r.getString("term")
+                                        + " " + r.getInt("academic_year")
                                 : null,
                         professorId,
                         signupId)
@@ -327,6 +333,66 @@ public class ObserverEligibilityService {
     public AcState acState() {
         Cycle c = cycle();
         return new AcState(c, signups(c, true));
+    }
+
+    public record Deadlines(LocalDate signupDeadline, LocalDate observationDeadline, LocalDate feedbackDeadline) {}
+
+    public Cycle updateDeadlines(int cycleId, Deadlines dates) {
+        cycle(cycleId);
+        Cycle previous = lockCycle(cycleId);
+        if (cycle().cycleId() != cycleId)
+            throw new ConflictException("Only the current evaluation cycle's deadlines can be edited.");
+        if (dates == null
+                || dates.signupDeadline() == null
+                || dates.observationDeadline() == null
+                || dates.feedbackDeadline() == null)
+            throw new IllegalArgumentException("All three deadlines are required.");
+        if (dates.signupDeadline().isBefore(previous.startDate())
+                || !dates.observationDeadline().isAfter(dates.signupDeadline())
+                || !dates.feedbackDeadline().isAfter(dates.observationDeadline()))
+            throw new IllegalArgumentException(
+                    "Signup must be on or after semester start, observation must be after signup, and feedback must be after observation.");
+        int scheduledOutside =
+                db.queryForObject("""
+                SELECT COUNT(*) FROM observation o
+                JOIN evaluation_signup es ON es.signup_id=o.signup_id
+                JOIN observee oe ON oe.observee_id=es.observee_id
+                WHERE oe.cycle_id=? AND o.observation_date IS NOT NULL
+                    AND (o.observation_date<=? OR o.observation_date>?)
+                """, Integer.class, cycleId, dates.signupDeadline(), dates.observationDeadline());
+        if (scheduledOutside > 0)
+            throw new ConflictException(
+                    "These deadlines would exclude an existing observation date. Reschedule the observation before changing these deadlines.");
+        LocalDate start = dates.signupDeadline().plusDays(1);
+        var windows = db.query("""
+                SELECT ls.signup_id, ls.window_end FROM observer_list_state ls
+                JOIN evaluation_signup es ON es.signup_id=ls.signup_id
+                JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.cycle_id=?
+                """, (r, n) -> Map.entry(r.getInt("signup_id"), date(r, "window_end")), cycleId);
+        var revisedWindows = new ArrayList<Map.Entry<Integer, LocalDate>>();
+        for (var window : windows) {
+            LocalDate end = window.getValue();
+            if (Objects.equals(end, previous.observationDeadline())) end = dates.observationDeadline();
+            else if (end.isAfter(dates.observationDeadline())) end = dates.observationDeadline();
+            if (end.isBefore(start))
+                throw new ConflictException(
+                        "The signup deadline would leave an existing signup without an observation window.");
+            revisedWindows.add(Map.entry(window.getKey(), end));
+        }
+        for (var window : revisedWindows) {
+            db.update(
+                    "UPDATE observer_list_state SET window_start=?, window_end=? WHERE signup_id=?",
+                    start,
+                    window.getValue(),
+                    window.getKey());
+        }
+        db.update(
+                "UPDATE evaluation_cycle SET signup_deadline=?, observation_deadline=?, feedback_deadline=? WHERE cycle_id=?",
+                dates.signupDeadline(),
+                dates.observationDeadline(),
+                dates.feedbackDeadline(),
+                cycleId);
+        return cycle(cycleId);
     }
 
     private static LocalDate windowStart(Cycle c) {
@@ -462,12 +528,21 @@ public class ObserverEligibilityService {
         for (var row : pool) {
             int id = ((Number) row.get("PROFESSOR_ID")).intValue();
             var assignments = sections(id, c);
-            boolean teachesLevel =
-                    db.queryForList("""
+            boolean teachesLevel = db
+                    .queryForList(
+                            """
                     SELECT co.course_number FROM teaching_history t JOIN course_section s ON s.section_id=t.section_id
-                    JOIN course co ON co.course_id=s.course_id WHERE t.professor_id=? AND s.semester_id=? AND co.department_id=?
-                    """, String.class, id, c.semesterId(), target.get("DEPARTMENT_ID")).stream()
-                            .anyMatch(n -> level(n) == targetLevel);
+                    JOIN course co ON co.course_id=s.course_id
+                    JOIN semester taught_sem ON taught_sem.semester_id=s.semester_id
+                    WHERE t.professor_id=? AND taught_sem.start_date<=? AND taught_sem.end_date>=? AND co.department_id=?
+                    """,
+                            String.class,
+                            id,
+                            c.startDate(),
+                            c.startDate().minusYears(2),
+                            target.get("DEPARTMENT_ID"))
+                    .stream()
+                    .anyMatch(n -> level(n) == targetLevel);
             if (!teachesLevel) continue;
             Set<DayOfWeek> blocked = EnumSet.noneOf(DayOfWeek.class);
             boolean unknown = false;

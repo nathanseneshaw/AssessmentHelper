@@ -38,6 +38,13 @@ public class ObserverEligibilityController {
         return service.generate();
     }
 
+    @PutMapping("/cycles/{cycleId}/deadlines")
+    @PreAuthorize("hasRole('AC')")
+    public ObserverEligibilityService.Cycle updateDeadlines(
+            @PathVariable int cycleId, @RequestBody ObserverEligibilityService.Deadlines body) {
+        return service.updateDeadlines(cycleId, body);
+    }
+
     @PostMapping("/signups/{id}/release")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasRole('AC')")
