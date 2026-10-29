@@ -22,7 +22,7 @@ dependencies {
 	implementation(libs.bundles.spring.boot.starters)
 	implementation(libs.springdoc.openapi.starter.webmvc.ui)
 	developmentOnly(libs.spring.boot.devtools)
-	runtimeOnly(libs.h2)
+	implementation(libs.h2)
 	annotationProcessor(libs.spring.boot.configuration.processor)
 	testImplementation(libs.bundles.spring.boot.test.starters)
 	testRuntimeOnly(libs.junit.platform.launcher)
