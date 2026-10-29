@@ -164,25 +164,18 @@ public class EvaluationEligibilityService {
             var policy = policyMap.get(professor.professorRank());
             if (policy == null)
                 throw conflict("Professor " + professor.professorId() + " needs an evaluation policy for their rank.");
-            if (!Boolean.TRUE.equals(policy.activeStatus())) continue;
+            if (!EvaluationDueRules.applies(professor, policy)) continue;
             Integer interval = policy.evaluationIntervalYears();
             if (interval == null || interval < 1) throw conflict("Evaluation intervals must be positive.");
             LocalDate anchor = lastCompleted.getOrDefault(professor.professorId(), professor.hireDate());
             if (anchor == null)
                 throw conflict(
                         "Professor " + professor.professorId() + " needs a hire date or completed evaluation date.");
-            LocalDate firstDue = anchor.plusYears(interval);
-            // Retain the missed obligation, but current-cycle recurrence takes priority over overdue.
-            LocalDate recurrence = firstDue;
-            int years = interval;
-            while (recurrence.isBefore(semester.startDate())) {
-                years += interval;
-                recurrence = anchor.plusYears(years);
-            }
-            boolean dueThisCycle = !recurrence.isAfter(semester.endDate());
-            boolean overdue = firstDue.isBefore(semester.startDate()) && !dueThisCycle;
+            var result = EvaluationDueRules.calculate(anchor, interval, semester);
+            boolean dueThisCycle = result.dueThisCycle();
+            boolean overdue = result.overdue();
             if (due == null || (due ? dueThisCycle : overdue)) {
-                LocalDate dueDate = dueThisCycle ? recurrence : firstDue;
+                LocalDate dueDate = result.nextDue();
                 String dueSemester = semesterMap.values().stream()
                         .filter(s -> s.startDate() != null
                                 && s.endDate() != null

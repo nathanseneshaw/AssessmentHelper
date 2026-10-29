@@ -111,6 +111,46 @@ class EvaluationDeadlineServiceTests {
     }
 
     @Test
+    void dueDateEarlierInCurrentSemesterIsDueNotOverdue() {
+        // Issue #121: due 2026-09-15 is before today (2026-10-20) but inside Fall 2026, so not overdue.
+        Professor professor = professor("ASSISTANT", null);
+        completeEvaluation(professor, LocalDateTime.of(2025, 9, 15, 9, 0));
+
+        EvaluationDeadline deadline = service.findByProfessor(professor.professorId());
+        assertThat(deadline.nextDueDate()).isEqualTo(LocalDate.of(2026, 9, 15));
+        assertThat(deadline.overdue()).isFalse();
+    }
+
+    @Test
+    void observationWithoutCompletedObserveeStatusIsNotAnEvaluation() {
+        Professor professor = professor("ASSISTANT", LocalDate.of(2024, 8, 15));
+        completeEvaluation(professor, LocalDateTime.of(2026, 3, 10, 12, 0), "ACTIVE");
+
+        EvaluationDeadline deadline = service.findByProfessor(professor.professorId());
+        assertThat(deadline.lastEvaluationDate()).isNull();
+        assertThat(deadline.nextDueDate()).isEqualTo(LocalDate.of(2025, 8, 15));
+        assertThat(deadline.overdue()).isTrue();
+    }
+
+    @Test
+    void inactiveProfessorIsNeverOverdue() {
+        Professor professor = db.insert(new Professor(
+                null,
+                department.departmentId(),
+                "ASSISTANT",
+                "Test",
+                "Professor",
+                "i" + System.nanoTime() + "@test.edu",
+                null,
+                false));
+        completeEvaluation(professor, LocalDateTime.of(2025, 1, 1, 9, 0));
+
+        EvaluationDeadline deadline = service.findByProfessor(professor.professorId());
+        assertThat(deadline.nextDueDate()).isEqualTo(LocalDate.of(2026, 1, 1));
+        assertThat(deadline.overdue()).isFalse();
+    }
+
+    @Test
     void neverEvaluatedProfessorIsDueOneIntervalAfterHire() {
         Professor professor = professor("FULL", LocalDate.of(2026, 8, 15));
 
@@ -159,13 +199,17 @@ class EvaluationDeadlineServiceTests {
 
     /** Records one observation of the professor, completed at the given time or still scheduled if null. */
     private void completeEvaluation(Professor professor, LocalDateTime completedAt) {
+        completeEvaluation(professor, completedAt, completedAt == null ? "ACTIVE" : "COMPLETED");
+    }
+
+    private void completeEvaluation(Professor professor, LocalDateTime completedAt, String observeeStatus) {
         Course course = db.insert(
                 new Course(null, department.departmentId(), "T", "1" + System.nanoTime(), "C", "UNDERGRADUATE"));
         ObservationTemplate template = db.insert(new ObservationTemplate(null, null, "T", 1, null, true));
         Semester semester = db.insert(new Semester(null, "Fall", 2026, null, null));
         EvaluationCycle cycle = db.insert(new EvaluationCycle(null, semester.semesterId(), null, null, null, "OPEN"));
         Professor observerProfessor = professor("FULL", null);
-        Observee observee = db.insert(new Observee(null, professor.professorId(), cycle.cycleId(), "ACTIVE"));
+        Observee observee = db.insert(new Observee(null, professor.professorId(), cycle.cycleId(), observeeStatus));
         Observer observer = db.insert(new Observer(null, observerProfessor.professorId(), cycle.cycleId(), true));
         CourseSection section = db.insert(
                 new CourseSection(null, course.courseId(), semester.semesterId(), "001", null, null, null, null));
