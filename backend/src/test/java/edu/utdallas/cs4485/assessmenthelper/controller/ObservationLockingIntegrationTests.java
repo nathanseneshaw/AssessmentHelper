@@ -9,6 +9,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -67,6 +70,15 @@ class ObservationLockingIntegrationTests {
 
     @Autowired
     private JsonMapper json;
+
+    @Autowired
+    private ObservationRepository observations;
+
+    @Autowired
+    private EvaluationSignupRepository signups;
+
+    @Autowired
+    private ObserveeRepository observees;
 
     // From data.sql: Keira observes Leander's CS 3345.001 and has not started. Kaia is on the Assessment Committee;
     // Dario has no part in this observation.
@@ -136,6 +148,7 @@ class ObservationLockingIntegrationTests {
                 .andExpect(jsonPath("$.observeeComments").value("The scores are fair, thank you."))
                 .andExpect(jsonPath("$.observeeSignedAt").value(NOW))
                 .andExpect(jsonPath("$.responses.length()").value(6));
+        assertThat(observeeStatus()).isEqualTo("COMPLETED");
 
         Map<String, Object> row = db.queryForMap(
                 "SELECT observer_signed, observee_signed FROM observation WHERE observation_id = ?", observation);
@@ -404,6 +417,15 @@ class ObservationLockingIntegrationTests {
                 post("/api/observations/" + observation + "/observee-sign")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsString(new ObservationController.SignOffBody(comments))));
+    }
+
+    private String observeeStatus() {
+        return observations
+                .findById(observation)
+                .flatMap(o -> signups.findById(o.signupId()))
+                .flatMap(signup -> observees.findById(signup.observeeId()))
+                .orElseThrow()
+                .status();
     }
 
     private String statusOf() {

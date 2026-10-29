@@ -1,5 +1,8 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationTemplateService.Criterion;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationTemplateService.Template;
@@ -37,11 +40,20 @@ public class ObservationService {
 
     private final JdbcTemplate db;
     private final ObservationTemplateService templates;
+    private final EvaluationSignupRepository signups;
+    private final ObserveeRepository observees;
     private final Clock clock;
 
-    public ObservationService(JdbcTemplate db, ObservationTemplateService templates, Clock clock) {
+    public ObservationService(
+            JdbcTemplate db,
+            ObservationTemplateService templates,
+            EvaluationSignupRepository signups,
+            ObserveeRepository observees,
+            Clock clock) {
         this.db = db;
         this.templates = templates;
+        this.signups = signups;
+        this.observees = observees;
         this.clock = clock;
     }
 
@@ -399,6 +411,10 @@ public class ObservationService {
         if (text != null) log(observationId, AuditEvent.OBSERVEE_COMMENTED, principal, null);
         log(observationId, AuditEvent.OBSERVEE_SIGNED, principal, null);
         log(observationId, AuditEvent.LOCKED, principal, null);
+        signups.findById(o.signupId())
+                .flatMap(signup -> observees.findById(signup.observeeId()))
+                .ifPresent(observee -> observees.save(
+                        new Observee(observee.observeeId(), observee.professorId(), observee.cycleId(), "COMPLETED")));
         notify(
                 o.observer().professorId(),
                 o.signupId(),

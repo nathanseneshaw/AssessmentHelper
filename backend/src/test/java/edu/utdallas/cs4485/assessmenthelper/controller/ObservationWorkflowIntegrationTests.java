@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -84,6 +86,12 @@ class ObservationWorkflowIntegrationTests {
 
     @Autowired
     private ObservationTemplateService templates;
+
+    @Autowired
+    private EvaluationSignupRepository signups;
+
+    @Autowired
+    private ObserveeRepository observees;
 
     // From data.sql: Keira observes Leander's CS 3345.001 on 2026-11-04 at 08:30 and has not started yet. Kaia is on
     // the Assessment Committee in their school; Dario has no part in this observation.
@@ -388,7 +396,11 @@ class ObservationWorkflowIntegrationTests {
     void startingBeforeThePlannedDayRecordsTodayAndTheCurrentMinute() {
         // A week before Leander's class, at 09:05:30 in Dallas: the observation is happening now, not on Nov 4.
         var weekEarly = new ObservationService(
-                db, templates, Clock.fixed(Instant.parse("2026-10-28T14:05:30Z"), ZoneId.of("America/Chicago")));
+                db,
+                templates,
+                signups,
+                observees,
+                Clock.fixed(Instant.parse("2026-10-28T14:05:30Z"), ZoneId.of("America/Chicago")));
         var started = weekEarly.start(observation, keira);
         assertThat(started.status()).isEqualTo(ObservationService.Status.IN_PROGRESS);
         assertThat(started.observationDate()).isEqualTo(LocalDate.of(2026, 10, 28));
