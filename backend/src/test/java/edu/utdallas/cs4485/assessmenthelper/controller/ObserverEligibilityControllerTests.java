@@ -261,6 +261,7 @@ class ObserverEligibilityControllerTests {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("This professor is not eligible to observe this signup."));
 
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
         mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/release")))
                 .andExpect(status().isNoContent());
         int arloMatch = db.queryForObject("""
