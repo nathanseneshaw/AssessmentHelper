@@ -23,9 +23,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Observation forms as the observer fills them in and the observee reads them. The observer sees a form in every
- * status: they start it, save drafts, submit it, and can reopen it read-only afterwards. The observee may read it once
- * it is submitted, and nobody else may see it. Each of these returns the same {@link Detail}. An observation row is
+ * Observation forms as the observer fills them in and the observee reviews them. The observer sees a form in every
+ * status: they start it, save drafts, submit it (their sign-off), and can reopen it read-only afterwards. The observee
+ * may read it once it is submitted, then adds comments and signs off, which completes and locks the record. An
+ * Assessment Committee member may read a completed record in their school, never edit it, and nobody else may see it.
+ * Each of these returns the same {@link Detail}. An observation row is
  * created when the observer accepts a request, in {@link ObserverEligibilityService#respond}.
  */
 @Service
@@ -44,8 +46,9 @@ public class ObservationService {
     }
 
     /**
-     * ACCEPTED or SCHEDULED, then IN_PROGRESS once started and SUBMITTED once the observer submits, when the observee
-     * may read it too. COMPLETED marks records from earlier cycles, which both of them can still open.
+     * ACCEPTED or SCHEDULED, then IN_PROGRESS once started and SUBMITTED once the observer submits (the observer's
+     * sign-off), when the observee may read it and respond. COMPLETED once the observee signs off: the record is then
+     * locked, and the observer, the observee and the school's Assessment Committee can still open it read-only.
      */
     public enum Status {
         ACCEPTED,
@@ -57,7 +60,8 @@ public class ObservationService {
 
     public enum ViewerRole {
         OBSERVER,
-        OBSERVEE
+        OBSERVEE,
+        COMMITTEE
     }
 
     /** What the audit log records about an observation. Entries are only ever added. */
@@ -65,6 +69,8 @@ public class ObservationService {
         STARTED,
         EDITED,
         SUBMITTED,
+        OBSERVEE_COMMENTED,
+        OBSERVEE_SIGNED,
         LOCKED,
         VIEWED,
         FORWARDED
@@ -117,7 +123,10 @@ public class ObservationService {
             LocalDateTime submittedAt,
             boolean canStart,
             boolean canEdit,
-            boolean locked) {}
+            boolean locked,
+            boolean canSign,
+            String observeeComments,
+            LocalDateTime observeeSignedAt) {}
 
     /** One observation with its people, course and semester, before deciding who may see it. */
     private record Row(
@@ -132,20 +141,25 @@ public class ObservationService {
             Course course,
             LocalDate observationDate,
             LocalTime startTime,
-            LocalDateTime submittedAt) {
+            LocalDateTime submittedAt,
+            String observeeComments,
+            LocalDateTime observeeSignedAt,
+            int schoolId) {
         /**
-         * Nobody signs the form any more, so submitting it is the final signature: from then on the record is locked,
-         * read-only for everyone including the observer and the observee. COMPLETED records are locked too.
+         * The record is locked once the observee has signed off, which completes it. From then on it is read-only for
+         * everyone. Between the observer's submit and the observee's sign-off the observer's answers are already frozen,
+         * but the observee can still comment, so that is not locked yet.
          */
         boolean locked() {
-            return status == Status.SUBMITTED || status == Status.COMPLETED;
+            return status == Status.COMPLETED;
         }
     }
 
-    // The observer_signed_at column records when the observer submitted the form.
+    // observer_signed_at is when the observer submitted the form; observee_signed_at is when the observee signed off.
     private static final String OBSERVATIONS = """
             SELECT o.observation_id, o.signup_id, o.status, o.template_id, o.observation_date,
-            o.start_time AS observation_start, o.observer_signed_at, oe.cycle_id, sm.term, sm.academic_year,
+            o.start_time AS observation_start, o.observer_signed_at, o.observee_signed_at, o.observee_comments,
+            de.school_id AS observee_school_id, oe.cycle_id, sm.term, sm.academic_year,
             pe.professor_id AS observee_professor_id, pe.first_name || ' ' || pe.last_name AS observee_name,
             de.department_name AS observee_department,
             po.professor_id AS observer_professor_id, po.first_name || ' ' || po.last_name AS observer_name,
@@ -195,7 +209,10 @@ public class ObservationService {
                         r.getString("location")),
                 r.getObject("observation_date", LocalDate.class),
                 r.getObject("observation_start", LocalTime.class),
-                r.getObject("observer_signed_at", LocalDateTime.class));
+                r.getObject("observer_signed_at", LocalDateTime.class),
+                r.getString("observee_comments"),
+                r.getObject("observee_signed_at", LocalDateTime.class),
+                r.getInt("observee_school_id"));
     }
 
     private Row find(int observationId) {
@@ -224,13 +241,22 @@ public class ObservationService {
 
     /**
      * The role {@code principal} sees the observation in, or null if they may not see it now. The observer always may,
-     * and the observee once the observer has submitted, so never a draft. Nobody else may, committee members included.
+     * and the observee once the observer has submitted, so never a draft. A committee member may read only a completed
+     * record, and only for an observee in their own school. Nobody else may.
      */
     private static ViewerRole viewerRole(Row o, AccountPrincipal principal) {
         if (isObserver(o, principal)) return ViewerRole.OBSERVER;
         if (isObservee(o, principal) && (o.status() == Status.SUBMITTED || o.status() == Status.COMPLETED))
             return ViewerRole.OBSERVEE;
+        if (committeeMayRead(o, principal)) return ViewerRole.COMMITTEE;
         return null;
+    }
+
+    // Committee members read completed records for their own school, the same school limit as professor lists.
+    private static boolean committeeMayRead(Row o, AccountPrincipal principal) {
+        return principal.isCommitteeMember()
+                && o.status() == Status.COMPLETED
+                && Objects.equals(principal.user().schoolId(), o.schoolId());
     }
 
     /**
@@ -244,7 +270,7 @@ public class ObservationService {
         return detail;
     }
 
-    /** The form as {@code principal} sees it, with what they may do next. Only the observer ever changes it. */
+    /** The form as {@code principal} sees it, with what they may do next. */
     private Detail detail(Row o, AccountPrincipal principal) {
         ViewerRole role = viewerRole(o, principal);
         if (role == null) throw new AccessDeniedException("You do not have access to this observation.");
@@ -264,7 +290,10 @@ public class ObservationService {
                 o.submittedAt(),
                 role == ViewerRole.OBSERVER && (o.status() == Status.ACCEPTED || o.status() == Status.SCHEDULED),
                 role == ViewerRole.OBSERVER && o.status() == Status.IN_PROGRESS,
-                o.locked());
+                o.locked(),
+                role == ViewerRole.OBSERVEE && o.status() == Status.SUBMITTED,
+                o.observeeComments(),
+                o.observeeSignedAt());
     }
 
     private List<Answer> responses(int observationId) {
@@ -310,8 +339,9 @@ public class ObservationService {
     }
 
     /**
-     * Saves the final answers and submits the form, once every required question is answered. From then on the
-     * observer and the observee can both read it, and nobody can change it. The observee is told it is ready.
+     * Saves the final answers and submits the form, once every required question is answered. This is the observer's
+     * sign-off: their answers are frozen from then on. The observee can now read the form and is asked to review it and
+     * sign off. The record is not locked until they do, see {@link #observeeSign}.
      */
     public Detail submit(int observationId, List<Answer> answers, AccountPrincipal principal) {
         Row o = lock(observationId);
@@ -334,34 +364,67 @@ public class ObservationService {
                 now(),
                 observationId);
         log(observationId, AuditEvent.SUBMITTED, principal, null);
-        log(observationId, AuditEvent.LOCKED, principal, null);
         notify(
                 o.observee().professorId(),
                 o.signupId(),
                 o.observer().name() + " submitted the observation of "
-                        + o.course().label() + ". You can view it now.");
+                        + o.course().label() + ". Please review it and sign off.");
         return detail(find(observationId), principal);
     }
 
     /**
-     * An Assessment Committee member forwards the link to a locked record to another professor. The forward is logged
-     * (who sent it, to whom, when) and the recipient is notified. Forwarding does not give the recipient access: the
-     * link opens the secured system, which still decides who may read the record.
+     * The observee reviews the submitted form, optionally leaves comments, and signs off. That completes the
+     * observation and locks the record. Only the observee can do this, and only once the observer has submitted.
+     * The comments are checked first, so nothing changes if they are too long. The observer is told it is complete.
+     */
+    public Detail observeeSign(int observationId, String comments, AccountPrincipal principal) {
+        Row o = lock(observationId);
+        if (!isObservee(o, principal))
+            throw new AccessDeniedException("Only the observee can sign off on this observation.");
+        if (o.status() == Status.COMPLETED) throw new ConflictException("This observation has already been signed off.");
+        if (o.status() != Status.SUBMITTED)
+            throw new ConflictException("The observer has not submitted this observation yet.");
+        String text = comments == null || comments.isBlank() ? null : comments.strip();
+        if (text != null && text.length() > MAX_COMMENTS)
+            throw new IllegalArgumentException("Comments must be at most " + MAX_COMMENTS + " characters.");
+        LocalDateTime signedAt = now();
+        db.update(
+                "UPDATE observation SET status=?, observee_signed=TRUE, observee_signed_at=?, completed_at=?, observee_comments=? WHERE observation_id=?",
+                Status.COMPLETED.name(),
+                signedAt,
+                signedAt,
+                text,
+                observationId);
+        if (text != null) log(observationId, AuditEvent.OBSERVEE_COMMENTED, principal, null);
+        log(observationId, AuditEvent.OBSERVEE_SIGNED, principal, null);
+        log(observationId, AuditEvent.LOCKED, principal, null);
+        notify(
+                o.observer().professorId(),
+                o.signupId(),
+                o.observee().name() + " signed off on the observation of " + o.course().label()
+                        + ". It is complete now.");
+        return detail(find(observationId), principal);
+    }
+
+    /**
+     * An Assessment Committee member forwards the link to a locked (completed) record in their school to another
+     * professor. The forward is logged (who sent it, to whom, when) and the recipient is notified. Forwarding does not
+     * give the recipient access: the link opens the secured system, which still decides who may read the record.
      */
     public void forward(int observationId, int recipientProfessorId, AccountPrincipal principal) {
         if (!principal.isCommitteeMember() || principal.user().professorId() == null)
             throw new AccessDeniedException("Only Assessment Committee members can forward a record.");
         Row o = find(observationId);
         if (!o.locked()) throw new ConflictException("Only a locked record can be forwarded.");
-        if (db.queryForObject(
-                        "SELECT COUNT(*) FROM professor WHERE professor_id=?", Integer.class, recipientProfessorId)
+        if (!committeeMayRead(o, principal))
+            throw new AccessDeniedException("You can only forward records from your own school.");
+        if (db.queryForObject("SELECT COUNT(*) FROM professor WHERE professor_id=?", Integer.class, recipientProfessorId)
                 == 0) throw new NotFoundException("Professor not found.");
         log(observationId, AuditEvent.FORWARDED, principal, recipientProfessorId);
         notify(
                 recipientProfessorId,
                 o.signupId(),
-                principal.user().name() + " sent you the observation of "
-                        + o.course().label() + ".");
+                principal.user().name() + " sent you the observation of " + o.course().label() + ".");
     }
 
     // Appends to the audit log. This is the only code that touches the table, and it only inserts.
@@ -375,7 +438,8 @@ public class ObservationService {
                 now());
     }
 
-    // Only the observer edits the answers, and only between starting the form and submitting it.
+    // Only the observer edits the answers, and only between starting the form and submitting it. The observee never
+    // edits them: they can only comment and sign off.
     private static void requireEditable(Row o, AccountPrincipal principal) {
         if (!isObserver(o, principal)) throw new AccessDeniedException("Only the observer can edit this observation.");
         if (o.status() == Status.ACCEPTED || o.status() == Status.SCHEDULED)

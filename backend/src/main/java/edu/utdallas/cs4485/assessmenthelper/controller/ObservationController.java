@@ -25,6 +25,9 @@ public class ObservationController {
     /** Every answer on the form, for a draft save or the final submit. */
     public record ResponsesBody(List<ObservationService.Answer> responses) {}
 
+    /** The observee's comments on the form, optional, sent with their sign-off. */
+    public record SignOffBody(String comments) {}
+
     /** The professor an Assessment Committee member forwards a locked record's link to. */
     public record ForwardBody(Integer recipientProfessorId) {}
 
@@ -60,6 +63,14 @@ public class ObservationController {
             @RequestBody ResponsesBody body,
             @AuthenticationPrincipal AccountPrincipal principal) {
         return service.submit(observationId, body.responses(), principal);
+    }
+
+    @PostMapping("/observations/{observationId}/observee-sign")
+    public ObservationService.Detail observeeSign(
+            @PathVariable int observationId,
+            @RequestBody(required = false) SignOffBody body,
+            @AuthenticationPrincipal AccountPrincipal principal) {
+        return service.observeeSign(observationId, body == null ? null : body.comments(), principal);
     }
 
     @PostMapping("/observations/{observationId}/forward")

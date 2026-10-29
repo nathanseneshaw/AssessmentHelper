@@ -200,6 +200,7 @@ CREATE TABLE IF NOT EXISTS observation (
     observee_signed_at TIMESTAMP,
     observer_signed_at TIMESTAMP,
     completed_at TIMESTAMP,
+    observee_comments VARCHAR(4000),
     UNIQUE (signup_id, observer_id)
 );
 

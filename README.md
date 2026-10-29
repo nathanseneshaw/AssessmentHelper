@@ -123,16 +123,25 @@ production use. Data resets on backend restart.
 
 ## Record locking and audit log
 
-Nobody signs the form any more, so the observer's submission is the final signature and
-it locks the record: a `SUBMITTED` or `COMPLETED` observation is read-only for everyone,
-including the observer and the observee, and its detail response has `locked: true`.
+Both people sign off on an observation. The observer's submit is their sign-off (status
+`SUBMITTED`): their answers are frozen and the observee is notified. The observee then
+reads the form, optionally leaves comments, and signs off with
+`POST /api/observations/{id}/observee-sign` and `{ "comments": "..." }`. Only the
+observee can call it, and only on a `SUBMITTED` record. That sets the status to
+`COMPLETED`, stores the comments and sign-off time, and locks the record: it is
+read-only for everyone, and its detail response has `locked: true`. While a record is
+`SUBMITTED`, the detail response has `canSign: true` for the observee.
+
+Assessment Committee members can read `COMPLETED` records for observees in their own
+school (`viewerRole: COMMITTEE`) but never edit them.
 
 Every action on a record is appended to `observation_audit_log` (who, to whom, when):
-`STARTED`, `EDITED`, `SUBMITTED`, `LOCKED`, every `VIEWED` of a locked record, and every
-`FORWARDED` link. The table is insert-only; nothing in the application updates or deletes
-its rows. An Assessment Committee member forwards a locked record with
-`POST /api/observations/{id}/forward` and `{ "recipientProfessorId": 4 }`. Forwarding logs
-the event and notifies the recipient but does not grant access.
+`STARTED`, `EDITED`, `SUBMITTED`, `OBSERVEE_COMMENTED`, `OBSERVEE_SIGNED`, `LOCKED`, every
+`VIEWED` of a completed record, and every `FORWARDED` link. The table is insert-only;
+nothing in the application updates or deletes its rows. A committee member forwards a
+completed record with `POST /api/observations/{id}/forward` and
+`{ "recipientProfessorId": 4 }`. Forwarding logs the event and notifies the recipient but
+does not grant access.
 
 ## Overdue evaluation notifications
 
