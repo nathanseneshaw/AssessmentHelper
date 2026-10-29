@@ -186,4 +186,23 @@ class ObserverEligibilityControllerTests {
                 mvc.perform(get("/api/auth/csrf")).andReturn().getResponse().getCookie("XSRF-TOKEN");
         return request.with(user(professor)).cookie(token).header("X-XSRF-TOKEN", token.getValue());
     }
+
+    @Test
+    void onlyCommitteeMembersMayUpdateCycleDeadlines() throws Exception {
+        String body =
+                "{\"signupDeadline\":\"2026-10-30\",\"observationDeadline\":\"2026-11-20\",\"feedbackDeadline\":\"2026-12-05\"}";
+        mvc.perform(as(DARIO, put("/api/observer-eligibility/cycles/1/deadlines"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(KAIA, put("/api/observer-eligibility/cycles/1/deadlines"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.feedbackDeadline").value("2026-12-05"));
+        mvc.perform(as(KAIA, put("/api/observer-eligibility/cycles/1/deadlines"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
 }

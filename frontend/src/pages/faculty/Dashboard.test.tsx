@@ -27,6 +27,7 @@ let state: FacultyState;
 let list: ObservationSummary[];
 let failures: Response[];
 let deadline: EvaluationDeadline;
+let feedbackStatus: string;
 
 beforeEach(() => {
   state = facultyStateFor(OLIVIA);
@@ -40,7 +41,18 @@ beforeEach(() => {
     nextDueDate: "2027-03-10",
     overdue: false,
   };
+  feedbackStatus = "AVAILABLE";
   fakeBackend({
+    "/api/feedback-surveys": () =>
+      Response.json([
+        {
+          cycleId: 1,
+          label: "Fall 2026",
+          observationDeadline: "2026-11-01",
+          feedbackDeadline: "2026-11-10",
+          status: feedbackStatus,
+        },
+      ]),
     [`/api/observer-eligibility/faculty/${OLIVIA.professorId}`]: () =>
       Response.json(state),
     [`/api/professors/${OLIVIA.professorId}/observations`]: () =>
@@ -124,8 +136,7 @@ test("Upcoming lists the observations the professor has to start or continue, so
       name: "Start Observation (CS 1337.002)",
       href: "/faculty/observations/16",
     },
-    // Still a mockup until issue #108.
-    { name: "Start Survey", href: "/faculty/feedback" },
+    { name: "Start Survey", href: "/faculty/feedback?cycle=1" },
   ]);
 
   const resume = upcoming
@@ -205,6 +216,58 @@ test("the observations reload when a dialog changes them", async () => {
     name: "Continue (CS 1337.002)",
   });
 });
+
+test("submitting survey replaces Start Survey with View Survey", async () => {
+  await openDashboard();
+  await panel("Upcoming").findByRole("link", { name: "Start Survey" });
+  feedbackStatus = "SUBMITTED";
+  act(() => observerChanged());
+  await waitFor(() =>
+    expect(
+      panel("Upcoming").queryByRole("link", { name: "Start Survey" }),
+    ).toBeNull(),
+  );
+  expect(
+    panel("Upcoming")
+      .getByRole("link", { name: "View Survey" })
+      .getAttribute("href"),
+  ).toBe("/faculty/feedback?cycle=1");
+  expect(
+    panel("Upcoming").getByText("Process Feedback Submitted"),
+  ).toBeTruthy();
+});
+
+test("upcoming survey is visible but disabled until the observation deadline passes", async () => {
+  feedbackStatus = "NOT_OPEN";
+  await openDashboard();
+  const upcoming = panel("Upcoming");
+  const button = await upcoming.findByRole("button", { name: "Start Survey" });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  expect(upcoming.getByText("Process Feedback Due")).toBeTruthy();
+  expect(
+    upcoming.queryByText(/Available after the observation deadline/),
+  ).toBeNull();
+  expect(upcoming.queryByRole("link", { name: "Start Survey" })).toBeNull();
+
+  feedbackStatus = "AVAILABLE";
+  fireEvent.focus(window);
+  await upcoming.findByRole("link", { name: "Start Survey" });
+  expect(upcoming.queryByRole("button", { name: "Start Survey" })).toBeNull();
+});
+
+test.each(["CLOSED", "UNCONFIGURED"])(
+  "%s survey has no dashboard task",
+  async (status) => {
+    feedbackStatus = status;
+    await openDashboard();
+    await panel("Upcoming").findByRole("link", {
+      name: "Continue (CS 2336.001)",
+    });
+    expect(
+      panel("Upcoming").queryByRole("link", { name: "Start Survey" }),
+    ).toBeNull();
+  },
+);
 
 test("a new notification reloads the observations", async () => {
   await openDashboard();

@@ -248,7 +248,13 @@ CREATE TABLE IF NOT EXISTS process_feedback (
     difficulties VARCHAR(4000),
     improvement_comments VARCHAR(4000),
     observee_comment VARCHAR(4000),
-    submitted_date DATE
+    submitted_date DATE,
+    clarity_rating INT CHECK (clarity_rating BETWEEN 1 AND 5),
+    scheduling_rating INT CHECK (scheduling_rating BETWEEN 1 AND 5),
+    communication_rating INT CHECK (communication_rating BETWEEN 1 AND 5),
+    organization_rating INT CHECK (organization_rating BETWEEN 1 AND 5),
+    usefulness_rating INT CHECK (usefulness_rating BETWEEN 1 AND 5),
+    CONSTRAINT uq_feedback_cycle_professor UNIQUE (cycle_id, professor_id)
 );
 
 CREATE TABLE IF NOT EXISTS communication_thread (

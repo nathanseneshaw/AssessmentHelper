@@ -125,10 +125,12 @@ export function AcObserverMatching() {
                       key={c.observerId}
                       className="flex flex-wrap items-center justify-between gap-4"
                     >
-                      <span className="font-semibold">{c.name}</span>
-                      <span className="text-sm text-muted">
-                        {c.qualifyingCourses.join("; ")}
-                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold">{c.name}</p>
+                        <p className="mt-1 text-xs text-muted">
+                          {[...new Set(c.qualifyingCourses)].join("; ")}
+                        </p>
+                      </div>
                       <span className="text-sm text-brand-green">
                         Available
                       </span>
@@ -148,7 +150,10 @@ export function AcObserverMatching() {
               </h2>
               <ol className="mt-7 list-inside list-decimal space-y-5">
                 <li>Same department</li>
-                <li>Same course level this semester</li>
+                <li>
+                  Same course level taught this semester or within the prior two
+                  years
+                </li>
                 <li>Available during at least one meeting day</li>
                 <li>Observee cannot match themself</li>
                 <li>Active professor signed up for evaluation</li>

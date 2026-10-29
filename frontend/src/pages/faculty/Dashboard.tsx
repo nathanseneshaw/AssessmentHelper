@@ -4,6 +4,7 @@ import {
   type EvaluationDeadline,
   evaluationDeadlinePath,
 } from "../../api/evaluations";
+import { type FeedbackSurvey, feedbackPath } from "../../api/feedback";
 import {
   formatDate,
   formatWhen,
@@ -135,6 +136,7 @@ interface UpcomingItem {
   title: string;
   detail: string;
   action: string;
+  disabled?: boolean;
   /** Read after the action by screen readers, to tell apart the links of several rows. */
   actionContext?: string;
   to: string;
@@ -142,20 +144,6 @@ interface UpcomingItem {
   when: string;
   urgent: boolean;
 }
-
-// Process feedback is still a mockup; issue #108 makes it live.
-const feedbackDue: UpcomingItem = {
-  key: "feedback",
-  month: "SEP",
-  day: "28",
-  title: "Process Feedback Due",
-  detail: "CS 3345.002 observation",
-  action: "Start Survey",
-  to: "/faculty/feedback",
-  status: "Action needed",
-  when: "Due Sep 28",
-  urgent: true,
-};
 
 const history = [
   { term: "Spring 2025", detail: "Completed • 2 observations" },
@@ -282,6 +270,18 @@ export function FacultyDashboard() {
     id ? evaluationDeadlinePath(id) : null,
   );
   const reloadObservations = observations.reload;
+  const feedback = useApiResource<FeedbackSurvey[]>(id ? feedbackPath : null);
+  const reloadFeedback = feedback.reload;
+  useEffect(() => onObserverChange(reloadFeedback), [reloadFeedback]);
+  useEffect(() => {
+    const refresh = () => reloadFeedback();
+    window.addEventListener("focus", refresh);
+    const timer = window.setInterval(refresh, 60000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.clearInterval(timer);
+    };
+  }, [reloadFeedback]);
   // The dialogs above announce their writes, such as an accepted request or a submitted observation.
   useEffect(() => onObserverChange(reloadObservations), [reloadObservations]);
   // Submitting an observation notifies the observee, and the status above checks for new notifications, so a
@@ -303,7 +303,45 @@ export function FacultyDashboard() {
   const loaded = id ? observations.data : [];
   const forMe = loaded?.filter((o) => o.role === "OBSERVEE") ?? null;
   const forOthers = loaded?.filter((o) => o.role === "OBSERVER") ?? null;
-  const upcoming = [...(loaded ? observationTasks(loaded) : []), feedbackDue];
+  const feedbackTasks: UpcomingItem[] = (feedback.data ?? [])
+    .filter(
+      (s) =>
+        s.status === "AVAILABLE" ||
+        s.status === "NOT_OPEN" ||
+        s.status === "SUBMITTED",
+    )
+    .map((s) => ({
+      key: `feedback-${s.cycleId}`,
+      ...badge(s.feedbackDeadline),
+      title:
+        s.status === "SUBMITTED"
+          ? "Process Feedback Submitted"
+          : "Process Feedback Due",
+      detail: s.label,
+      action: s.status === "SUBMITTED" ? "View Survey" : "Start Survey",
+      disabled: s.status === "NOT_OPEN",
+      to: `/faculty/feedback?cycle=${s.cycleId}`,
+      status:
+        s.status === "SUBMITTED"
+          ? "Submitted"
+          : s.status === "NOT_OPEN"
+            ? "Not yet available"
+            : "Action needed",
+      when:
+        s.status === "SUBMITTED"
+          ? s.submittedDate
+            ? `Submitted ${formatDate(s.submittedDate)}`
+            : "Submitted"
+          : `Due ${formatDate(s.feedbackDeadline ?? "")}`,
+      urgent: s.status !== "SUBMITTED",
+    }));
+  const upcoming = [
+    ...(loaded ? observationTasks(loaded) : []),
+    ...feedbackTasks,
+  ];
+  const dueCount = upcoming.filter(
+    (item) => item.status !== "Submitted",
+  ).length;
   const summary = summaryItems(
     data,
     deadline.data,
@@ -449,7 +487,7 @@ export function FacultyDashboard() {
       <div className="mt-6 rounded-xl border border-line bg-white p-5">
         <h3 className="font-semibold text-lg">Upcoming</h3>
         <p className="mt-1 mb-4 text-ink/60 text-xs">
-          Next observations and action items
+          {dueCount} {dueCount === 1 ? "item" : "items"} due
         </p>
         {observations.error && (
           <p role="alert" className="mb-4 text-brand-red text-sm">
@@ -511,19 +549,25 @@ export function FacultyDashboard() {
               </div>
               <div className="flex flex-col items-center gap-1">
                 <div className="flex gap-3">
-                  <Link
-                    to={item.to}
-                    className={`rounded-md px-5 py-2 font-medium text-xs ${
-                      item.urgent
-                        ? "bg-btn-light text-ink"
-                        : "bg-brand-green text-white"
-                    }`}
-                  >
-                    {item.action}
-                    {item.actionContext && (
-                      <span className="sr-only">{item.actionContext}</span>
-                    )}
-                  </Link>
+                  {item.disabled ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="cursor-not-allowed rounded-md bg-btn-gray px-5 py-2 font-medium text-ink/60 text-xs"
+                    >
+                      {item.action}
+                    </button>
+                  ) : (
+                    <Link
+                      to={item.to}
+                      className="rounded-md bg-brand-green px-5 py-2 font-medium text-white text-xs"
+                    >
+                      {item.action}
+                      {item.actionContext && (
+                        <span className="sr-only">{item.actionContext}</span>
+                      )}
+                    </Link>
+                  )}
                   <span
                     className={`rounded-md px-5 py-2 font-medium text-xs ${
                       item.urgent

@@ -7,6 +7,7 @@ import {
 } from "../../api/evaluationEligibility";
 import { type AcState, useObserverData } from "../../api/observerEligibility";
 import { ActionButton } from "../../components/ActionButton";
+import { CycleDeadlines } from "../../components/CycleDeadlines";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
 import { OverdueEvaluations } from "./OverdueEvaluations";
@@ -120,20 +121,14 @@ function ListRow({ cells, status }: { cells: string[]; status: ReactNode }) {
 }
 
 export function AcOverview() {
-  const { data: matching, error: matchingError } =
-    useObserverData<AcState>("/ac");
+  const {
+    data: matching,
+    error: matchingError,
+    reload: reloadMatching,
+  } = useObserverData<AcState>("/ac");
   const unmatchedFaculty = (matching?.signups ?? []).filter(
     (s) => s.candidates.length === 0,
   );
-  const deadlines = matching?.cycle
-    ? [
-        `Sign-up Deadline: ${matching.cycle.signupDeadline}`,
-        `Observation Deadline: ${matching.cycle.observationDeadline}`,
-        ...(matching.cycle.feedbackDeadline
-          ? [`Feedback/Survey Deadline: ${matching.cycle.feedbackDeadline}`]
-          : []),
-      ]
-    : ["Loading cycle deadlines..."];
   const [queue, setQueue] = useState<OverdueQueue | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -359,24 +354,7 @@ export function AcOverview() {
         </ListPanel>
       </div>
 
-      <section className="mt-7 rounded-lg border border-line bg-mist px-5.5 pt-5 pb-14">
-        <h2 className="font-semibold text-brand-green">
-          {matching?.cycle?.label ?? "Current cycle"} deadlines
-        </h2>
-        {/* One bulleted line when it fits, otherwise one deadline per line. */}
-        <ul className="mt-4 flex flex-col gap-x-6 gap-y-2 min-[1360px]:flex-row">
-          {deadlines.map((deadline, i) => (
-            <li key={deadline} className="flex gap-x-6">
-              {i > 0 && (
-                <span aria-hidden="true" className="hidden min-[1360px]:inline">
-                  •
-                </span>
-              )}
-              {deadline}
-            </li>
-          ))}
-        </ul>
-      </section>
+      <CycleDeadlines cycle={matching?.cycle} onSaved={reloadMatching} />
     </div>
   );
 }
