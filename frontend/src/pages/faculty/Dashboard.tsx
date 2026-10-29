@@ -1,5 +1,15 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { Link, Outlet } from "react-router-dom";
+import {
+  type EvaluationDeadline,
+  type EvaluationRecord,
+  evaluationDeadlinePath,
+  evaluationRecordsPath,
+  evaluationStatusLabel,
+  initials,
+  observationCountLabel,
+  rankLabel,
+} from "../../api/evaluations";
 import { type FeedbackSurvey, feedbackPath } from "../../api/feedback";
 import {
   formatDate,
@@ -16,26 +26,12 @@ import {
   useObserverData,
 } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
+import { evaluationSummary, type SummaryTone } from "./dashboardSummary";
 
-const summary = [
-  {
-    label: "Evaluation Status",
-    value: "In Progress",
-    note: "Current evaluation cycle",
-    highlight: true,
-  },
-  {
-    label: "Cycle",
-    value: "Every 2 Years",
-    note: "Associate professor schedule",
-  },
-  { label: "Next Due", value: "Mar 2027", note: "Spring 2027 semester" },
-  {
-    label: "Observations This Term",
-    value: "2",
-    note: "One submitted • one scheduled",
-  },
-];
+const TONE_CLASSES: Record<SummaryTone, string> = {
+  highlight: "text-brand-orange",
+  alert: "text-brand-red",
+};
 
 interface UpcomingItem {
   key: string;
@@ -53,11 +49,6 @@ interface UpcomingItem {
   when: string;
   urgent: boolean;
 }
-
-const history = [
-  { term: "Spring 2025", detail: "Completed • 2 observations" },
-  { term: "Fall 2023", detail: "Completed • 2 observations" },
-];
 
 /** "2026-10-03" → OCT and 03. The parts are read as written, so no time zone can move the day. */
 function badge(date: string | null) {
@@ -136,6 +127,48 @@ function ObservationLines({
   ));
 }
 
+/** The newest two finished or earlier cycles for a dashboard card. The API lists the newest first. */
+function HistoryLines({
+  records,
+  error,
+}: {
+  records: EvaluationRecord[] | null;
+  error: string;
+}) {
+  if (error)
+    return (
+      <p className="text-ink/60 text-sm">Couldn't load evaluation history.</p>
+    );
+  if (!records)
+    return <p className="text-ink/60 text-sm">Loading evaluation history...</p>;
+  if (!records.length)
+    return <p className="text-ink/60 text-sm">No previous evaluations yet.</p>;
+  return records.slice(0, 2).map((record) => {
+    const term = `${record.term} ${record.academicYear}`;
+    return (
+      <div
+        key={record.cycleId}
+        className="flex items-center justify-between gap-3"
+      >
+        <div>
+          <p className="font-semibold text-sm">{term}</p>
+          <p className="text-ink/60 text-xs">
+            {evaluationStatusLabel(record.status)} •{" "}
+            {observationCountLabel(record.observationCount)}
+          </p>
+        </div>
+        <Link
+          to={`/faculty/history?cycle=${record.cycleId}`}
+          className="rounded-md bg-brand-green px-4 py-2 font-medium text-white text-xs"
+        >
+          View Evaluation
+          <span className="sr-only"> ({term})</span>
+        </Link>
+      </div>
+    );
+  });
+}
+
 function SectionCard({
   title,
   subtitle,
@@ -178,6 +211,19 @@ export function FacultyDashboard() {
   const reloadObservations = observations.reload;
   const feedback = useApiResource<FeedbackSurvey[]>(id ? feedbackPath : null);
   const reloadFeedback = feedback.reload;
+  const deadline = useApiResource<EvaluationDeadline>(
+    id ? evaluationDeadlinePath(id) : null,
+  );
+  const reloadDeadline = deadline.reload;
+  const records = useApiResource<EvaluationRecord[]>(
+    id ? evaluationRecordsPath(id) : null,
+  );
+  const reloadRecords = records.reload;
+  // Finishing an observation can complete the evaluation, which moves the due date.
+  const reloadEvaluation = useCallback(() => {
+    reloadDeadline();
+    reloadRecords();
+  }, [reloadDeadline, reloadRecords]);
   useEffect(() => onObserverChange(reloadFeedback), [reloadFeedback]);
   useEffect(() => {
     const refresh = () => reloadFeedback();
@@ -190,6 +236,7 @@ export function FacultyDashboard() {
   }, [reloadFeedback]);
   // The dialogs above announce their writes, such as an accepted request or a submitted observation.
   useEffect(() => onObserverChange(reloadObservations), [reloadObservations]);
+  useEffect(() => onObserverChange(reloadEvaluation), [reloadEvaluation]);
   // Submitting an observation notifies the observee, and the status above checks for new notifications, so a
   // new one means the observations changed too. The first load needs no reload.
   const newestNotification = data?.notifications?.reduce(
@@ -202,10 +249,12 @@ export function FacultyDashboard() {
     if (
       seenNotification.current !== undefined &&
       seenNotification.current !== newestNotification
-    )
+    ) {
       reloadObservations();
+      reloadEvaluation();
+    }
     seenNotification.current = newestNotification;
-  }, [newestNotification, reloadObservations]);
+  }, [newestNotification, reloadObservations, reloadEvaluation]);
   const loaded = id ? observations.data : [];
   const forMe = loaded?.filter((o) => o.role === "OBSERVEE") ?? null;
   const forOthers = loaded?.filter((o) => o.role === "OBSERVER") ?? null;
@@ -248,17 +297,25 @@ export function FacultyDashboard() {
   const dueCount = upcoming.filter(
     (item) => item.status !== "Submitted",
   ).length;
-  const liveSummary = summary.map((item) =>
-    item.label === "Observations This Term"
-      ? {
-          ...item,
-          value: String(
-            data?.outgoing?.filter((r) => r.status === "CONFIRMED").length ?? 0,
-          ),
-          note: "Accepted observer requests",
-        }
-      : item,
-  );
+  const summaryCards = evaluationSummary({
+    deadline: deadline.data,
+    deadlineError: deadline.error,
+    records: records.data,
+    cycle: data?.cycle,
+    observations: loaded,
+  });
+  // The cycle in progress is not history yet. Once it is completed, it is.
+  const previousEvaluations =
+    records.data?.filter(
+      (r) =>
+        r.cycleId !== data?.cycle?.cycleId ||
+        r.status?.toUpperCase() === "COMPLETED",
+    ) ?? null;
+  const professorName = data?.professor?.name;
+  const rank = rankLabel(deadline.data?.professorRank);
+  const subtitle = [rank, data?.professor?.department]
+    .filter(Boolean)
+    .join(" • ");
   return (
     <div className="mx-auto max-w-6xl">
       <p className="font-semibold text-brand-green text-xs tracking-wide">
@@ -294,18 +351,16 @@ export function FacultyDashboard() {
         </div>
       </div>
 
-      <div className="mt-6 flex items-center justify-between border-line border-b pb-5">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-line border-b pb-5">
         <div className="flex items-center gap-4">
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-mist font-medium text-brand-green text-sm">
-            P1
+            {professorName ? initials(professorName) : "…"}
           </div>
           <div>
             <p className="font-semibold">
-              {data?.professor?.name ?? "Loading professor..."}
+              {professorName ?? "Loading professor..."}
             </p>
-            <p className="text-ink/60 text-xs">
-              Associate Professor • School of ECS
-            </p>
+            <p className="text-ink/60 text-xs">{subtitle || "Faculty"}</p>
           </div>
         </div>
         <p className="text-ink/60 text-sm">
@@ -370,7 +425,7 @@ export function FacultyDashboard() {
       )}
       <h2 className="mt-6 mb-3 text-ink/70 text-sm">Evaluation summary</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {liveSummary.map((item) => (
+        {summaryCards.map((item) => (
           <div
             key={item.label}
             className="rounded-xl border border-line bg-white p-5"
@@ -378,7 +433,7 @@ export function FacultyDashboard() {
             <p className="text-ink/60 text-xs">{item.label}</p>
             <p
               className={`mt-3 font-bold text-2xl ${
-                item.highlight ? "text-brand-orange" : ""
+                item.tone ? TONE_CLASSES[item.tone] : ""
               }`}
             >
               {item.value}
@@ -496,20 +551,7 @@ export function FacultyDashboard() {
           viewAllLabel="View All"
           viewAllTo="/faculty/history"
         >
-          {history.map((item) => (
-            <div key={item.term} className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-sm">{item.term}</p>
-                <p className="text-ink/60 text-xs">{item.detail}</p>
-              </div>
-              <Link
-                to="/faculty/history"
-                className="rounded-md bg-brand-green px-4 py-2 font-medium text-white text-xs"
-              >
-                View Evaluation
-              </Link>
-            </div>
-          ))}
+          <HistoryLines records={previousEvaluations} error={records.error} />
         </SectionCard>
 
         <SectionCard
