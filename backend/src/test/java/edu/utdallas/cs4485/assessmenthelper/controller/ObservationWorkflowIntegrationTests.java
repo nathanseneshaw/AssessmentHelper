@@ -190,7 +190,8 @@ class ObservationWorkflowIntegrationTests {
                         observation))
                 .isEqualTo(LocalDateTime.parse(NOW));
         assertThat(notificationsTo(leander))
-                .containsExactly("Keira Larkspur submitted the observation of CS 3345.001. Please review it and sign off.");
+                .containsExactly(
+                        "Keira Larkspur submitted the observation of CS 3345.001. Please review it and sign off.");
         assertThat(notificationsTo(keira)).isEmpty();
         assertThat(evaluationStatus()).isEqualTo(evaluation);
 

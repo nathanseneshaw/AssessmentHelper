@@ -150,7 +150,8 @@ class ObservationLockingIntegrationTests {
         assertThat(events())
                 .extracting(e -> e.get("EVENT_TYPE"))
                 .containsExactly("STARTED", "SUBMITTED", "OBSERVEE_COMMENTED", "OBSERVEE_SIGNED", "LOCKED");
-        assertThat(events().subList(2, 5)).allSatisfy(e -> assertThat(e.get("ACTOR_PROFESSOR_ID")).isEqualTo(id(leander)));
+        assertThat(events().subList(2, 5))
+                .allSatisfy(e -> assertThat(e.get("ACTOR_PROFESSOR_ID")).isEqualTo(id(leander)));
         assertThat(eventsAtNow()).isEqualTo(5);
         // The observer is told the observation is complete.
         assertThat(db.queryForList(
@@ -184,7 +185,8 @@ class ObservationLockingIntegrationTests {
                 .andExpect(jsonPath("$.detail").value("The observer has not submitted this observation yet."));
         submit(keira, complete()).andExpect(status().isOk());
 
-        for (AccountPrincipal other : List.of(keira, kaia, dario)) sign(other, "Mine.").andExpect(status().isForbidden());
+        for (AccountPrincipal other : List.of(keira, kaia, dario))
+            sign(other, "Mine.").andExpect(status().isForbidden());
         sign(leander, "x".repeat(4001)).andExpect(status().isBadRequest());
         assertThat(statusOf()).isEqualTo("SUBMITTED");
 
@@ -193,7 +195,9 @@ class ObservationLockingIntegrationTests {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("This observation has already been signed off."));
         assertThat(db.queryForObject(
-                        "SELECT observee_comments FROM observation WHERE observation_id = ?", String.class, observation))
+                        "SELECT observee_comments FROM observation WHERE observation_id = ?",
+                        String.class,
+                        observation))
                 .isEqualTo("Fine.");
         assertThat(events()).extracting(e -> e.get("EVENT_TYPE")).containsOnlyOnce("OBSERVEE_SIGNED", "LOCKED");
     }
@@ -211,7 +215,9 @@ class ObservationLockingIntegrationTests {
         start(keira).andExpect(status().isOk());
         save(keira, List.of()).andExpect(status().isOk());
         assertThat(events()).extracting(e -> e.get("EVENT_TYPE")).containsExactly("STARTED", "EDITED");
-        read(keira).andExpect(status().isOk()).andExpect(jsonPath("$.submittedAt").value(nullValue()));
+        read(keira)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submittedAt").value(nullValue()));
     }
 
     @Test
@@ -220,11 +226,15 @@ class ObservationLockingIntegrationTests {
         List<Object> before = events().stream().map(e -> e.get("EVENT_TYPE")).toList();
         assertThat(before).containsExactly("STARTED", "SUBMITTED", "OBSERVEE_SIGNED", "LOCKED");
 
-        start(keira).andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(SUBMITTED));
+        start(keira)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(SUBMITTED));
         save(keira, List.of(answer(1, 1, "Changed it.")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(SUBMITTED));
-        submit(keira, complete()).andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(SUBMITTED));
+        submit(keira, complete())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(SUBMITTED));
         sign(leander, "Changed my mind.").andExpect(status().isConflict());
         for (AccountPrincipal other : List.of(leander, kaia, dario)) {
             save(other, List.of(answer(1, 1, null))).andExpect(status().isForbidden());
@@ -247,7 +257,9 @@ class ObservationLockingIntegrationTests {
         read(kaia).andExpect(status().isOk());
         read(dario).andExpect(status().isForbidden());
 
-        var views = events().stream().filter(e -> "VIEWED".equals(e.get("EVENT_TYPE"))).toList();
+        var views = events().stream()
+                .filter(e -> "VIEWED".equals(e.get("EVENT_TYPE")))
+                .toList();
         assertThat(views)
                 .extracting(e -> e.get("ACTOR_PROFESSOR_ID"))
                 .containsExactly(id(keira), id(leander), id(kaia));

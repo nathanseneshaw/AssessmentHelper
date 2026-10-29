@@ -381,7 +381,8 @@ public class ObservationService {
         Row o = lock(observationId);
         if (!isObservee(o, principal))
             throw new AccessDeniedException("Only the observee can sign off on this observation.");
-        if (o.status() == Status.COMPLETED) throw new ConflictException("This observation has already been signed off.");
+        if (o.status() == Status.COMPLETED)
+            throw new ConflictException("This observation has already been signed off.");
         if (o.status() != Status.SUBMITTED)
             throw new ConflictException("The observer has not submitted this observation yet.");
         String text = comments == null || comments.isBlank() ? null : comments.strip();
@@ -401,8 +402,8 @@ public class ObservationService {
         notify(
                 o.observer().professorId(),
                 o.signupId(),
-                o.observee().name() + " signed off on the observation of " + o.course().label()
-                        + ". It is complete now.");
+                o.observee().name() + " signed off on the observation of "
+                        + o.course().label() + ". It is complete now.");
         return detail(find(observationId), principal);
     }
 
@@ -418,13 +419,15 @@ public class ObservationService {
         if (!o.locked()) throw new ConflictException("Only a locked record can be forwarded.");
         if (!committeeMayRead(o, principal))
             throw new AccessDeniedException("You can only forward records from your own school.");
-        if (db.queryForObject("SELECT COUNT(*) FROM professor WHERE professor_id=?", Integer.class, recipientProfessorId)
+        if (db.queryForObject(
+                        "SELECT COUNT(*) FROM professor WHERE professor_id=?", Integer.class, recipientProfessorId)
                 == 0) throw new NotFoundException("Professor not found.");
         log(observationId, AuditEvent.FORWARDED, principal, recipientProfessorId);
         notify(
                 recipientProfessorId,
                 o.signupId(),
-                principal.user().name() + " sent you the observation of " + o.course().label() + ".");
+                principal.user().name() + " sent you the observation of "
+                        + o.course().label() + ".");
     }
 
     // Appends to the audit log. This is the only code that touches the table, and it only inserts.
