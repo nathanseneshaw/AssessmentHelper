@@ -142,6 +142,29 @@ nothing in the application updates or deletes its rows. A committee member forwa
 completed record with `POST /api/observations/{id}/forward` and
 `{ "recipientProfessorId": 4 }`. Forwarding logs the event and notifies the recipient but
 does not grant access.
+## Process feedback survey
+
+Observees submit one survey per evaluation cycle from the faculty dashboard's
+**Start Survey** action. The form contains six required 1–5 ratings and optional
+comments (up to 4000 characters). Canceling does not save or submit responses.
+Submitted surveys cannot be edited or submitted again.
+
+The survey opens the day after the cycle's observation deadline and remains open
+through its feedback deadline, using America/Chicago dates. No completed
+observation is required beyond being an active or completed observee in that cycle.
+Missing or invalid deadlines prevent submission. The dashboard shows upcoming
+survey tasks with Start Survey disabled until the observation deadline passes.
+Submitted surveys show a Submitted status and View Survey link, allowing observees
+to reopen their saved ratings, comments, and submission date in a read-only view,
+including after the feedback deadline. Unsubmitted expired tasks are removed.
+
+`GET /api/feedback-surveys` returns the authenticated professor's cycles and survey
+availability. `POST /api/feedback-surveys/{cycleId}` accepts
+`{ "ratings": [1, 2, 3, 4, 5, 4], "comments": "Optional feedback" }`;
+ratings follow the displayed question order. The server enforces ownership,
+deadlines, rating validation, and one submission per professor per cycle.
+
+Restart the backend after this schema change; the demo uses an in-memory database.
 
 ## Overdue evaluation notifications
 

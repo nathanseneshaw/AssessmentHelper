@@ -13,4 +13,9 @@ public record ProcessFeedback(
         String difficulties,
         String improvementComments,
         String observeeComment,
-        LocalDate submittedDate) {}
+        LocalDate submittedDate,
+        Integer clarityRating,
+        Integer schedulingRating,
+        Integer communicationRating,
+        Integer organizationRating,
+        Integer usefulnessRating) {}
