@@ -26,7 +26,7 @@ import {
   useObserverData,
 } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
-import { evaluationSummary, type SummaryTone } from "./dashboardSummary";
+import { MissingObservations } from "../../components/MissingObservations";
 
 const TONE_CLASSES: Record<SummaryTone, string> = {
   highlight: "text-brand-orange",
@@ -423,6 +423,7 @@ export function FacultyDashboard() {
           </ul>
         </section>
       )}
+      <MissingObservations professorId={id} />
       <h2 className="mt-6 mb-3 text-ink/70 text-sm">Evaluation summary</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {summaryCards.map((item) => (

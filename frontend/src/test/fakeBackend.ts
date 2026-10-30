@@ -70,7 +70,12 @@ export function fakeBackend(routes: Record<string, Route> = {}) {
         signedInUser = null;
         return new Response(null, { status: 204 });
       default:
-        return routes[path]?.(init, url) ?? problem(404, "Not found");
+        return (
+          routes[path]?.(init, url) ??
+          (/^\/api\/professors\/\d+\/missing-observations$/.test(path)
+            ? Response.json([])
+            : problem(404, "Not found"))
+        );
     }
   }) as typeof fetch);
 }
