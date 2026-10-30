@@ -11,6 +11,7 @@ import type {
   ObservationDetail,
   ObservationSummary,
 } from "../../api/observations";
+import { dashboard } from "../../test/facultyDashboardFixtures";
 import {
   facultyStateFor,
   OLIVIA,
@@ -42,6 +43,8 @@ beforeEach(() => {
     // The faculty dashboard stays behind the dialog and loads its own data.
     [`/api/observer-eligibility/faculty/${OLIVIA.professorId}`]: () =>
       Response.json(facultyStateFor(OLIVIA)),
+    [`/api/professors/${OLIVIA.professorId}/dashboard`]: () =>
+      Response.json(dashboard),
     [`/api/professors/${OLIVIA.professorId}/observations`]: () => {
       listRequests++;
       return failures.shift() ?? Response.json(list);
@@ -196,9 +199,8 @@ test("a professor nobody has observed yet sees an empty list", async () => {
 });
 
 test("shows the API's reason when the list can't load, and Retry tries again", async () => {
-  // One failure for the dashboard behind the dialog, and one for the dialog.
+  // The dashboard behind the dialog loads its own endpoint, so only the dialog reads this list.
   failures.push(
-    Response.json({ detail: "Observations are unavailable." }, { status: 503 }),
     Response.json({ detail: "Observations are unavailable." }, { status: 503 }),
   );
   const dialog = await openList();
@@ -208,7 +210,7 @@ test("shows the API's reason when the list can't load, and Retry tries again", a
   fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
   await dialog.findByText("CS 3345.001");
   expect(dialog.queryByRole("alert")).toBeNull();
-  expect(listRequests).toBe(3);
+  expect(listRequests).toBe(2);
 });
 
 test("sessions without a faculty profile load nothing", async () => {

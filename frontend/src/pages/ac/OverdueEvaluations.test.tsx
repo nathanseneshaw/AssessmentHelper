@@ -14,6 +14,8 @@ import {
   type OverdueQueue,
 } from "../../api/evaluationEligibility";
 import { AuthProvider } from "../../auth/AuthContext";
+import { metrics } from "../../test/acDashboardFixtures";
+import { OverdueEvaluations } from "./OverdueEvaluations";
 import { AcOverview } from "./Overview";
 
 const originalFetch = globalThis.fetch;
@@ -21,6 +23,17 @@ afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
 });
+
+// The dashboard also loads its KPI metrics, which these tests leave alone.
+function mockFetch(
+  handler: (input: unknown, init?: RequestInit) => Promise<Response>,
+) {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) =>
+    String(input).endsWith("/ac-dashboard/metrics")
+      ? Response.json(metrics)
+      : handler(input, init),
+  ) as unknown as typeof fetch;
+}
 
 const queue: OverdueQueue = {
   cycleId: 1,
@@ -62,6 +75,19 @@ function openDashboard() {
   );
 }
 
+const emptyQueue: OverdueQueue = { ...queue, count: 0, faculty: [] };
+
+function openModal(props: Partial<Parameters<typeof OverdueEvaluations>[0]>) {
+  render(
+    <OverdueEvaluations
+      queue={queue}
+      onClose={() => {}}
+      onNotified={() => {}}
+      {...props}
+    />,
+  );
+}
+
 function sampleFaculty(index: number) {
   const faculty = queue.faculty[index];
   if (!faculty) throw new Error("Missing faculty test fixture");
@@ -85,13 +111,13 @@ test("personalizes rank, interval, name, history, and follow-up", () => {
 
 test("opens overlay, saves edited email, confirms, and offers follow-up without reducing count", async () => {
   let body: Record<string, string> | undefined;
-  globalThis.fetch = mock(async (_input: unknown, init?: RequestInit) => {
+  mockFetch(async (_input: unknown, init?: RequestInit) => {
     if (init?.method === "POST") {
       body = JSON.parse(String(init.body));
       return Response.json({ sentAt: "2026-10-20T10:00:00" });
     }
     return Response.json(queue);
-  }) as unknown as typeof fetch;
+  });
   openDashboard();
   const viewAll = screen.getByRole("button", {
     name: "View all overdue evaluations",
@@ -137,14 +163,14 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
 });
 
 test("failed send keeps draft and overdue status", async () => {
-  globalThis.fetch = mock(async (_input: unknown, init?: RequestInit) =>
+  mockFetch(async (_input: unknown, init?: RequestInit) =>
     init?.method === "POST"
       ? Response.json(
           { detail: "Could not save notification" },
           { status: 500 },
         )
       : Response.json(queue),
-  ) as unknown as typeof fetch;
+  );
   openDashboard();
   const viewAll = screen.getByRole("button", {
     name: "View all overdue evaluations",
@@ -167,11 +193,11 @@ test("failed send keeps draft and overdue status", async () => {
 
 test("shows load error and retries without displaying a fabricated count", async () => {
   let attempts = 0;
-  globalThis.fetch = mock(async (input: unknown) =>
+  mockFetch(async (input: unknown) =>
     String(input).endsWith("/overdue-evaluations") && ++attempts === 1
       ? Response.json({ detail: "Backend unavailable" }, { status: 503 })
       : Response.json({ ...queue, count: 0, faculty: [] }),
-  ) as unknown as typeof fetch;
+  );
   openDashboard();
   await screen.findByRole("alert");
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -190,7 +216,7 @@ test("shows load error and retries without displaying a fabricated count", async
 test("due overlay personalizes an editable email, saves to the due endpoint, and retains its count", async () => {
   let savedUrl = "";
   let savedBody: Record<string, string> | undefined;
-  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+  mockFetch(async (input: unknown, init?: RequestInit) => {
     if (init?.method === "POST") {
       savedUrl = String(input);
       savedBody = JSON.parse(String(init.body));
@@ -201,7 +227,7 @@ test("due overlay personalizes an editable email, saves to the due endpoint, and
         ? queue
         : { ...queue, count: 0, faculty: [] },
     );
-  }) as unknown as typeof fetch;
+  });
   openDashboard();
   const open = screen.getByRole("button", {
     name: "View all faculty due for evaluation",
@@ -247,11 +273,11 @@ test("due overlay personalizes an editable email, saves to the due endpoint, and
 
 test("due load failures can be retried independently and empty due results are explicit", async () => {
   let dueRequests = 0;
-  globalThis.fetch = mock(async (input: unknown) =>
+  mockFetch(async (input: unknown) =>
     String(input).endsWith("/due-evaluations") && ++dueRequests === 1
       ? Response.json({ detail: "Due service unavailable" }, { status: 503 })
       : Response.json({ ...queue, count: 0, faculty: [] }),
-  ) as unknown as typeof fetch;
+  );
   openDashboard();
   await screen.findByRole("alert");
   expect(
@@ -265,4 +291,86 @@ test("due load failures can be retried independently and empty due results are e
     screen.getByRole("button", { name: "Retry due evaluations" }),
   );
   await screen.findByText("No faculty are due this cycle.");
+});
+
+const notSignedUp = {
+  kind: "due",
+  title: "Faculty Not Yet Signed Up",
+  countLabel: "not signed up",
+  emptyMessage: "All due faculty have signed up.",
+} as const;
+
+test("custom title and count label replace the default wording without changing the due rows or email", () => {
+  openModal(notSignedUp);
+  const dialog = screen.getByRole("dialog", {
+    name: "Faculty Not Yet Signed Up",
+  });
+  expect(
+    within(dialog).getByRole("heading", { name: "Faculty Not Yet Signed Up" }),
+  ).toBeDefined();
+  expect(
+    within(dialog).getByText(
+      "Fall 2026 evaluation cycle • 2 faculty not signed up",
+    ),
+  ).toBeDefined();
+  expect(within(dialog).queryByText("Faculty Due for Evaluation")).toBeNull();
+  expect(
+    within(dialog).queryByText("All due faculty have signed up."),
+  ).toBeNull();
+  expect(
+    within(dialog).getByRole("columnheader", { name: "Next Due" }),
+  ).toBeDefined();
+  const notify = within(dialog).getByRole("button", {
+    name: "Notify Alice Nguyen",
+  });
+  const row = notify.closest("tr");
+  if (!row) throw new Error("Missing professor row");
+  expect(within(row).getByText("Due")).toBeDefined();
+  fireEvent.click(notify);
+  expect((screen.getByLabelText("Subject") as HTMLInputElement).value).toBe(
+    "Faculty Evaluation Due - Fall 2026",
+  );
+});
+
+test("custom empty message replaces the default empty state", () => {
+  openModal({ ...notSignedUp, queue: emptyQueue });
+  const dialog = screen.getByRole("dialog", {
+    name: "Faculty Not Yet Signed Up",
+  });
+  expect(
+    within(dialog).getByText(
+      "Fall 2026 evaluation cycle • 0 faculty not signed up",
+    ),
+  ).toBeDefined();
+  expect(
+    within(dialog).getByText("All due faculty have signed up."),
+  ).toBeDefined();
+  expect(
+    within(dialog).queryByText("No faculty are due for evaluation."),
+  ).toBeNull();
+});
+
+test("default wording is derived from kind when no custom text is passed", () => {
+  openModal({ kind: "due", queue: emptyQueue });
+  let dialog = screen.getByRole("dialog", {
+    name: "Faculty Due for Evaluation",
+  });
+  expect(
+    within(dialog).getByText("Fall 2026 evaluation cycle • 0 faculty due"),
+  ).toBeDefined();
+  expect(
+    within(dialog).getByText("No faculty are due for evaluation."),
+  ).toBeDefined();
+  cleanup();
+
+  openModal({ queue: emptyQueue });
+  dialog = screen.getByRole("dialog", {
+    name: "Faculty Overdue for Evaluation",
+  });
+  expect(
+    within(dialog).getByText("Fall 2026 evaluation cycle • 0 faculty overdue"),
+  ).toBeDefined();
+  expect(
+    within(dialog).getByText("No faculty are overdue for evaluation."),
+  ).toBeDefined();
 });

@@ -40,6 +40,8 @@ export interface Signup {
   windowStart: string;
   windowEnd: string;
   released: boolean;
+  /** Who observes this signup, once a request is accepted or the committee assigns someone. */
+  observerName: string | null;
   candidates: Candidate[];
 }
 export interface ObserverRequest {
@@ -77,6 +79,11 @@ export const postObserver = <T = void>(path: string, body?: unknown) =>
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
+  });
+// Everyone who passes the eligibility rules for a signup, not only its listed candidates.
+export const getEligibleObservers = (signupId: number, signal?: AbortSignal) =>
+  apiFetch<Candidate[]>(`${observerBase}/signups/${signupId}/eligible`, {
+    signal,
   });
 // A null path loads nothing, for sessions without a faculty profile.
 export function useObserverData<T>(path: string | null) {

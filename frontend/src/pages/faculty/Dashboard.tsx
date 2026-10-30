@@ -1,24 +1,20 @@
-import { type ReactNode, useCallback, useEffect, useRef } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link, Outlet } from "react-router-dom";
 import {
-  type EvaluationDeadline,
-  type EvaluationRecord,
-  evaluationDeadlinePath,
-  evaluationRecordsPath,
-  evaluationStatusLabel,
-  initials,
-  observationCountLabel,
-  rankLabel,
-} from "../../api/evaluations";
+  type FacultyDashboard as Dashboard,
+  getFacultyDashboard,
+  type ObservationItem,
+  type ObservationStatus,
+  type Upcoming,
+} from "../../api/facultyDashboard";
 import { type FeedbackSurvey, feedbackPath } from "../../api/feedback";
-import {
-  formatDate,
-  formatWhen,
-  type ObservationSummary,
-  professorObservationsPath,
-  STATUS_LABELS,
-  useApiResource,
-} from "../../api/observations";
+import { formatWhen, useApiResource } from "../../api/observations";
 import {
   type FacultyState,
   observerButton,
@@ -26,12 +22,141 @@ import {
   useObserverData,
 } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
-import { evaluationSummary, type SummaryTone } from "./dashboardSummary";
+import { longDate, monthYear, shortDate } from "../../format";
 
-const TONE_CLASSES: Record<SummaryTone, string> = {
-  highlight: "text-brand-orange",
-  alert: "text-brand-red",
+const RANKS: Record<string, string> = {
+  ASSISTANT: "Assistant Professor",
+  ASSOCIATE: "Associate Professor",
+  FULL: "Professor",
 };
+
+const OBSERVATION_STATUS: Record<ObservationStatus, string> = {
+  NOT_STARTED: "Not started",
+  IN_PROGRESS: "In progress",
+  SUBMITTED: "Submitted",
+  COMPLETED: "Completed",
+};
+
+// The dashboard shows the newest few; the View All pages have the rest.
+const PREVIEW = 2;
+
+function titleCase(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+}
+
+function rankTitle(rank: string | null) {
+  return rank ? (RANKS[rank] ?? titleCase(rank)) : null;
+}
+
+function plural(count: number, noun: string) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+/** The day it happened, or the day it is planned for. completedAt has a time of day, so only its date is used. */
+function observedOn(observation: ObservationItem) {
+  const day = observation.completedAt?.slice(0, 10) ?? observation.date;
+  return day ? longDate(day) : "Not scheduled";
+}
+
+/** An observation's status, or Overdue once its date has passed before the form was submitted. */
+function statusLabel(status: ObservationStatus | null, overdue: boolean) {
+  if (overdue) return "Overdue";
+  return status ? OBSERVATION_STATUS[status] : "";
+}
+
+interface SummaryCard {
+  label: string;
+  value: string;
+  note: string;
+  highlight?: boolean;
+}
+
+function summary({
+  evaluation,
+  schedule,
+  termObservations,
+}: Dashboard): SummaryCard[] {
+  const rank = rankTitle(schedule.rank);
+  const status = {
+    NOT_DUE: {
+      value: "Not Due",
+      note: schedule.nextDueSemester
+        ? `Next evaluation in ${schedule.nextDueSemester}`
+        : "Nothing to do this cycle",
+    },
+    NOT_SIGNED_UP: {
+      value: "Sign-up Needed",
+      note: evaluation.signupDeadline
+        ? `Sign up by ${longDate(evaluation.signupDeadline)}`
+        : "Sign up for this cycle",
+    },
+    AWAITING_OBSERVER: {
+      value: "Awaiting Observer",
+      note: `Signed up for ${evaluation.course}`,
+    },
+    SCHEDULED: {
+      value: "Scheduled",
+      note: `${evaluation.observer} • ${
+        evaluation.observationDate
+          ? longDate(evaluation.observationDate)
+          : "Not scheduled"
+      }`,
+    },
+    SUBMITTED: {
+      value: "Submitted",
+      note: `${evaluation.observer} • ${
+        evaluation.observationDate
+          ? longDate(evaluation.observationDate)
+          : "Not scheduled"
+      }`,
+    },
+    COMPLETED: {
+      value: "Completed",
+      note: evaluation.completedAt
+        ? `Observed ${longDate(evaluation.completedAt.slice(0, 10))}`
+        : "Observation completed",
+    },
+  }[evaluation.status];
+  return [
+    { label: "Evaluation Status", ...status, highlight: true },
+    {
+      label: "Cycle",
+      value: schedule.intervalYears
+        ? `Every ${plural(schedule.intervalYears, "Year")}`
+        : "Not set",
+      note: rank ? `${rank} schedule` : "No evaluation policy applies",
+    },
+    {
+      label: "Next Due",
+      value: schedule.nextDueDate ? monthYear(schedule.nextDueDate) : "Not set",
+      note: schedule.nextDueSemester
+        ? `${schedule.dueStatus === "Overdue" ? "Overdue • " : ""}${schedule.nextDueSemester} semester`
+        : "No due date on file",
+    },
+    {
+      label: "Observations This Term",
+      value: String(termObservations.total),
+      note:
+        termObservations.total > 0
+          ? `${termObservations.completed} completed • ${termObservations.scheduled} scheduled`
+          : "None yet",
+    },
+  ];
+}
+
+function due(date: string | null) {
+  return date ? `Due ${shortDate(date)}` : "No deadline set";
+}
 
 interface UpcomingItem {
   key: string;
@@ -50,81 +175,96 @@ interface UpcomingItem {
   urgent: boolean;
 }
 
-/** "2026-10-03" → OCT and 03. The parts are read as written, so no time zone can move the day. */
+/** "2026-10-03" → OCT and 03, or both empty for no date. */
 function badge(date: string | null) {
-  const [year, month, day] = (date ?? "").split("-").map(Number);
-  if (!year || !month || !day) return { month: "", day: "" };
+  return date
+    ? {
+        month: new Date(date)
+          .toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })
+          .toUpperCase(),
+        day: new Date(date).toLocaleDateString("en-US", {
+          day: "2-digit",
+          timeZone: "UTC",
+        }),
+      }
+    : { month: "", day: "" };
+}
+
+/** The cycle's process feedback survey. It shows, disabled, before it opens, and goes away once it has closed. */
+function feedbackItem(survey: FeedbackSurvey): UpcomingItem {
+  const submitted = survey.status === "SUBMITTED";
   return {
-    month: new Date(year, month - 1, day)
-      .toLocaleString("en-US", { month: "short" })
-      .toUpperCase(),
-    day: String(day).padStart(2, "0"),
+    ...badge(survey.feedbackDeadline),
+    key: `feedback-${survey.cycleId}`,
+    title: submitted ? "Process Feedback Submitted" : "Process Feedback Due",
+    detail: survey.label,
+    action: submitted ? "View Survey" : "Start Survey",
+    disabled: survey.status === "NOT_OPEN",
+    to: `/faculty/feedback?cycle=${survey.cycleId}`,
+    status: submitted
+      ? "Submitted"
+      : survey.status === "NOT_OPEN"
+        ? "Not yet available"
+        : "Action needed",
+    when: submitted
+      ? survey.submittedDate
+        ? `Submitted ${longDate(survey.submittedDate)}`
+        : "Submitted"
+      : due(survey.feedbackDeadline),
+    urgent: !submitted,
   };
 }
 
-/**
- * What the professor has to do next: start or continue the observations they make. Soonest first, then the ones
- * without a date.
- */
-function observationTasks(observations: ObservationSummary[]): UpcomingItem[] {
-  // ISO dates and times sort as plain strings. An empty one stands for no date, and sorts last.
-  const start = (o: ObservationSummary) =>
-    o.observationDate ? `${o.observationDate}T${o.startTime ?? ""}` : "";
-  const soonest = (a: ObservationSummary, b: ObservationSummary) => {
-    const [x, y] = [start(a), start(b)];
-    if (x === y) return a.observationId - b.observationId;
-    if (!x || !y) return x ? -1 : 1;
-    return x < y ? -1 : 1;
-  };
-  return observations
-    .filter(
-      (o) =>
-        o.role === "OBSERVER" &&
-        (o.status === "ACCEPTED" ||
-          o.status === "SCHEDULED" ||
-          o.status === "IN_PROGRESS"),
-    )
-    .sort(soonest)
-    .map((o) => ({
-      key: `observation-${o.observationId}`,
-      ...badge(o.observationDate),
-      title: `Observation — ${o.courseLabel}`,
-      detail: `Observee: ${o.observeeName}`,
-      action: o.status === "IN_PROGRESS" ? "Continue" : "Start Observation",
-      actionContext: ` (${o.courseLabel})`,
-      to: `/faculty/observations/${o.observationId}`,
-      status: STATUS_LABELS[o.status],
-      when: formatWhen(o.observationDate, o.startTime) ?? "Not scheduled",
-      urgent: false,
-    }));
-}
-
-/** The newest two observations for a dashboard card. The API lists the newest first. */
-function ObservationLines({
-  observations,
-  error,
-  person,
-}: {
-  observations: ObservationSummary[] | null;
-  error: string;
-  person: (observation: ObservationSummary) => string;
-}) {
-  if (error)
-    return <p className="text-ink/60 text-sm">Couldn't load observations.</p>;
-  if (!observations)
-    return <p className="text-ink/60 text-sm">Loading observations...</p>;
-  if (!observations.length)
-    return <p className="text-ink/60 text-sm">No observations yet.</p>;
-  return observations.slice(0, 2).map((o) => (
-    <div key={o.observationId}>
-      <p className="font-semibold text-sm">{o.courseLabel}</p>
-      <p className="text-ink/60 text-xs">{person(o)}</p>
-      <p className="text-ink/60 text-xs">
-        {STATUS_LABELS[o.status]} •{" "}
-        {o.observationDate ? formatDate(o.observationDate) : "Not scheduled"}
-      </p>
-    </div>
-  ));
+function upcomingItem(item: Upcoming, cycleLabel: string): UpcomingItem {
+  switch (item.type) {
+    case "SIGNUP":
+      return {
+        ...badge(item.date),
+        key: "signup",
+        title: "Sign Up for Evaluation",
+        detail: `${cycleLabel} cycle`,
+        action: "Sign Up",
+        to: "/faculty/signup",
+        status: "Action needed",
+        when: due(item.date),
+        urgent: true,
+      };
+    case "FEEDBACK":
+      return {
+        ...badge(item.date),
+        key: `feedback-${item.observationId}`,
+        title: "Process Feedback Due",
+        detail: `${item.course} observation`,
+        action: "Start Survey",
+        actionContext: ` (${item.course})`,
+        to: "/faculty/feedback",
+        status: item.overdue ? "Overdue" : "Action needed",
+        when: due(item.date),
+        urgent: true,
+      };
+    case "OBSERVATION": {
+      const observing = item.role === "OBSERVER";
+      return {
+        ...badge(item.date),
+        key: `observation-${item.observationId}`,
+        title: `Observation — ${item.course}`,
+        detail: observing ? `Observee: ${item.with}` : `Observer: ${item.with}`,
+        // The observer fills in the form. The observee can open it only once it is submitted, so they get their list.
+        action: !observing
+          ? "View Details"
+          : item.status === "IN_PROGRESS"
+            ? "Continue"
+            : "Start Observation",
+        actionContext: ` (${item.course})`,
+        to: observing
+          ? `/faculty/observations/${item.observationId}`
+          : "/faculty/observations/me",
+        status: statusLabel(item.status, item.overdue),
+        when: formatWhen(item.date, item.startTime) ?? "Not scheduled",
+        urgent: item.overdue,
+      };
+    }
+  }
 }
 
 /** The newest two finished or earlier cycles for a dashboard card. The API lists the newest first. */
@@ -199,16 +339,59 @@ function SectionCard({
   );
 }
 
+/** The newest observations for a dashboard card. The API lists the newest first. */
+function ObservationList({
+  observations,
+}: {
+  observations: ObservationItem[];
+}) {
+  if (observations.length === 0)
+    return <p className="text-ink/60 text-sm">No observations yet.</p>;
+  return observations.slice(0, PREVIEW).map((observation) => (
+    <div key={observation.observationId}>
+      <p className="font-semibold text-sm">{observation.course}</p>
+      <p className="text-ink/60 text-xs">
+        {observation.role === "OBSERVEE" ? "Observer" : "Observee"}:{" "}
+        {observation.with}
+      </p>
+      <p className="text-ink/60 text-xs">
+        {statusLabel(observation.status, observation.overdue)} •{" "}
+        {observedOn(observation)}
+      </p>
+    </div>
+  ));
+}
+
 export function FacultyDashboard() {
   const { user } = useAuth();
   const id = user?.professorId;
   const { data, error } = useObserverData<FacultyState>(
     id ? `/faculty/${id}` : null,
   );
-  const observations = useApiResource<ObservationSummary[]>(
-    id ? professorObservationsPath(id) : null,
-  );
-  const reloadObservations = observations.reload;
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [dashboardError, setDashboardError] = useState("");
+  const [reload, setReload] = useState(0);
+
+  // Retry deliberately reruns the request even though the professor is unchanged.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is an explicit retry trigger.
+  useEffect(() => {
+    if (!id) return;
+    const controller = new AbortController();
+    setDashboardError("");
+    getFacultyDashboard(id, controller.signal)
+      .then(setDashboard)
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setDashboardError(
+            cause instanceof Error
+              ? cause.message
+              : "Unable to load your evaluation summary.",
+          );
+      });
+    return () => controller.abort();
+  }, [id, reload]);
+
+  const refresh = useCallback(() => setReload((value) => value + 1), []);
   const feedback = useApiResource<FeedbackSurvey[]>(id ? feedbackPath : null);
   const reloadFeedback = feedback.reload;
   const deadline = useApiResource<EvaluationDeadline>(
@@ -225,20 +408,20 @@ export function FacultyDashboard() {
     reloadRecords();
   }, [reloadDeadline, reloadRecords]);
   useEffect(() => onObserverChange(reloadFeedback), [reloadFeedback]);
+  // A survey opens once the observation deadline passes, so it is checked again on focus and every minute.
   useEffect(() => {
-    const refresh = () => reloadFeedback();
-    window.addEventListener("focus", refresh);
-    const timer = window.setInterval(refresh, 60000);
+    const check = () => reloadFeedback();
+    window.addEventListener("focus", check);
+    const timer = window.setInterval(check, 60000);
     return () => {
-      window.removeEventListener("focus", refresh);
+      window.removeEventListener("focus", check);
       window.clearInterval(timer);
     };
   }, [reloadFeedback]);
   // The dialogs above announce their writes, such as an accepted request or a submitted observation.
-  useEffect(() => onObserverChange(reloadObservations), [reloadObservations]);
-  useEffect(() => onObserverChange(reloadEvaluation), [reloadEvaluation]);
+  useEffect(() => onObserverChange(refresh), [refresh]);
   // Submitting an observation notifies the observee, and the status above checks for new notifications, so a
-  // new one means the observations changed too. The first load needs no reload.
+  // new one means the dashboard changed too. The first load needs no reload.
   const newestNotification = data?.notifications?.reduce(
     (newest, n) => Math.max(newest, n.notificationId),
     0,
@@ -249,73 +432,32 @@ export function FacultyDashboard() {
     if (
       seenNotification.current !== undefined &&
       seenNotification.current !== newestNotification
-    ) {
-      reloadObservations();
-      reloadEvaluation();
-    }
-    seenNotification.current = newestNotification;
-  }, [newestNotification, reloadObservations, reloadEvaluation]);
-  const loaded = id ? observations.data : [];
-  const forMe = loaded?.filter((o) => o.role === "OBSERVEE") ?? null;
-  const forOthers = loaded?.filter((o) => o.role === "OBSERVER") ?? null;
-  const feedbackTasks: UpcomingItem[] = (feedback.data ?? [])
-    .filter(
-      (s) =>
-        s.status === "AVAILABLE" ||
-        s.status === "NOT_OPEN" ||
-        s.status === "SUBMITTED",
     )
-    .map((s) => ({
-      key: `feedback-${s.cycleId}`,
-      ...badge(s.feedbackDeadline),
-      title:
-        s.status === "SUBMITTED"
-          ? "Process Feedback Submitted"
-          : "Process Feedback Due",
-      detail: s.label,
-      action: s.status === "SUBMITTED" ? "View Survey" : "Start Survey",
-      disabled: s.status === "NOT_OPEN",
-      to: `/faculty/feedback?cycle=${s.cycleId}`,
-      status:
-        s.status === "SUBMITTED"
-          ? "Submitted"
-          : s.status === "NOT_OPEN"
-            ? "Not yet available"
-            : "Action needed",
-      when:
-        s.status === "SUBMITTED"
-          ? s.submittedDate
-            ? `Submitted ${formatDate(s.submittedDate)}`
-            : "Submitted"
-          : `Due ${formatDate(s.feedbackDeadline ?? "")}`,
-      urgent: s.status !== "SUBMITTED",
-    }));
+      refresh();
+    seenNotification.current = newestNotification;
+  }, [newestNotification, refresh]);
+
+  const profile = dashboard?.profile;
+  const role = [rankTitle(profile?.rank ?? null), profile?.school]
+    .filter(Boolean)
+    .join(" • ");
+  // Process feedback comes from the feedback survey, so the summary's own feedback items are left out.
   const upcoming = [
-    ...(loaded ? observationTasks(loaded) : []),
-    ...feedbackTasks,
+    ...(dashboard?.upcoming ?? [])
+      .filter((item) => item.type !== "FEEDBACK")
+      .map((item) => upcomingItem(item, dashboard?.cycleLabel ?? "")),
+    ...(feedback.data ?? [])
+      .filter(
+        (s) =>
+          s.status === "AVAILABLE" ||
+          s.status === "NOT_OPEN" ||
+          s.status === "SUBMITTED",
+      )
+      .map(feedbackItem),
   ];
   const dueCount = upcoming.filter(
     (item) => item.status !== "Submitted",
   ).length;
-  const summaryCards = evaluationSummary({
-    deadline: deadline.data,
-    deadlineError: deadline.error,
-    records: records.data,
-    cycle: data?.cycle,
-    observations: loaded,
-  });
-  // The cycle in progress is not history yet. Once it is completed, it is.
-  const previousEvaluations =
-    records.data?.filter(
-      (r) =>
-        r.cycleId !== data?.cycle?.cycleId ||
-        r.status?.toUpperCase() === "COMPLETED",
-    ) ?? null;
-  const professorName = data?.professor?.name;
-  const rank = rankLabel(deadline.data?.professorRank);
-  const subtitle = [rank, data?.professor?.department]
-    .filter(Boolean)
-    .join(" • ");
   return (
     <div className="mx-auto max-w-6xl">
       <p className="font-semibold text-brand-green text-xs tracking-wide">
@@ -353,14 +495,17 @@ export function FacultyDashboard() {
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-line border-b pb-5">
         <div className="flex items-center gap-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-mist font-medium text-brand-green text-sm">
-            {professorName ? initials(professorName) : "…"}
+          <div
+            aria-hidden="true"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-mist font-medium text-brand-green text-sm"
+          >
+            {profile && initials(profile.name)}
           </div>
           <div>
             <p className="font-semibold">
-              {professorName ?? "Loading professor..."}
+              {data?.professor?.name ?? profile?.name ?? "Loading professor..."}
             </p>
-            <p className="text-ink/60 text-xs">{subtitle || "Faculty"}</p>
+            {role && <p className="text-ink/60 text-xs">{role}</p>}
           </div>
         </div>
         <p className="text-ink/60 text-sm">
@@ -424,162 +569,184 @@ export function FacultyDashboard() {
         </section>
       )}
       <h2 className="mt-6 mb-3 text-ink/70 text-sm">Evaluation summary</h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {summaryCards.map((item) => (
-          <div
-            key={item.label}
-            className="rounded-xl border border-line bg-white p-5"
+      {dashboardError ? (
+        <p role="alert" className="text-brand-red text-sm">
+          {dashboardError}{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => setReload((value) => value + 1)}
           >
-            <p className="text-ink/60 text-xs">{item.label}</p>
-            <p
-              className={`mt-3 font-bold text-2xl ${
-                item.tone ? TONE_CLASSES[item.tone] : ""
-              }`}
-            >
-              {item.value}
-            </p>
-            <p className="mt-3 text-ink/60 text-xs">{item.note}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-6 rounded-xl border border-line bg-white p-5">
-        <h3 className="font-semibold text-lg">Upcoming</h3>
-        <p className="mt-1 mb-4 text-ink/60 text-xs">
-          {dueCount} {dueCount === 1 ? "item" : "items"} due
+            Retry evaluation summary
+          </button>
         </p>
-        {observations.error && (
-          <p role="alert" className="mb-4 text-brand-red text-sm">
-            {observations.error}{" "}
-            <button
-              type="button"
-              className="underline"
-              onClick={reloadObservations}
-            >
-              Retry
-            </button>
-          </p>
-        )}
-        <div className="flex flex-col">
-          {!loaded && !observations.error && (
-            <p className="border-line border-t py-5 text-ink/60 text-sm">
-              Loading observations...
-            </p>
-          )}
-          {!upcoming.length && (
-            <p className="border-line border-t py-5 text-ink/60 text-sm">
-              Nothing upcoming.
-            </p>
-          )}
-          {upcoming.map((item) => (
-            <div
-              key={item.key}
-              className="flex flex-wrap items-center justify-between gap-4 border-line border-t py-5"
-            >
-              <div className="flex items-center gap-4">
-                {/* The date is repeated in words below the action. */}
-                <div
-                  aria-hidden="true"
-                  className={`flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-md ${
-                    item.urgent
-                      ? "bg-peach text-brand-orange"
-                      : item.month
-                        ? "bg-mist text-brand-green"
-                        : "border border-line bg-white text-ink/60"
+      ) : !dashboard ? (
+        id && <p className="text-muted text-sm">Loading evaluation summary…</p>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {summary(dashboard).map((item) => (
+              <div
+                key={item.label}
+                className="rounded-xl border border-line bg-white p-5"
+              >
+                <p className="text-ink/60 text-xs">{item.label}</p>
+                <p
+                  className={`mt-3 font-bold text-2xl ${
+                    item.highlight ? "text-brand-orange" : ""
                   }`}
                 >
-                  {item.month ? (
-                    <>
-                      <span className="font-semibold text-[10px]">
-                        {item.month}
-                      </span>
-                      <span className="font-bold text-lg leading-none">
-                        {item.day}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="font-semibold text-xs">TBD</span>
-                  )}
-                </div>
-                <div>
-                  <p className="font-semibold">{item.title}</p>
-                  <p className="text-ink/60 text-xs">{item.detail}</p>
-                </div>
+                  {item.value}
+                </p>
+                <p className="mt-3 text-ink/60 text-xs">{item.note}</p>
               </div>
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex gap-3">
-                  {item.disabled ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="cursor-not-allowed rounded-md bg-btn-gray px-5 py-2 font-medium text-ink/60 text-xs"
+            ))}
+          </div>
+
+          <div className="mt-6 rounded-xl border border-line bg-white p-5">
+            <h3 className="font-semibold text-lg">Upcoming</h3>
+            <p className="mt-1 mb-4 text-ink/60 text-xs">
+              {dueCount} {dueCount === 1 ? "item" : "items"} due
+            </p>
+            <div className="flex flex-col">
+              {upcoming.length === 0 && (
+                <p className="border-line border-t py-5 text-muted text-sm">
+                  Nothing coming up this cycle.
+                </p>
+              )}
+              {upcoming.map((item) => (
+                <div
+                  key={item.key}
+                  className="flex flex-wrap items-center justify-between gap-4 border-line border-t py-5"
+                >
+                  <div className="flex items-center gap-4">
+                    {/* The date is repeated in words below the action. */}
+                    <div
+                      aria-hidden="true"
+                      className={`flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-md ${
+                        item.urgent
+                          ? "bg-peach text-brand-orange"
+                          : item.month
+                            ? "bg-mist text-brand-green"
+                            : "border border-line bg-white text-ink/60"
+                      }`}
                     >
-                      {item.action}
-                    </button>
-                  ) : (
-                    <Link
-                      to={item.to}
-                      className="rounded-md bg-brand-green px-5 py-2 font-medium text-white text-xs"
-                    >
-                      {item.action}
-                      {item.actionContext && (
-                        <span className="sr-only">{item.actionContext}</span>
+                      {item.month ? (
+                        <>
+                          <span className="font-semibold text-[10px]">
+                            {item.month}
+                          </span>
+                          <span className="font-bold text-lg leading-none">
+                            {item.day}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="font-semibold text-xs">TBD</span>
                       )}
-                    </Link>
-                  )}
-                  <span
-                    className={`rounded-md px-5 py-2 font-medium text-xs ${
-                      item.urgent
-                        ? "bg-peach text-brand-orange"
-                        : "bg-mist text-brand-green"
-                    }`}
-                  >
-                    {item.status}
-                  </span>
+                    </div>
+                    <div>
+                      <p className="font-semibold">{item.title}</p>
+                      <p className="text-ink/60 text-xs">{item.detail}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="flex gap-3">
+                      {item.disabled ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="cursor-not-allowed rounded-md bg-btn-gray px-5 py-2 font-medium text-ink/60 text-xs"
+                        >
+                          {item.action}
+                        </button>
+                      ) : (
+                        <Link
+                          to={item.to}
+                          className="rounded-md bg-brand-green px-5 py-2 font-medium text-white text-xs"
+                        >
+                          {item.action}
+                          {item.actionContext && (
+                            <span className="sr-only">
+                              {item.actionContext}
+                            </span>
+                          )}
+                        </Link>
+                      )}
+                      <span
+                        className={`rounded-md px-5 py-2 font-medium text-xs ${
+                          item.urgent
+                            ? "bg-peach text-brand-orange"
+                            : "bg-mist text-brand-green"
+                        }`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+                    <p className="self-end text-ink/60 text-xs">{item.when}</p>
+                  </div>
                 </div>
-                <p className="self-end text-ink/60 text-xs">{item.when}</p>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <SectionCard
-          title="Evaluation History"
-          subtitle="Your previous evaluation cycles"
-          viewAllLabel="View All"
-          viewAllTo="/faculty/history"
-        >
-          <HistoryLines records={previousEvaluations} error={records.error} />
-        </SectionCard>
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            <SectionCard
+              title="Evaluation History"
+              subtitle="Your previous evaluation cycles"
+              viewAllLabel="View All"
+              viewAllTo="/faculty/history"
+            >
+              {dashboard.history.length === 0 && (
+                <p className="text-muted text-sm">No previous evaluations.</p>
+              )}
+              {dashboard.history.slice(0, PREVIEW).map((item) => (
+                <div
+                  key={item.cycleId}
+                  className="flex items-center justify-between"
+                >
+                  <div>
+                    <p className="font-semibold text-sm">
+                      {item.term} {item.academicYear}
+                    </p>
+                    <p className="text-ink/60 text-xs">
+                      {[
+                        item.status && titleCase(item.status),
+                        plural(item.observationCount, "observation"),
+                      ]
+                        .filter(Boolean)
+                        .join(" • ")}
+                    </p>
+                  </div>
+                  <Link
+                    to="/faculty/history"
+                    className="rounded-md bg-brand-green px-4 py-2 font-medium text-white text-xs"
+                  >
+                    View Evaluation
+                  </Link>
+                </div>
+              ))}
+            </SectionCard>
 
-        <SectionCard
-          title="Observations for Me"
-          subtitle="Current and previous course observations done for my evaluations"
-          viewAllLabel="View All Records"
-          viewAllTo="/faculty/observations/me"
-        >
-          <ObservationLines
-            observations={forMe}
-            error={observations.error}
-            person={(o) => `Observer: ${o.observerName}`}
-          />
-        </SectionCard>
+            <SectionCard
+              title="Observations for Me"
+              subtitle="Current and previous course observations done for my evaluations"
+              viewAllLabel="View All Records"
+              viewAllTo="/faculty/observations/me"
+            >
+              <ObservationList observations={dashboard.observationsForMe} />
+            </SectionCard>
 
-        <SectionCard
-          title="Observations for Others"
-          subtitle="Course observations I completed for other professor evaluations"
-          viewAllLabel="View All Records"
-          viewAllTo="/faculty/observations/others"
-        >
-          <ObservationLines
-            observations={forOthers}
-            error={observations.error}
-            person={(o) => `Observee: ${o.observeeName}`}
-          />
-        </SectionCard>
-      </div>
+            <SectionCard
+              title="Observations for Others"
+              subtitle="Course observations I completed for other professor evaluations"
+              viewAllLabel="View All Records"
+              viewAllTo="/faculty/observations/others"
+            >
+              <ObservationList observations={dashboard.observationsForOthers} />
+            </SectionCard>
+          </div>
+        </>
+      )}
 
       <Outlet />
     </div>

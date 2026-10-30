@@ -12,6 +12,7 @@ import type {
   ObserverRequest,
   RequestOptions,
 } from "../../api/observerRequests";
+import { dashboard } from "../../test/facultyDashboardFixtures";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 import { faculty } from "../../test/observerFixtures";
 
@@ -59,6 +60,7 @@ beforeEach(() => {
     // The faculty dashboard behind the dialog loads its own status and observations.
     "/api/observer-eligibility/faculty/4": () => Response.json(faculty),
     "/api/professors/4/observations": () => Response.json([]),
+    "/api/professors/4/dashboard": () => Response.json(dashboard),
     "/api/professors/4/observer-requests": async (init) => {
       if (init?.method === "POST") {
         writes.push(JSON.parse(String(init.body)));

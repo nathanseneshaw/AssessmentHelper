@@ -1,6 +1,10 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -74,6 +78,12 @@ class ObserverEligibilityControllerTests {
         mvc.perform(as(DARIO, get("/api/observer-eligibility/ac"))).andExpect(status().isForbidden());
         mvc.perform(as(DARIO, post("/api/observer-eligibility/generate"))).andExpect(status().isForbidden());
         mvc.perform(as(DARIO, post("/api/observer-eligibility/signups/30/release")))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(DARIO, get("/api/observer-eligibility/signups/30/eligible")))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(DARIO, post("/api/observer-eligibility/signups/30/assign"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observerId\":1}"))
                 .andExpect(status().isForbidden());
         mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
                 .andExpect(status().isOk())
@@ -178,6 +188,118 @@ class ObserverEligibilityControllerTests {
                 .andExpect(jsonPath("$.outgoing[0].status").value("CONFIRMED"))
                 .andExpect(jsonPath("$.notifications[0].message")
                         .value("Arlo Glimmerton accepted your observation request for CS 3345.005."));
+    }
+
+    @Test
+    void committeeAssignsAnEligibleObserverWithoutARequest() throws Exception {
+        int signupId = signUpDario();
+        mvc.perform(as(KAIA, get("/api/observer-eligibility/signups/" + signupId + "/eligible")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name")
+                        .value(containsInAnyOrder(
+                                "Leander Coldwell", "Arlo Glimmerton", "Avery Hazelwood", "Keira Larkspur")));
+        mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
+                .andExpect(jsonPath("$.signups[?(@.signupId == " + signupId + ")].observerName")
+                        .value(contains(nullValue())))
+                .andExpect(jsonPath("$.signups[?(@.name == 'Leander Coldwell')].observerName")
+                        .value(contains("Keira Larkspur")));
+
+        // Kaia assigns Arlo before sending Dario's list; no request or response is needed.
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/assign"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observerId\":" + observerId("arlo.glimmerton@example.edu") + "}"))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
+                .andExpect(jsonPath("$.signups[?(@.signupId == " + signupId + ")].observerName")
+                        .value(contains("Arlo Glimmerton")));
+        mvc.perform(as(DARIO, get("/api/observer-eligibility/faculty/34")))
+                .andExpect(jsonPath("$.outgoing[0].observerName").value("Arlo Glimmerton"))
+                .andExpect(jsonPath("$.outgoing[0].status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.notifications[0].message")
+                        .value("The Assessment Committee assigned Arlo Glimmerton to observe CS 3345.005."));
+        mvc.perform(as(ARLO, get("/api/observer-eligibility/faculty/26")))
+                .andExpect(jsonPath("$.incoming[0].observeeName").value("Dario Hollowell"))
+                .andExpect(jsonPath("$.incoming[0].status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.notifications[0].message")
+                        .value(startsWith(
+                                "The Assessment Committee assigned you to observe Dario Hollowell's CS 3345.005 (")));
+        mvc.perform(as(DARIO, get("/api/professors/34/observer-requests")))
+                .andExpect(jsonPath("$[0].unavailableReason")
+                        .value("An observation is already scheduled for this signup."));
+        assertThat(db.queryForMap("SELECT observer_id, status FROM observation WHERE signup_id=?", signupId))
+                .containsEntry("OBSERVER_ID", observerId("arlo.glimmerton@example.edu"))
+                .containsEntry("STATUS", "ACCEPTED");
+
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/assign"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observerId\":" + observerId("keira.larkspur@example.edu") + "}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("An observer is already assigned to this signup."));
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/release")))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void committeeCannotAssignAnIneligibleObserverOrOverAPendingRequest() throws Exception {
+        int signupId = signUpDario();
+        String assign = "/api/observer-eligibility/signups/" + signupId + "/assign";
+        mvc.perform(as(KAIA, post(assign))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/99999/assign"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observerId\":1}"))
+                .andExpect(status().isNotFound());
+        mvc.perform(as(KAIA, get("/api/observer-eligibility/signups/99999/eligible")))
+                .andExpect(status().isNotFound());
+        // Dario is in the observer pool once he signs up, but cannot observe himself.
+        mvc.perform(as(KAIA, post(assign))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observerId\":" + observerId("dario.hollowell@example.edu") + "}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("This professor is not eligible to observe this signup."));
+
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/release")))
+                .andExpect(status().isNoContent());
+        int arloMatch = db.queryForObject("""
+                SELECT m.match_id FROM observer_match m JOIN observer o ON o.observer_id = m.observer_id
+                WHERE m.signup_id = ? AND o.professor_id = 26
+                """, Integer.class, signupId);
+        mvc.perform(as(DARIO, post("/api/professors/34/observer-requests"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"signupId\":" + signupId + ",\"matchId\":" + arloMatch + "}"))
+                .andExpect(status().isCreated());
+        mvc.perform(as(KAIA, post(assign))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observerId\":" + observerId("keira.larkspur@example.edu") + "}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail")
+                        .value("Dario Hollowell is waiting for Arlo Glimmerton to respond. Assign an observer if the"
+                                + " request is declined or expires."));
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, signupId))
+                .isZero();
+    }
+
+    private int signUpDario() throws Exception {
+        mvc.perform(as(DARIO, put("/api/professors/34/evaluation-signups/13"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sectionId\":298}"))
+                .andExpect(status().isOk());
+        return db.queryForObject("""
+                SELECT s.signup_id FROM evaluation_signup s JOIN observee e ON e.observee_id = s.observee_id
+                WHERE e.professor_id = 34 AND e.cycle_id = 1
+                """, Integer.class);
+    }
+
+    private int observerId(String email) {
+        return db.queryForObject(
+                "SELECT ob.observer_id FROM observer ob JOIN professor p ON p.professor_id=ob.professor_id"
+                        + " WHERE p.email=? AND ob.cycle_id=1",
+                Integer.class,
+                email);
     }
 
     private MockHttpServletRequestBuilder as(AccountPrincipal professor, MockHttpServletRequestBuilder request)

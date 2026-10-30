@@ -14,13 +14,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Persisted recommendations, committee release, observer responses and in-app notifications. Signups are saved by
+ * Persisted recommendations, committee release and assignment, observer responses and in-app notifications. Signups are saved by
  * {@link EvaluationSignupService} and requests by {@link ObserverRequestService}; both call in here for signups that
  * have an observation window, which are the ones with a generated candidate list.
  */
 @Service
 @Transactional
 public class ObserverEligibilityService {
+    /** How many candidates a generated observer list is filled up to. */
+    public static final int LIST_SIZE = 5;
+
     private final JdbcTemplate db;
     private final Clock clock;
 
@@ -81,6 +84,8 @@ public class ObserverEligibilityService {
             LocalDate windowStart,
             LocalDate windowEnd,
             boolean released,
+            /* The professor recorded as observing this signup, once a request is accepted or the committee assigns one. */
+            String observerName,
             List<Candidate> candidates) {}
 
     public record Request(
@@ -209,12 +214,14 @@ public class ObserverEligibilityService {
     private static final String SIGNUPS = """
             SELECT es.signup_id, p.professor_id, p.first_name || ' ' || p.last_name AS name,
             d.department_name, s.*, c.course_code, c.course_number, c.course_name,
-            ls.window_start, ls.window_end, ls.released_at
+            ls.window_start, ls.window_end, ls.released_at, op.first_name || ' ' || op.last_name AS observer_name
             FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
             JOIN professor p ON p.professor_id=oe.professor_id
             JOIN department d ON d.department_id=p.department_id
             JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
             JOIN observer_list_state ls ON ls.signup_id=es.signup_id
+            LEFT JOIN observation o ON o.signup_id=es.signup_id LEFT JOIN observer ob ON ob.observer_id=o.observer_id
+            LEFT JOIN professor op ON op.professor_id=ob.professor_id
             WHERE oe.cycle_id=? AND es.status<>'CANCELLED' ORDER BY es.signup_id
             """;
 
@@ -230,13 +237,13 @@ public class ObserverEligibilityService {
                         date(r, "window_start"),
                         date(r, "window_end"),
                         r.getTimestamp("released_at") != null,
+                        r.getString("observer_name"),
                         includeCandidates ? candidates(r.getInt("signup_id")) : List.of()),
                 c.cycleId());
     }
 
     private List<Candidate> candidates(int signupId) {
-        return db.query(
-                """
+        return db.query("""
                 SELECT ob.observer_id, p.professor_id, p.first_name || ' ' || p.last_name AS name,
                 d.department_name, c.course_number FROM observer_match m
                 JOIN observer ob ON ob.observer_id=m.observer_id JOIN professor p ON p.professor_id=ob.professor_id
@@ -244,15 +251,34 @@ public class ObserverEligibilityService {
                 JOIN evaluation_signup es ON es.signup_id=m.signup_id
                 JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
                 WHERE m.signup_id=? ORDER BY m.match_id
-                """,
-                (r, n) -> new Candidate(
-                        r.getInt(1),
-                        r.getInt(2),
-                        r.getString(3),
-                        r.getString(4),
-                        level(r.getString(5)) + "-level",
-                        qualifyingCourses(r.getInt(2), signupId)),
-                signupId);
+                """, (r, n) -> candidate(r, signupId), signupId);
+    }
+
+    private Candidate candidate(ResultSet r, int signupId) throws SQLException {
+        return new Candidate(
+                r.getInt(1),
+                r.getInt(2),
+                r.getString(3),
+                r.getString(4),
+                level(r.getString(5)) + "-level",
+                qualifyingCourses(r.getInt(2), signupId));
+    }
+
+    /** Everyone who passes the eligibility rules for this signup, including those not drawn for its list. */
+    public List<Candidate> eligibleObservers(int signupId) {
+        Cycle c = cycle(cycleIdOf(signupId));
+        return eligible(managedSignup(signupId, c), c).stream()
+                .map(observerId -> db.queryForObject("""
+                        SELECT ob.observer_id, p.professor_id, p.first_name || ' ' || p.last_name AS name,
+                        d.department_name, c.course_number FROM observer ob
+                        JOIN professor p ON p.professor_id=ob.professor_id
+                        JOIN department d ON d.department_id=p.department_id
+                        JOIN evaluation_signup es ON es.signup_id=?
+                        JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
+                        WHERE ob.observer_id=?
+                        """, (r, n) -> candidate(r, signupId), signupId, observerId))
+                .sorted(Comparator.comparing(Candidate::name))
+                .toList();
     }
 
     private List<String> qualifyingCourses(int professorId, int signupId) {
@@ -305,6 +331,7 @@ public class ObserverEligibilityService {
                     signup.windowStart(),
                     signup.windowEnd(),
                     false,
+                    signup.observerName(),
                     List.of());
         var notifications = db.query(
                 """
@@ -490,12 +517,13 @@ public class ObserverEligibilityService {
     private void refresh(Cycle c) {
         if (!c.requestsOpen()) return;
         for (Signup s : signups(c, true)) {
-            if (s.released() || s.candidates().size() >= 5) continue;
+            if (s.released() || s.candidates().size() >= LIST_SIZE) continue;
             var eligible = new ArrayList<>(eligible(s, c));
             var existing = s.candidates().stream().map(Candidate::observerId).toList();
             eligible.removeAll(existing);
             Collections.shuffle(eligible);
-            for (int observerId : eligible.stream().limit(5 - existing.size()).toList())
+            for (int observerId :
+                    eligible.stream().limit(LIST_SIZE - existing.size()).toList())
                 db.update(
                         "INSERT INTO observer_match(signup_id,observer_id,generated_date,match_status) VALUES (?,?,?,'PROPOSED')",
                         s.signupId(),
@@ -609,6 +637,7 @@ public class ObserverEligibilityService {
         if (s.released()) return;
         if (!c.candidateListsOpen())
             throw new ConflictException("Candidate lists can only be sent after the signup deadline ends.");
+        if (s.observerName() != null) throw new ConflictException("An observer is already assigned to this signup.");
         if (s.candidates().isEmpty())
             throw new ConflictException("No eligible observers. The committee must resolve this signup.");
         var eligible = eligible(s, c);
@@ -617,6 +646,65 @@ public class ObserverEligibilityService {
                     "A candidate is no longer eligible. Review the teaching schedule before release.");
         db.update("UPDATE observer_list_state SET released_at=? WHERE signup_id=?", LocalDateTime.now(clock), signupId);
         notify(s.professorId(), signupId, "Your generated observer list is ready. Choose an observer to request.");
+    }
+
+    /**
+     * The committee confirms an eligible professor as the signup's observer, recording the same confirmed request and
+     * observation an accepted request would, without the observee asking or the observer responding.
+     */
+    public void assign(int signupId, int observerId) {
+        int cycleId = cycleIdOf(signupId);
+        // Same lock order as course selection and request sends: professor, signup, then cycle.
+        db.queryForObject(
+                "SELECT professor_id FROM professor WHERE professor_id=? FOR UPDATE",
+                Integer.class,
+                signupOwner(signupId));
+        db.queryForObject(
+                "SELECT signup_id FROM evaluation_signup WHERE signup_id=? FOR UPDATE", Integer.class, signupId);
+        Cycle c = lockCycle(cycleId);
+        if (!c.requestsOpen()) throw new ConflictException("The observation period is closed.");
+        Signup s = managedSignup(signupId, c);
+        if (s.observerName() != null) throw new ConflictException("An observer is already assigned to this signup.");
+        var pending = requests(c).stream()
+                .filter(r -> r.signupId() == signupId && "PENDING".equals(r.status()))
+                .findFirst();
+        if (pending.isPresent())
+            throw new ConflictException(
+                    s.name() + " is waiting for " + pending.get().observerName()
+                            + " to respond. Assign an observer if the request is declined or expires.");
+        if (!eligible(s, c).contains(observerId))
+            throw new ConflictException("This professor is not eligible to observe this signup.");
+        var templates = db.queryForList(
+                "SELECT template_id FROM observation_template WHERE active_status=TRUE ORDER BY version DESC,template_id DESC",
+                Integer.class);
+        if (templates.isEmpty()) throw new ConflictException("Configure an active observation template first.");
+        LocalDateTime now = LocalDateTime.now(clock);
+        db.update(
+                "INSERT INTO observer_request(signup_id,observer_id,request_date,expiration_date,response_date,status) VALUES (?,?,?,?,?,'CONFIRMED')",
+                signupId,
+                observerId,
+                now,
+                now.plus(ObserverRequestService.DEFAULT_RESPONSE_WINDOW),
+                now);
+        db.update(
+                "INSERT INTO observation(signup_id,observer_id,template_id,status) VALUES (?,?,?,'ACCEPTED')",
+                signupId,
+                observerId,
+                templates.getFirst());
+        Person observer = person(
+                db.queryForObject("SELECT professor_id FROM observer WHERE observer_id=?", Integer.class, observerId));
+        notify(
+                s.professorId(),
+                signupId,
+                "The Assessment Committee assigned " + observer.name() + " to observe "
+                        + s.section().label() + ".");
+        notify(
+                observer.professorId(),
+                signupId,
+                "The Assessment Committee assigned you to observe " + s.name() + "'s "
+                        + s.section().label() + " ("
+                        + s.section().meetingDays() + " " + s.section().startTime() + "-"
+                        + s.section().endTime() + ").");
     }
 
     private Signup managedSignup(int id, Cycle c) {
