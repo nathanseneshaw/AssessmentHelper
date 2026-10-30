@@ -452,3 +452,139 @@ test("a new notification reloads the dashboard", async () => {
   );
   expect(card("Evaluation Status")).toContain("Submitted");
 });
+
+/** One card of the evaluation summary, found by its label. */
+function summaryCard(label: string) {
+  const found = screen.getByText(label).closest("div.rounded-xl");
+  if (!found) throw new Error(`Missing summary card ${label}`);
+  return [...found.querySelectorAll("p")].map((p) => p.textContent);
+}
+
+test("the header shows the professor's initials, rank and department", async () => {
+  await openDashboard();
+  const rankLine = await screen.findByText(
+    "Associate Professor • Computer Science",
+  );
+  expect(rankLine.previousElementSibling?.textContent).toBe("Olivia Observee");
+  expect(screen.getByText("OO")).toBeTruthy();
+  expect(screen.queryByText("P1")).toBeNull();
+});
+
+test("the evaluation summary comes from the professor's own deadline, records and observations", async () => {
+  await openDashboard();
+  await screen.findByText("Every 2 Years");
+
+  expect(summaryCard("Evaluation Status")).toEqual([
+    "Evaluation Status",
+    "In Progress",
+    "Current evaluation cycle",
+  ]);
+  expect(summaryCard("Cycle")).toEqual([
+    "Cycle",
+    "Every 2 Years",
+    "Associate Professor schedule",
+  ]);
+  expect(summaryCard("Next Due")).toEqual([
+    "Next Due",
+    "Mar 2028",
+    "Last evaluated Mar 10, 2026",
+  ]);
+  expect(summaryCard("Observations This Term")).toEqual([
+    "Observations This Term",
+    "4",
+    "1 submitted • 3 not yet submitted",
+  ]);
+});
+
+test("an overdue professor sees it on the status and due date", async () => {
+  records = records.filter((r) => r.cycleId !== 2);
+  deadline = { ...deadline, overdue: true, nextDueDate: "2025-08-01" };
+  await openDashboard();
+  await screen.findByText("Overdue");
+  expect(summaryCard("Next Due")).toEqual([
+    "Next Due",
+    "Aug 2025",
+    "Was due Aug 1, 2025",
+  ]);
+});
+
+test("a professor with no rank still sees the rest of the dashboard", async () => {
+  deadlineFailure = Response.json(
+    { detail: "Professor 21 has no rank" },
+    { status: 404 },
+  );
+  await openDashboard();
+  await screen.findAllByText("Unavailable");
+  expect(screen.getAllByText("Professor 21 has no rank")).toHaveLength(2);
+  expect(screen.getByText("Computer Science")).toBeTruthy();
+  await panel("Upcoming").findByText("Observation — CS 2336.001");
+});
+
+test("Evaluation History lists the previous cycles, not the one in progress", async () => {
+  await openDashboard();
+  await panel("Evaluation History").findByText("Spring 2026");
+  const history = panel("Evaluation History");
+
+  expect(history.getByText("Completed • 1 observation")).toBeTruthy();
+  expect(history.getByText("Fall 2024")).toBeTruthy();
+  expect(history.getByText("Completed • 2 observations")).toBeTruthy();
+  expect(history.queryByText("Fall 2026")).toBeNull();
+  expect(
+    history.getByRole("link", { name: "View All →" }).getAttribute("href"),
+  ).toBe("/faculty/history");
+  expect(
+    history
+      .getByRole("link", { name: "View Evaluation (Spring 2026)" })
+      .getAttribute("href"),
+  ).toBe("/faculty/history?cycle=1");
+});
+
+test("Evaluation History is empty for a professor with only the current cycle", async () => {
+  records = records.filter((r) => r.cycleId === 2);
+  await openDashboard();
+  await panel("Evaluation History").findByText("No previous evaluations yet.");
+});
+
+test("Evaluation History says when it can't load", async () => {
+  recordsFailure = Response.json(
+    { detail: "Records are unavailable." },
+    { status: 503 },
+  );
+  await openDashboard();
+  await panel("Evaluation History").findByText(
+    "Couldn't load evaluation history.",
+  );
+});
+
+test("the summary updates when a dialog changes the evaluation", async () => {
+  await openDashboard();
+  await screen.findByText("In Progress");
+
+  records = records.map((r) =>
+    r.cycleId === 2
+      ? {
+          ...r,
+          status: "COMPLETED",
+          lastObservationCompletedAt: "2026-10-27T11:00:00",
+        }
+      : r,
+  );
+  deadline = {
+    ...deadline,
+    lastEvaluationDate: "2026-10-27",
+    nextDueDate: "2028-10-27",
+  };
+  act(() => observerChanged());
+
+  await screen.findByText("Completed");
+  expect(summaryCard("Next Due")[1]).toBe("Oct 2028");
+  // The finished cycle is history now.
+  await panel("Evaluation History").findByText("Fall 2026");
+});
+
+test("a professor not due until after this cycle sees Not Due", async () => {
+  records = records.filter((r) => r.cycleId !== 2);
+  await openDashboard();
+  await screen.findByText("Not Due");
+  expect(screen.getByText("Next evaluation due Mar 2028")).toBeTruthy();
+});

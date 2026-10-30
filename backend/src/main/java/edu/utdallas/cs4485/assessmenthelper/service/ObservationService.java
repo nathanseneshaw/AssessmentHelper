@@ -446,7 +446,7 @@ public class ObservationService {
                         + o.course().label() + ".");
     }
 
-    // Appends to the audit log. This is the only code that touches the table, and it only inserts.
+    // Appends to the audit log. This is the only code that writes to the table, and it only inserts.
     private void log(int observationId, AuditEvent event, AccountPrincipal principal, Integer recipientProfessorId) {
         db.update(
                 "INSERT INTO observation_audit_log(observation_id,event_type,actor_professor_id,recipient_professor_id,occurred_at) VALUES (?,?,?,?,?)",

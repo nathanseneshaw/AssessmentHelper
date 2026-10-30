@@ -267,6 +267,48 @@ function upcomingItem(item: Upcoming, cycleLabel: string): UpcomingItem {
   }
 }
 
+/** The newest two finished or earlier cycles for a dashboard card. The API lists the newest first. */
+function HistoryLines({
+  records,
+  error,
+}: {
+  records: EvaluationRecord[] | null;
+  error: string;
+}) {
+  if (error)
+    return (
+      <p className="text-ink/60 text-sm">Couldn't load evaluation history.</p>
+    );
+  if (!records)
+    return <p className="text-ink/60 text-sm">Loading evaluation history...</p>;
+  if (!records.length)
+    return <p className="text-ink/60 text-sm">No previous evaluations yet.</p>;
+  return records.slice(0, 2).map((record) => {
+    const term = `${record.term} ${record.academicYear}`;
+    return (
+      <div
+        key={record.cycleId}
+        className="flex items-center justify-between gap-3"
+      >
+        <div>
+          <p className="font-semibold text-sm">{term}</p>
+          <p className="text-ink/60 text-xs">
+            {evaluationStatusLabel(record.status)} •{" "}
+            {observationCountLabel(record.observationCount)}
+          </p>
+        </div>
+        <Link
+          to={`/faculty/history?cycle=${record.cycleId}`}
+          className="rounded-md bg-brand-green px-4 py-2 font-medium text-white text-xs"
+        >
+          View Evaluation
+          <span className="sr-only"> ({term})</span>
+        </Link>
+      </div>
+    );
+  });
+}
+
 function SectionCard({
   title,
   subtitle,
@@ -352,6 +394,19 @@ export function FacultyDashboard() {
   const refresh = useCallback(() => setReload((value) => value + 1), []);
   const feedback = useApiResource<FeedbackSurvey[]>(id ? feedbackPath : null);
   const reloadFeedback = feedback.reload;
+  const deadline = useApiResource<EvaluationDeadline>(
+    id ? evaluationDeadlinePath(id) : null,
+  );
+  const reloadDeadline = deadline.reload;
+  const records = useApiResource<EvaluationRecord[]>(
+    id ? evaluationRecordsPath(id) : null,
+  );
+  const reloadRecords = records.reload;
+  // Finishing an observation can complete the evaluation, which moves the due date.
+  const reloadEvaluation = useCallback(() => {
+    reloadDeadline();
+    reloadRecords();
+  }, [reloadDeadline, reloadRecords]);
   useEffect(() => onObserverChange(reloadFeedback), [reloadFeedback]);
   // A survey opens once the observation deadline passes, so it is checked again on focus and every minute.
   useEffect(() => {
@@ -438,7 +493,7 @@ export function FacultyDashboard() {
         </div>
       </div>
 
-      <div className="mt-6 flex items-center justify-between border-line border-b pb-5">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-line border-b pb-5">
         <div className="flex items-center gap-4">
           <div
             aria-hidden="true"
