@@ -115,6 +115,13 @@ export function formatDate(date: string) {
   return `${name} ${day}, ${year}`;
 }
 
+/** "2027-03-15" → "Mar 2027". Anything unexpected is returned unchanged. */
+export function formatMonthYear(date: string) {
+  const [year, month] = date.split("-").map(Number);
+  const name = MONTHS[(month ?? 0) - 1];
+  return name && year ? `${name} ${year}` : date;
+}
+
 /** "08:30:00" or "08:30" → "8:30 AM". Anything unexpected is returned unchanged. */
 export function formatTime(time: string) {
   const [hours, minutes] = time.split(":").map(Number);
