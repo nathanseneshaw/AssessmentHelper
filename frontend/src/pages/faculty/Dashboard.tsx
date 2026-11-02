@@ -22,6 +22,7 @@ import {
   useObserverData,
 } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
+import { MissingObservations } from "../../components/MissingObservations";
 import { longDate, monthYear, shortDate } from "../../format";
 
 const RANKS: Record<string, string> = {
@@ -513,6 +514,7 @@ export function FacultyDashboard() {
           </ul>
         </section>
       )}
+      <MissingObservations professorId={id} />
       <h2 className="mt-6 mb-3 text-ink/70 text-sm">Evaluation summary</h2>
       {dashboardError ? (
         <p role="alert" className="text-brand-red text-sm">
