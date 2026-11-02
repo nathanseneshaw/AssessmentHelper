@@ -10,6 +10,7 @@ import {
 } from "../../api/observations";
 import { observerChanged } from "../../api/observerEligibility";
 import { useAuth } from "../../auth/AuthContext";
+import { MissingObservations } from "../../components/MissingObservations";
 import { Modal } from "../../components/Modal";
 import { STATUS_COLORS } from "../../components/ObservationRecord";
 
@@ -106,6 +107,7 @@ export function FacultyObservationsForOthers() {
       title="Observation Records for Others"
       subtitle="Classroom observations you do for other professors."
     >
+      <MissingObservations professorId={id} observerOnly />
       {!id ? (
         <p role="alert" className="text-brand-red">
           Your session has no faculty profile. Sign out and sign in again.
