@@ -15,6 +15,7 @@ export function ActionButton({
   tone,
   to,
   onClick,
+  disabled,
   ariaLabel,
   className = "",
   children,
@@ -22,11 +23,12 @@ export function ActionButton({
   tone: keyof typeof TONES;
   to?: string;
   onClick?: () => void;
+  disabled?: boolean;
   ariaLabel?: string;
   className?: string;
   children: ReactNode;
 }) {
-  const classes = `inline-flex items-center rounded-lg px-5 py-3.25 text-white hover:opacity-90 ${TONES[tone]} ${className}`;
+  const classes = `inline-flex items-center rounded-lg px-5 py-3.25 text-white hover:opacity-90 disabled:opacity-50 ${TONES[tone]} ${className}`;
 
   if (to) {
     return (
@@ -39,6 +41,7 @@ export function ActionButton({
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-label={ariaLabel}
       className={classes}
     >

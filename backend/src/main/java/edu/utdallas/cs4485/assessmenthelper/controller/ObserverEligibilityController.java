@@ -1,12 +1,13 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverEligibilityService;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Generated observer lists, committee release and observer responses. Signups are saved through
+ * Generated observer lists, committee release and assignment, and observer responses. Signups are saved through
  * {@link EvaluationSignupController} and requests sent through {@link FacultyObserverRequestController}.
  */
 @RestController
@@ -19,6 +20,8 @@ public class ObserverEligibilityController {
     }
 
     public record ResponseBody(Boolean accept) {}
+
+    public record AssignBody(Integer observerId) {}
 
     @GetMapping("/faculty/{id}")
     @PreAuthorize("@professorAccess.canView(principal, #id)")
@@ -50,6 +53,20 @@ public class ObserverEligibilityController {
     @PreAuthorize("hasRole('AC')")
     public void release(@PathVariable int id) {
         service.release(id);
+    }
+
+    @GetMapping("/signups/{id}/eligible")
+    @PreAuthorize("hasRole('AC')")
+    public List<ObserverEligibilityService.Candidate> eligible(@PathVariable int id) {
+        return service.eligibleObservers(id);
+    }
+
+    @PostMapping("/signups/{id}/assign")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('AC')")
+    public void assign(@PathVariable int id, @RequestBody AssignBody body) {
+        if (body.observerId() == null) throw new IllegalArgumentException("Choose an observer to assign.");
+        service.assign(id, body.observerId());
     }
 
     @PostMapping("/faculty/{id}/requests/{requestId}/respond")

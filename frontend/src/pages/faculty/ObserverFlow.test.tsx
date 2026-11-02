@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { App } from "../../App";
 import type { FacultyState } from "../../api/observerEligibility";
+import { dashboard } from "../../test/facultyDashboardFixtures";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 import { faculty, section, signup } from "../../test/observerFixtures";
 
@@ -21,6 +22,7 @@ beforeEach(() => {
   fakeBackend({
     "/api/observer-eligibility/faculty/1": () => Response.json(state),
     "/api/professors/1/observations": () => Response.json([]),
+    "/api/professors/1/dashboard": () => Response.json(dashboard),
     "/api/observer-eligibility/faculty/1/requests/7/respond": (init, url) => {
       const body = JSON.parse(String(init?.body));
       sent.push({ path: url.pathname, body });

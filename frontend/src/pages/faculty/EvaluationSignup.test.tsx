@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { App } from "../../App";
 import type { EvaluationSignup } from "../../api/courseSelection";
+import { dashboard } from "../../test/facultyDashboardFixtures";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 import { faculty } from "../../test/observerFixtures";
 
@@ -98,6 +99,7 @@ beforeEach(() => {
     // The faculty dashboard behind the dialog loads its own status and observations.
     "/api/observer-eligibility/faculty/3": () => Response.json(faculty),
     "/api/professors/3/observations": () => Response.json([]),
+    "/api/professors/3/dashboard": () => Response.json(dashboard),
     "/api/semesters": () => {
       if (catalogFailure) throw new Error("Network unavailable");
       return Response.json([

@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { App } from "./App";
 import { NAV_ITEMS, type Role } from "./navConfig";
+import { dashboard } from "./test/facultyDashboardFixtures";
 import {
   fakeBackend,
   resetBackend,
@@ -74,6 +75,7 @@ beforeEach(() => {
     "/api/observer-eligibility/ac": () => Response.json(ac),
     "/api/observer-eligibility/faculty/2": () => Response.json(faculty),
     "/api/professors/2/observations": () => Response.json([]),
+    "/api/professors/2/dashboard": () => Response.json(dashboard),
   });
 });
 

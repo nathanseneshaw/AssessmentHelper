@@ -19,8 +19,14 @@ export function OverdueEvaluations({
   onClose,
   onNotified,
   kind = "overdue",
+  title = `Faculty ${kind === "due" ? "Due" : "Overdue"} for Evaluation`,
+  countLabel = kind,
+  emptyMessage = `No faculty are ${kind} for evaluation.`,
 }: {
   kind?: EvaluationKind;
+  title?: string;
+  countLabel?: string;
+  emptyMessage?: string;
   queue: OverdueQueue;
   onClose: () => void;
   onNotified: (professorId: number, sentAt: string) => void;
@@ -213,10 +219,10 @@ export function OverdueEvaluations({
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 id={titleId} className="font-bold text-xl">
-                Faculty {kind === "due" ? "Due" : "Overdue"} for Evaluation
+                {title}
               </h2>
               <p className="mt-1 text-sm text-muted">
-                {`${queue.cycleLabel} evaluation cycle • ${queue.count} faculty ${kind}`}
+                {`${queue.cycleLabel} evaluation cycle • ${queue.count} faculty ${countLabel}`}
               </p>
             </div>
             <button type="button" onClick={onClose} className={secondary}>
@@ -295,9 +301,7 @@ export function OverdueEvaluations({
               </tbody>
             </table>
             {queue.faculty.length === 0 && (
-              <p className="py-10 text-center text-muted">
-                No faculty are {kind} for evaluation.
-              </p>
+              <p className="py-10 text-center text-muted">{emptyMessage}</p>
             )}
           </div>
         </>
