@@ -135,12 +135,34 @@ test("loads persisted candidates and releases the reviewed list", async () => {
     .closest("section");
   if (!card) throw Error("Missing card");
   expect(within(card).getAllByRole("listitem")).toHaveLength(5);
-  expect(within(card).getByText("CS 3346.002 - Fall 2025")).toBeDefined();
+  expect(within(card).queryByText("CS 3346.002 - Fall 2025")).toBeNull();
+  expect(
+    within(card).getAllByRole("button", { name: /^See courses for/ }),
+  ).toHaveLength(5);
   expect(within(card).queryByText("CS 3346.002 - Data Structures")).toBeNull();
   expect(within(card).queryByText(/3000-level/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Send Candidate List" }));
   await screen.findByRole("button", { name: "Candidate List Sent" });
   expect(posts).toEqual(["/api/observer-eligibility/signups/1/release"]);
+});
+
+test("See Courses opens the selected observer's history and closes without leaving matching", async () => {
+  await open();
+  const button = screen.getByRole("button", {
+    name: "See courses for Professor 2",
+  });
+  button.focus();
+  fireEvent.click(button);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Qualifying courses",
+  });
+  expect(within(dialog).getByText("Professor 2")).toBeTruthy();
+  expect(within(dialog).getByText("CS 3346.002 - Fall 2025")).toBeTruthy();
+  expect(within(dialog).queryByText("CS 3346.003 - Fall 2025")).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(button);
+  expect(window.location.pathname).toBe("/ac/matching");
 });
 
 test("zero candidates alert AC and prevent release; arrows wrap", async () => {

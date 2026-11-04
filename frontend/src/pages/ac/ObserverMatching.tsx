@@ -16,6 +16,72 @@ import { PageHeader } from "../../components/PageHeader";
 const secondaryButton =
   "rounded-lg border border-line px-5 py-3 text-sm font-medium hover:bg-mist disabled:cursor-not-allowed disabled:opacity-50";
 
+function ObserverCourses({
+  candidate,
+  onClose,
+}: {
+  candidate: Candidate;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    dialog.current?.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = overflow;
+      previous?.focus();
+    };
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      className="fixed inset-0 m-auto max-h-[85vh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-xl border border-line bg-white p-6 text-ink shadow-xl backdrop:bg-ink/40"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 id={titleId} className="font-bold text-xl">
+            Qualifying courses
+          </h2>
+          <p className="mt-1 text-sm text-muted">{candidate.name}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="cursor-pointer rounded-md border border-line px-3 py-1 text-sm hover:bg-mist"
+        >
+          Close
+        </button>
+      </div>
+      <p className="mt-4 text-sm text-muted">
+        Teaching history that qualifies this professor to observe the selected
+        course.
+      </p>
+      {candidate.qualifyingCourses.length ? (
+        <ul className="mt-4 space-y-2">
+          {[...new Set(candidate.qualifyingCourses)].map((course) => (
+            <li
+              key={course}
+              className="rounded-lg border border-line p-3 text-sm"
+            >
+              {course}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-sm">No qualifying courses recorded.</p>
+      )}
+    </dialog>
+  );
+}
+
 /** Lists everyone who passes the eligibility rules, not only the drawn candidates, and confirms one as the observer. */
 function AssignObserver({
   signup,
@@ -178,6 +244,7 @@ export function AcObserverMatching() {
   );
   const [busy, setBusy] = useState(false);
   const [assigning, setAssigning] = useState(false);
+  const [coursesFor, setCoursesFor] = useState<Candidate | null>(null);
   const [message, setMessage] = useState("");
   const [failure, setFailure] = useState("");
   const signups = data?.signups ?? [];
@@ -215,6 +282,12 @@ export function AcObserverMatching() {
   }
   return (
     <div>
+      {coursesFor && (
+        <ObserverCourses
+          candidate={coursesFor}
+          onClose={() => setCoursesFor(null)}
+        />
+      )}
       <PageHeader
         title="Observer Matching"
         subtitle="Review system-generated eligible observers and resolve unmatched signups."
@@ -377,9 +450,14 @@ export function AcObserverMatching() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold">{c.name}</p>
-                        <p className="mt-1 text-xs text-muted">
-                          {[...new Set(c.qualifyingCourses)].join("; ")}
-                        </p>
+                        <button
+                          type="button"
+                          aria-label={`See courses for ${c.name}`}
+                          onClick={() => setCoursesFor(c)}
+                          className="mt-1 cursor-pointer text-xs text-brand-green underline hover:opacity-80"
+                        >
+                          See Courses
+                        </button>
                       </div>
                       <span className="text-sm text-muted">
                         {(() => {
