@@ -224,6 +224,51 @@ test("shows expired history while permitting another request", async () => {
   ).toBe(false);
 });
 
+test("declined observers stay disabled after reopening while other candidates remain selectable", async () => {
+  const first = options[0];
+  if (!first) throw new Error("Missing signup");
+  first.requests = [
+    {
+      observerName: "Alice Alice",
+      request: { ...request, status: "DECLINED" },
+    },
+  ];
+  first.candidates.push({
+    matchId: 3,
+    observerId: 2,
+    observerName: "Bob Observer",
+    department: "Computer Science",
+  });
+  let view = open();
+  expect(
+    (
+      (await screen.findByRole("checkbox", {
+        name: /Alice Alice/,
+      })) as HTMLInputElement
+    ).disabled,
+  ).toBe(true);
+  expect(screen.getByText(/Declined — cannot invite again/)).toBeTruthy();
+  expect(
+    (screen.getByRole("checkbox", { name: /Bob Observer/ }) as HTMLInputElement)
+      .disabled,
+  ).toBe(false);
+  view.unmount();
+  view = open();
+  expect(
+    (
+      (await screen.findByRole("checkbox", {
+        name: /Alice Alice/,
+      })) as HTMLInputElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("checkbox", { name: /Bob Observer/ }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send evaluation request" }),
+  );
+  await screen.findByText("Requests recorded for Bob Observer.");
+  expect(writes).toEqual([{ signupId: 31, matchId: 3 }]);
+});
+
 test("resets the selected candidate when the signup changes and explains unavailable signups", async () => {
   if (!options[0]) throw new Error("Missing fixture");
   options.push({

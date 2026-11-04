@@ -128,14 +128,14 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void allDeclinedOrExpiredInvitationsNeedAcAttentionEvenWhenOtherObserversRemain() {
+    void allRecommendedObserversMustDeclineOrExpireBeforeTheCaseIsUnmatched() {
         int target = darioSignsUp();
         invitation(target, LEANDER, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
         // At exactly the expiration time this still-persisted pending invitation is effectively expired.
         invitation(target, ARLO, "PENDING", LocalDateTime.parse("2026-10-21T10:00:00"));
         var state = matching(target);
-        assertThat(state.status()).isEqualTo("UNMATCHED");
-        assertThat(state.reason()).isEqualTo("INVITATIONS_UNSUCCESSFUL");
+        assertThat(state.status()).isEqualTo("AWAITING_INVITATION");
+        assertThat(state.reason()).isNull();
         assertThat(state.remainingObserverCount()).isEqualTo(2);
         assertThat(state.invitations())
                 .extracting(ObserverEligibilityService.Invitation::status)
@@ -143,6 +143,22 @@ class ObserverEligibilityServiceTests {
         assertThat(state.invitations())
                 .extracting(ObserverEligibilityService.Invitation::observerName)
                 .contains("Arlo Glimmerton");
+        releaseAfterDeadline(target);
+        signup(HOLLIS, 284);
+        invitation(target, AVERY, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        invitation(target, KEIRA, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        assertThat(matching(target).status()).isEqualTo("UNMATCHED");
+        assertThat(matching(target).reason()).isEqualTo("INVITATIONS_UNSUCCESSFUL");
+        assertThat(matching(target).remainingObserverCount()).isEqualTo(1);
+    }
+
+    @Test
+    void repeatedHistoricalDeclinesFromOneObserverCannotExhaustTheRecommendationList() {
+        int target = darioSignsUp();
+        for (int i = 0; i < 5; i++) invitation(target, LEANDER, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        assertThat(matching(target).status()).isEqualTo("AWAITING_INVITATION");
+        assertThat(matching(target).reason()).isNull();
+        assertThat(matching(target).remainingObserverCount()).isEqualTo(3);
     }
 
     @Test

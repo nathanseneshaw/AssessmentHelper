@@ -295,7 +295,7 @@ export function AcObserverMatching() {
               {matching.status === "UNMATCHED" && (
                 <p className="mt-2 text-sm">
                   {matching.reason === "INVITATIONS_UNSUCCESSFUL"
-                    ? "All invitations have been declined or expired. No observer is confirmed."
+                    ? "All recommended observers have declined or their invitations have expired. No observer is confirmed."
                     : "No professors currently meet the eligibility requirements for this observation window."}
                   {matching.remainingObserverCount > 0 &&
                     ` ${matching.remainingObserverCount} additional eligible observer(s) have not been invited.`}

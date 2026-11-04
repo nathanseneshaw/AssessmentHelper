@@ -89,6 +89,11 @@ function RequestForm({ professorId }: { professorId: number }) {
       ({ request }) =>
         request.status === "PENDING" || request.status === "CONFIRMED",
     ) ?? [];
+  const declinedObservers = new Set(
+    selected?.requests
+      .filter(({ request }) => request.status === "DECLINED")
+      .map(({ request }) => request.observerId) ?? [],
+  );
   const confirmed = activeRequests.find(
     ({ request }) => request.status === "CONFIRMED",
   );
@@ -244,6 +249,7 @@ function RequestForm({ professorId }: { professorId: number }) {
                         value={item.matchId}
                         checked={matchIds.includes(String(item.matchId))}
                         disabled={
+                          declinedObservers.has(item.observerId) ||
                           activeRequests.some(
                             ({ request }) =>
                               request.observerId === item.observerId,
@@ -271,6 +277,11 @@ function RequestForm({ professorId }: { professorId: number }) {
                         <span className="block text-ink/60 text-xs">
                           {item.department}
                         </span>
+                        {declinedObservers.has(item.observerId) && (
+                          <span className="block text-brand-red text-xs">
+                            Declined — cannot invite again for this evaluation
+                          </span>
+                        )}
                       </span>
                     </label>
                   ))}

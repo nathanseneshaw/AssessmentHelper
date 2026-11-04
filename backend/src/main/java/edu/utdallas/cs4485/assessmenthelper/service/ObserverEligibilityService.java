@@ -424,11 +424,16 @@ public class ObserverEligibilityService {
                             .count();
                     String status;
                     String reason = null;
+                    Set<Integer> unsuccessful = new HashSet<>();
+                    history.stream()
+                            .filter(r -> "DECLINED".equals(r.status()) || "EXPIRED".equals(r.status()))
+                            .forEach(r -> unsuccessful.add(r.observerId()));
+                    boolean recommendationsExhausted = !s.candidates().isEmpty()
+                            && s.candidates().stream()
+                                    .allMatch(candidate -> unsuccessful.contains(candidate.observerId()));
                     if (matched) status = "MATCHED";
                     else if (pending) status = "AWAITING_RESPONSE";
-                    else if (!history.isEmpty()
-                            && history.stream()
-                                    .allMatch(r -> "DECLINED".equals(r.status()) || "EXPIRED".equals(r.status()))) {
+                    else if (recommendationsExhausted) {
                         status = "UNMATCHED";
                         reason = "INVITATIONS_UNSUCCESSFUL";
                     } else if (eligible.isEmpty()) {

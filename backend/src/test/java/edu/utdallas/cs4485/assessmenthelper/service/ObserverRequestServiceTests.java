@@ -95,6 +95,17 @@ class ObserverRequestServiceTests {
     }
 
     @Test
+    void aDeclinedObserverCannotBeInvitedAgainForThisEvaluation() {
+        var request = service.create(signup.signupId(), observer.observerId(), null);
+        service.decline(request.requestId());
+        assertThatThrownBy(() -> service.create(signup.signupId(), observer.observerId(), null))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("cannot be invited again");
+        assertThat(service.find(signup.signupId(), null)).hasSize(1);
+        assertThat(service.findById(request.requestId()).status()).isEqualTo("DECLINED");
+    }
+
+    @Test
     void createUsesGivenExpirationDate() {
         ObserverRequest request = service.create(signup.signupId(), observer.observerId(), NOW.plusDays(2));
 

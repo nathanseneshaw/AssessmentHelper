@@ -86,6 +86,8 @@ async function open() {
 }
 
 test("shows unsuccessful invitation history and additional eligible observers", async () => {
+  const signup = state.signups[0];
+  if (signup) signup.candidates = signup.candidates.slice(0, 2);
   const matching = state.matchingCases[0];
   if (!matching) throw new Error("Missing case");
   matching.status = "UNMATCHED";

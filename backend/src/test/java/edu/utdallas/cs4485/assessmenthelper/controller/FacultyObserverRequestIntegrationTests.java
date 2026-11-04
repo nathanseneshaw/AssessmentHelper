@@ -268,6 +268,20 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     @Test
+    void bothRequestEndpointsRejectReinvitingADeclinedObserver() throws Exception {
+        var request = service.createFromMatch(31, signupId, matchId, null);
+        service.decline(request.requestId());
+        send(AVERY, signupId, matchId)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail")
+                        .value("This observer has declined this evaluation and cannot be invited again."));
+        legacySend(keira).andExpect(status().isConflict());
+        assertThat(requestCount()).isEqualTo(1);
+        legacySend(leander).andExpect(status().isCreated());
+        assertThat(requestCount()).isEqualTo(2);
+    }
+
+    @Test
     void courseSelectionCannotChangeAfterCandidatesHaveBeenGenerated() throws Exception {
         db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (31, 284)");
         mvc.perform(as(AVERY, put("/api/professors/31/evaluation-signups/13"))
