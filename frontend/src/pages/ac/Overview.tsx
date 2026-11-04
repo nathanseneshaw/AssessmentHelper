@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   type DashboardMetrics,
   getDashboardMetrics,
@@ -10,7 +11,12 @@ import {
   type OverdueQueue,
   rankLabel,
 } from "../../api/evaluationEligibility";
-import { type AcState, useObserverData } from "../../api/observerEligibility";
+import {
+  type AcState,
+  matchingReason,
+  unmatchedSignups,
+  useObserverData,
+} from "../../api/observerEligibility";
 import { ActionButton } from "../../components/ActionButton";
 import { CycleDeadlines } from "../../components/CycleDeadlines";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
@@ -203,9 +209,7 @@ export function AcOverview() {
     error: matchingError,
     reload: reloadMatching,
   } = useObserverData<AcState>("/ac");
-  const unmatchedFaculty = (matching?.signups ?? []).filter(
-    (s) => s.candidates.length === 0,
-  );
+  const unmatchedFaculty = matching ? unmatchedSignups(matching) : [];
   const [queue, setQueue] = useState<OverdueQueue | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -383,7 +387,7 @@ export function AcOverview() {
 
         <ListPanel
           title="Unmatched Faculty"
-          subtitle="Signups with no eligible observers"
+          subtitle="No eligible observers, or all invitations declined or expired"
           action={
             <ActionButton tone="orange" to="/ac/matching" className="min-w-47">
               Resolve Matches
@@ -401,7 +405,7 @@ export function AcOverview() {
           )}
           {unmatchedFaculty.length > 0 && (
             <li role="alert" className="font-semibold text-brand-red">
-              {unmatchedFaculty.length} signup(s) have no eligible observers.
+              {unmatchedFaculty.length} signup(s) need AC attention.
             </li>
           )}
           {unmatchedFaculty.map((item) => (
@@ -409,9 +413,16 @@ export function AcOverview() {
               key={item.signupId}
               cells={[item.name, item.department]}
               status={
-                <span className="font-semibold text-brand-red text-sm">
-                  0 candidates
-                </span>
+                <Link
+                  to={`/ac/matching?signup=${item.signupId}`}
+                  className="font-semibold text-brand-red text-sm underline"
+                >
+                  {matchingReason(
+                    matching?.matchingCases?.find(
+                      (c) => c.signupId === item.signupId,
+                    ),
+                  )}
+                </Link>
               }
             />
           ))}

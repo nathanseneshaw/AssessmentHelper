@@ -85,6 +85,45 @@ async function open() {
   await screen.findByRole("heading", { name: "Observee: Professor 1" });
 }
 
+test("shows unsuccessful invitation history and additional eligible observers", async () => {
+  const matching = state.matchingCases[0];
+  if (!matching) throw new Error("Missing case");
+  matching.status = "UNMATCHED";
+  matching.reason = "INVITATIONS_UNSUCCESSFUL";
+  matching.remainingObserverCount = 4;
+  matching.invitations = [
+    {
+      requestId: 1,
+      observerId: 2,
+      observerName: "Professor 2",
+      status: "DECLINED",
+      requestedAt: "2026-10-20T09:00:00",
+      expiresAt: "2026-10-22T09:00:00",
+      respondedAt: "2026-10-20T10:00:00",
+    },
+    {
+      requestId: 2,
+      observerId: 3,
+      observerName: "Professor 3",
+      status: "EXPIRED",
+      requestedAt: "2026-10-20T09:00:00",
+      expiresAt: "2026-10-22T09:00:00",
+      respondedAt: null,
+    },
+  ];
+  await open();
+  const details = within(
+    screen.getByRole("region", { name: "Matching status" }),
+  );
+  expect(
+    details.getByText("Unmatched: Invitations declined or expired"),
+  ).toBeTruthy();
+  expect(details.getByText(/4 additional eligible observer/)).toBeTruthy();
+  expect(details.getByRole("table")).toBeTruthy();
+  expect(details.getByText("Declined")).toBeTruthy();
+  expect(details.getByText("Expired")).toBeTruthy();
+});
+
 test("loads persisted candidates and releases the reviewed list", async () => {
   state.cycle.signupOpen = false;
   state.cycle.candidateListsOpen = true;

@@ -7,6 +7,7 @@ import type {
   ObservationTracking,
 } from "../../api/acDashboard";
 import type { OverdueQueue } from "../../api/evaluationEligibility";
+import type { AcState } from "../../api/observerEligibility";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 import { ac } from "../../test/observerFixtures";
 
@@ -60,12 +61,13 @@ const tracking: ObservationTracking = {
 async function renderReports(
   metricsRoute: () => Response | Promise<Response> = () =>
     Response.json(metrics),
+  matching: AcState = ac,
 ) {
   fakeBackend({
     "/api/ac-dashboard/metrics": metricsRoute,
     "/api/overdue-evaluations": () => Response.json(overdue),
     // One signup has a full candidate list and the other has none, so one faculty member is unmatched.
-    "/api/observer-eligibility/ac": () => Response.json(ac),
+    "/api/observer-eligibility/ac": () => Response.json(matching),
     "/api/ac-dashboard/observations": () => Response.json(tracking),
   });
   signInAs("ac");
@@ -116,6 +118,20 @@ afterEach(() => {
 });
 
 describe("Reports & KPIs", () => {
+  test("unmatched report includes failed invitations even with a full recommendation list", async () => {
+    const matching = structuredClone(ac);
+    const first = matching.matchingCases[0];
+    if (!first) throw new Error("Missing matching case");
+    first.status = "UNMATCHED";
+    first.reason = "INVITATIONS_UNSUCCESSFUL";
+    await renderReports(undefined, matching);
+    await screen.findByRole("heading", { level: 2, name: "Fall 2026 Cycle" });
+    expect(screen.getByText("2 unmatched faculty")).toBeTruthy();
+    const file = await download("Export Report");
+    expect(file.text).toContain(
+      '"Executive dashboard","Unmatched faculty report","2",""',
+    );
+  });
   test("shows live KPIs, executive metrics and cycle summary", async () => {
     await renderLoadedReports();
 

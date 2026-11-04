@@ -67,6 +67,7 @@ function dueQueueOf(faculty: OverdueFaculty[]): OverdueQueue {
 const dueQueue = dueQueueOf([...signedUpFaculty, ...notSignedUpFaculty]);
 
 const state: AcState = {
+  matchingCases: [],
   cycle,
   signups: signedUpFaculty.map((person, i) => ({
     ...signup,

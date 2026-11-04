@@ -10,7 +10,11 @@ import {
   getOverdueQueue,
   type OverdueQueue,
 } from "../../api/evaluationEligibility";
-import { type AcState, useObserverData } from "../../api/observerEligibility";
+import {
+  type AcState,
+  unmatchedSignups,
+  useObserverData,
+} from "../../api/observerEligibility";
 import { ActionButton } from "../../components/ActionButton";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
@@ -58,9 +62,7 @@ function buildReport({
   matching,
   tracking,
 }: ReportData): Report {
-  const unmatched = matching.signups.filter(
-    (s) => s.candidates.length === 0,
-  ).length;
+  const unmatched = unmatchedSignups(matching).length;
   // Every observation with an observer has been scheduled, whether or not it has happened yet.
   const scheduled = tracking.observations.filter(
     (o) => o.status !== "AWAITING_OBSERVER",

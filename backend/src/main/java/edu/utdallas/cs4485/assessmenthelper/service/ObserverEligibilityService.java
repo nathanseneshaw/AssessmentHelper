@@ -109,7 +109,24 @@ public class ObserverEligibilityService {
             List<Request> outgoing,
             List<Notification> notifications) {}
 
-    public record AcState(Cycle cycle, List<Signup> signups) {}
+    public record Invitation(
+            int requestId,
+            int observerId,
+            String observerName,
+            String status,
+            LocalDateTime requestedAt,
+            LocalDateTime expiresAt,
+            LocalDateTime respondedAt) {}
+
+    public record MatchingCase(
+            int signupId,
+            String status,
+            String reason,
+            int eligibleObserverCount,
+            int remainingObserverCount,
+            List<Invitation> invitations) {}
+
+    public record AcState(Cycle cycle, List<Signup> signups, List<MatchingCase> matchingCases) {}
 
     /** The observation window a signup may choose: from {@code start} through any date up to {@code latestEnd}. */
     public record Window(
@@ -358,8 +375,71 @@ public class ObserverEligibilityService {
     }
 
     public AcState acState() {
-        Cycle c = cycle();
-        return new AcState(c, signups(c, true));
+        return acState(cycle());
+    }
+
+    private AcState acState(Cycle c) {
+        // Acceptance can create several observation rows for a signup. Count that signup only once.
+        Map<Integer, Signup> distinctSignups = new LinkedHashMap<>();
+        signups(c, true).forEach(s -> distinctSignups.putIfAbsent(s.signupId(), s));
+        List<Signup> rows = List.copyOf(distinctSignups.values());
+        LocalDateTime now = LocalDateTime.now(clock);
+        Map<Integer, List<Invitation>> invitations = new HashMap<>();
+        db.query(
+                """
+                SELECT r.*, p.first_name || ' ' || p.last_name AS observer_name
+                FROM observer_request r JOIN observer ob ON ob.observer_id=r.observer_id
+                JOIN professor p ON p.professor_id=ob.professor_id
+                JOIN evaluation_signup es ON es.signup_id=r.signup_id
+                JOIN observee oe ON oe.observee_id=es.observee_id
+                WHERE oe.cycle_id=? ORDER BY r.request_date DESC, r.request_id DESC
+                """,
+                (org.springframework.jdbc.core.RowCallbackHandler) r -> {
+                    LocalDateTime expires = r.getObject("expiration_date", LocalDateTime.class);
+                    String status = r.getString("status");
+                    if ("PENDING".equals(status) && expires != null && !expires.isAfter(now)) status = "EXPIRED";
+                    invitations
+                            .computeIfAbsent(r.getInt("signup_id"), ignored -> new ArrayList<>())
+                            .add(new Invitation(
+                                    r.getInt("request_id"),
+                                    r.getInt("observer_id"),
+                                    r.getString("observer_name"),
+                                    status,
+                                    r.getObject("request_date", LocalDateTime.class),
+                                    expires,
+                                    r.getObject("response_date", LocalDateTime.class)));
+                },
+                c.cycleId());
+        List<MatchingCase> cases = rows.stream()
+                .map(s -> {
+                    List<Invitation> history = invitations.getOrDefault(s.signupId(), List.of());
+                    boolean matched =
+                            s.observerName() != null || history.stream().anyMatch(r -> "CONFIRMED".equals(r.status()));
+                    boolean pending = history.stream().anyMatch(r -> "PENDING".equals(r.status()));
+                    var eligible = eligible(s, c);
+                    Set<Integer> requested = new HashSet<>();
+                    history.forEach(r -> requested.add(r.observerId()));
+                    int remaining = (int) eligible.stream()
+                            .filter(id -> !requested.contains(id))
+                            .count();
+                    String status;
+                    String reason = null;
+                    if (matched) status = "MATCHED";
+                    else if (pending) status = "AWAITING_RESPONSE";
+                    else if (!history.isEmpty()
+                            && history.stream()
+                                    .allMatch(r -> "DECLINED".equals(r.status()) || "EXPIRED".equals(r.status()))) {
+                        status = "UNMATCHED";
+                        reason = "INVITATIONS_UNSUCCESSFUL";
+                    } else if (eligible.isEmpty()) {
+                        status = "UNMATCHED";
+                        reason = "NO_ELIGIBLE_OBSERVERS";
+                    } else status = "AWAITING_INVITATION";
+                    return new MatchingCase(
+                            s.signupId(), status, reason, eligible.size(), remaining, List.copyOf(history));
+                })
+                .toList();
+        return new AcState(c, rows, cases);
     }
 
     public record Deadlines(LocalDate signupDeadline, LocalDate observationDeadline, LocalDate feedbackDeadline) {}
@@ -511,7 +591,7 @@ public class ObserverEligibilityService {
     public AcState generate() {
         Cycle c = lockCycle(cycle().cycleId());
         refresh(c);
-        return new AcState(c, signups(c, true));
+        return acState(c);
     }
 
     private void refresh(Cycle c) {

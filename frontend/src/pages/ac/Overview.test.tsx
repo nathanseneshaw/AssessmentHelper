@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { App } from "../../App";
 import type { OverdueQueue } from "../../api/evaluationEligibility";
+import type { AcState } from "../../api/observerEligibility";
 import { metrics } from "../../test/acDashboardFixtures";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 import { ac } from "../../test/observerFixtures";
@@ -40,13 +41,15 @@ const queue: OverdueQueue = {
 };
 
 let answerMetrics: () => Response | Promise<Response>;
+let matchingState: AcState;
 
 beforeEach(() => {
   answerMetrics = () => Response.json(metrics);
+  matchingState = structuredClone(ac);
   fakeBackend({
     "/api/due-evaluations": () => Response.json(queue),
     "/api/overdue-evaluations": () => Response.json(queue),
-    "/api/observer-eligibility/ac": () => Response.json(ac),
+    "/api/observer-eligibility/ac": () => Response.json(matchingState),
     "/api/ac-dashboard/metrics": () => answerMetrics(),
   });
   signInAs("ac");
@@ -73,6 +76,33 @@ function kpi(label: string) {
   const [, value, note] = card.querySelectorAll("p");
   return { value: value?.textContent, note: note?.textContent };
 }
+
+test("unmatched faculty includes failed invitations and links to their matching case", async () => {
+  const first = matchingState.matchingCases[0];
+  if (!first) throw new Error("Missing matching case");
+  first.status = "UNMATCHED";
+  first.reason = "INVITATIONS_UNSUCCESSFUL";
+  await openOverview();
+  await waitFor(() => expect(kpi("Unmatched Faculty").value).toBe("2"));
+  expect(
+    screen
+      .getByRole("link", { name: "Invitations declined or expired" })
+      .getAttribute("href"),
+  ).toBe("/ac/matching?signup=1");
+});
+
+test("confirmed and pending cases are excluded even if their stored candidate lists are empty", async () => {
+  matchingState.signups.forEach((s) => {
+    s.candidates = [];
+  });
+  matchingState.matchingCases.forEach((c, i) => {
+    c.status = i === 0 ? "MATCHED" : "AWAITING_RESPONSE";
+    c.reason = null;
+  });
+  await openOverview();
+  await waitFor(() => expect(kpi("Unmatched Faculty").value).toBe("0"));
+  expect(screen.getByText("No unmatched faculty.")).toBeTruthy();
+});
 
 test("metric cards show live values, with rates rounded to whole percents", async () => {
   await openOverview();

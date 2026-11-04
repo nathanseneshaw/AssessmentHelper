@@ -4,6 +4,7 @@ import {
   type AcState,
   type Candidate,
   getEligibleObservers,
+  matchingReason,
   observerButton,
   postObserver,
   type Signup,
@@ -181,6 +182,9 @@ export function AcObserverMatching() {
   const [failure, setFailure] = useState("");
   const signups = data?.signups ?? [];
   const signup = signups.find((s) => s.signupId === selected) ?? signups[0];
+  const matching = data?.matchingCases?.find(
+    (c) => c.signupId === signup?.signupId,
+  );
   const index = signups.findIndex((s) => s.signupId === signup?.signupId);
   const step = (amount: number) =>
     setSelected(
@@ -272,6 +276,72 @@ export function AcObserverMatching() {
           <p className="mt-1 text-sm text-muted">
             Observation window: {signup.windowStart} - {signup.windowEnd}
           </p>
+          {matching && (
+            <section
+              className="mt-4 rounded-lg border border-line bg-white p-4"
+              aria-label="Matching status"
+            >
+              <p
+                className={`font-semibold ${matching.status === "UNMATCHED" ? "text-brand-red" : "text-brand-green"}`}
+              >
+                {matching.status === "UNMATCHED"
+                  ? `Unmatched: ${matchingReason(matching)}`
+                  : matching.status === "MATCHED"
+                    ? "Matched"
+                    : matching.status === "AWAITING_RESPONSE"
+                      ? "Awaiting observer response"
+                      : "Awaiting invitation"}
+              </p>
+              {matching.status === "UNMATCHED" && (
+                <p className="mt-2 text-sm">
+                  {matching.reason === "INVITATIONS_UNSUCCESSFUL"
+                    ? "All invitations have been declined or expired. No observer is confirmed."
+                    : "No professors currently meet the eligibility requirements for this observation window."}
+                  {matching.remainingObserverCount > 0 &&
+                    ` ${matching.remainingObserverCount} additional eligible observer(s) have not been invited.`}
+                </p>
+              )}
+              {matching.invitations.length > 0 && (
+                <div className="mt-4 overflow-x-auto">
+                  <h3 className="font-semibold text-sm">Invitation history</h3>
+                  <table className="mt-2 w-full text-left text-sm">
+                    <thead>
+                      <tr>
+                        <th className="p-2">Observer</th>
+                        <th className="p-2">Status</th>
+                        <th className="p-2">Sent</th>
+                        <th className="p-2">Expires</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matching.invitations.map((r) => (
+                        <tr key={r.requestId} className="border-t border-line">
+                          <td className="p-2">{r.observerName}</td>
+                          <td className="p-2">
+                            {r.status === "CONFIRMED"
+                              ? "Accepted"
+                              : r.status === "PENDING"
+                                ? "Pending"
+                                : r.status === "DECLINED"
+                                  ? "Declined"
+                                  : r.status === "EXPIRED"
+                                    ? "Expired"
+                                    : r.status}
+                          </td>
+                          <td className="p-2">
+                            {r.requestedAt?.replace("T", " ") ?? "—"}
+                          </td>
+                          <td className="p-2">
+                            {r.expiresAt?.replace("T", " ") ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
           {signup.observerName && (
             <p className="mt-3 font-semibold text-brand-green">
               Observer: {signup.observerName}
@@ -311,16 +381,31 @@ export function AcObserverMatching() {
                           {[...new Set(c.qualifyingCourses)].join("; ")}
                         </p>
                       </div>
-                      <span className="text-sm text-brand-green">
-                        Available
+                      <span className="text-sm text-muted">
+                        {(() => {
+                          const invitation = matching?.invitations.find(
+                            (r) => r.observerId === c.observerId,
+                          );
+                          return invitation?.status === "DECLINED"
+                            ? "Declined"
+                            : invitation?.status === "EXPIRED"
+                              ? "Expired"
+                              : invitation?.status === "PENDING"
+                                ? "Invitation pending"
+                                : invitation?.status === "CONFIRMED"
+                                  ? "Accepted"
+                                  : "Recommended";
+                        })()}
                       </span>
                     </li>
                   ))}
                 </ul>
               ) : (
                 <p role="alert" className="mt-8 font-semibold text-brand-red">
-                  No eligible observers. AC attention is required. This list
-                  updates as more professors sign up.
+                  {matching?.reason === "NO_ELIGIBLE_OBSERVERS"
+                    ? "No eligible observers. AC attention is required."
+                    : "No observers on the recommendation list."}{" "}
+                  This list updates as more professors sign up.
                 </p>
               )}
             </section>

@@ -87,6 +87,97 @@ class ObserverEligibilityServiceTests {
         return service.facultyState(professorId).notifications().size();
     }
 
+    ObserverEligibilityService.MatchingCase matching(int signupId) {
+        return service.acState().matchingCases().stream()
+                .filter(c -> c.signupId() == signupId)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    void invitation(int signupId, int professorId, String status, LocalDateTime expires) {
+        int observerId = db.queryForObject(
+                "SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1", Integer.class, professorId);
+        db.update(
+                "INSERT INTO observer_request(signup_id,observer_id,request_date,expiration_date,status) VALUES (?,?,?, ?,?)",
+                signupId,
+                observerId,
+                LocalDateTime.parse("2026-10-20T10:00:00"),
+                expires,
+                status);
+    }
+
+    @Test
+    void matchingUsesTheFullEligiblePoolInsteadOfTheStoredRecommendationCount() {
+        int target = darioSignsUp();
+        db.update("DELETE FROM observer_match WHERE signup_id=?", target);
+        var state = matching(target);
+        assertThat(state.status()).isEqualTo("AWAITING_INVITATION");
+        assertThat(state.reason()).isNull();
+        assertThat(state.eligibleObserverCount()).isEqualTo(4);
+        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        assertThat(matching(target).reason()).isEqualTo("NO_ELIGIBLE_OBSERVERS");
+    }
+
+    @Test
+    void staleRecommendationsDoNotHideTheAbsenceOfEligibleObservers() {
+        int target = darioSignsUp();
+        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        assertThat(list(target).candidates()).isNotEmpty();
+        assertThat(matching(target).status()).isEqualTo("UNMATCHED");
+        assertThat(matching(target).reason()).isEqualTo("NO_ELIGIBLE_OBSERVERS");
+    }
+
+    @Test
+    void allDeclinedOrExpiredInvitationsNeedAcAttentionEvenWhenOtherObserversRemain() {
+        int target = darioSignsUp();
+        invitation(target, LEANDER, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        // At exactly the expiration time this still-persisted pending invitation is effectively expired.
+        invitation(target, ARLO, "PENDING", LocalDateTime.parse("2026-10-21T10:00:00"));
+        var state = matching(target);
+        assertThat(state.status()).isEqualTo("UNMATCHED");
+        assertThat(state.reason()).isEqualTo("INVITATIONS_UNSUCCESSFUL");
+        assertThat(state.remainingObserverCount()).isEqualTo(2);
+        assertThat(state.invitations())
+                .extracting(ObserverEligibilityService.Invitation::status)
+                .containsExactlyInAnyOrder("DECLINED", "EXPIRED");
+        assertThat(state.invitations())
+                .extracting(ObserverEligibilityService.Invitation::observerName)
+                .contains("Arlo Glimmerton");
+    }
+
+    @Test
+    void aLiveInvitationIsNotUnmatchedAndAnAcceptedObserverTakesPrecedence() {
+        int target = darioSignsUp();
+        invitation(target, LEANDER, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        invitation(target, ARLO, "PENDING", LocalDateTime.parse("2026-10-21T10:00:01"));
+        assertThat(matching(target).status()).isEqualTo("AWAITING_RESPONSE");
+        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        assertThat(matching(target).status()).isEqualTo("AWAITING_RESPONSE");
+        invitation(target, KEIRA, "CONFIRMED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        assertThat(matching(target).status()).isEqualTo("MATCHED");
+        assertThat(matching(target).reason()).isNull();
+    }
+
+    @Test
+    void manualAssignmentAndMultipleAcceptedObserversDoNotInflateTheUnmatchedList() {
+        int target = darioSignsUp();
+        int observerId = candidateIds(target).getFirst();
+        service.assign(target, observerId);
+        assertThat(matching(target).status()).isEqualTo("MATCHED");
+        int another = candidateIds(target).stream()
+                .filter(id -> id != observerId)
+                .findFirst()
+                .orElseThrow();
+        db.update(
+                "INSERT INTO observation(signup_id,observer_id,template_id,status) VALUES (?,?,(SELECT MIN(template_id) FROM observation_template),'ACCEPTED')",
+                target,
+                another);
+        assertThat(service.acState().signups().stream().filter(s -> s.signupId() == target))
+                .hasSize(1);
+        assertThat(service.acState().matchingCases().stream().filter(s -> s.signupId() == target))
+                .hasSize(1);
+    }
+
     void releaseAfterDeadline(int signupId) {
         db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
         service.release(signupId);

@@ -70,6 +70,38 @@ export interface FacultyState {
 export interface AcState {
   cycle: Cycle;
   signups: Signup[];
+  matchingCases: MatchingCase[];
+}
+export interface MatchingInvitation {
+  requestId: number;
+  observerId: number;
+  observerName: string;
+  status: string;
+  requestedAt: string | null;
+  expiresAt: string | null;
+  respondedAt: string | null;
+}
+export interface MatchingCase {
+  signupId: number;
+  status: "MATCHED" | "AWAITING_RESPONSE" | "AWAITING_INVITATION" | "UNMATCHED";
+  reason: "NO_ELIGIBLE_OBSERVERS" | "INVITATIONS_UNSUCCESSFUL" | null;
+  eligibleObserverCount: number;
+  remainingObserverCount: number;
+  invitations: MatchingInvitation[];
+}
+export const matchingReason = (matching: MatchingCase | undefined) =>
+  matching?.reason === "NO_ELIGIBLE_OBSERVERS"
+    ? "No eligible observers"
+    : matching?.reason === "INVITATIONS_UNSUCCESSFUL"
+      ? "Invitations declined or expired"
+      : "";
+export function unmatchedSignups(state: AcState): Signup[] {
+  const ids = new Set(
+    (state.matchingCases ?? [])
+      .filter((c) => c.status === "UNMATCHED")
+      .map((c) => c.signupId),
+  );
+  return (state.signups ?? []).filter((s) => ids.has(s.signupId));
 }
 export const observerBase = "/api/observer-eligibility";
 export const schedule = (s: Section) =>
