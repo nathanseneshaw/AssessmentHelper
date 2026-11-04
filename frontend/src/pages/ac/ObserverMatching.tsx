@@ -280,6 +280,27 @@ export function AcObserverMatching() {
       setBusy(false);
     }
   }
+  async function regenerate() {
+    if (!signup || busy) return;
+    setBusy(true);
+    setMessage("");
+    setFailure("");
+    try {
+      await postObserver(`/signups/${signup.signupId}/regenerate`);
+      setMessage(
+        "New recommendations generated. Review the list, then send it to the observee.",
+      );
+      reload();
+    } catch (cause) {
+      setFailure(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to generate new recommendations.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div>
       {coursesFor && (
@@ -367,11 +388,15 @@ export function AcObserverMatching() {
               </p>
               {matching.status === "UNMATCHED" && (
                 <p className="mt-2 text-sm">
-                  {matching.reason === "INVITATIONS_UNSUCCESSFUL"
-                    ? "All recommended observers have declined or their invitations have expired. No observer is confirmed."
-                    : "No professors currently meet the eligibility requirements for this observation window."}
-                  {matching.remainingObserverCount > 0 &&
-                    ` ${matching.remainingObserverCount} additional eligible observer(s) have not been invited.`}
+                  {matching.reason === "RECOMMENDATIONS_AWAITING_RELEASE"
+                    ? "Review the new recommendations below, then send the candidate list to notify the observee."
+                    : matching.reason === "INVITATIONS_UNSUCCESSFUL"
+                      ? "All recommended observers have declined or their invitations have expired. No observer is confirmed."
+                      : "No professors currently meet the eligibility requirements for this observation window."}
+                  {matching.reason === "INVITATIONS_UNSUCCESSFUL" &&
+                    (matching.unusedEligibleObserverCount > 0
+                      ? ` ${matching.unusedEligibleObserverCount} additional eligible observer(s) have not been recommended.`
+                      : " No additional eligible observers remain. This case still needs AC review.")}
                 </p>
               )}
               {matching.invitations.length > 0 && (
@@ -412,6 +437,19 @@ export function AcObserverMatching() {
                     </tbody>
                   </table>
                 </div>
+              )}
+              {matching.previousRecommendations.length > 0 && (
+                <details className="mt-4 text-sm">
+                  <summary className="cursor-pointer font-semibold">
+                    Previous recommendations (
+                    {matching.previousRecommendations.length})
+                  </summary>
+                  <ul className="mt-2 space-y-2">
+                    {matching.previousRecommendations.map((c) => (
+                      <li key={c.observerId}>{c.name}</li>
+                    ))}
+                  </ul>
+                </details>
               )}
             </section>
           )}
@@ -502,6 +540,23 @@ export function AcObserverMatching() {
                 <li>Active professor signed up for evaluation</li>
               </ol>
               <div className="mt-auto flex flex-wrap gap-3 pt-10">
+                {matching?.reason === "INVITATIONS_UNSUCCESSFUL" && (
+                  <button
+                    type="button"
+                    className={observerButton}
+                    disabled={
+                      busy ||
+                      !!error ||
+                      !data.cycle.requestsOpen ||
+                      !signup.released ||
+                      !!signup.observerName ||
+                      matching.unusedEligibleObserverCount === 0
+                    }
+                    onClick={() => void regenerate()}
+                  >
+                    Generate New Recommendations
+                  </button>
+                )}
                 {!data.cycle.candidateListsOpen && !signup.released && (
                   <p className="w-full text-sm text-muted">
                     Candidate lists can be sent after the signup deadline (

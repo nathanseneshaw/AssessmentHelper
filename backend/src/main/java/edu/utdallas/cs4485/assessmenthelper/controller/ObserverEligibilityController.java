@@ -55,6 +55,12 @@ public class ObserverEligibilityController {
         service.release(id);
     }
 
+    @PostMapping("/signups/{id}/regenerate")
+    @PreAuthorize("hasRole('AC')")
+    public ObserverEligibilityService.AcState regenerate(@PathVariable int id) {
+        return service.regenerate(id);
+    }
+
     @GetMapping("/signups/{id}/eligible")
     @PreAuthorize("hasRole('AC')")
     public List<ObserverEligibilityService.Candidate> eligible(@PathVariable int id) {

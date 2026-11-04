@@ -74,6 +74,19 @@ class ObserverEligibilityControllerTests {
     private JdbcTemplate db;
 
     @Test
+    void regenerationIsCommitteeOnlyAndRequiresAnExhaustedList() throws Exception {
+        int signupId = db.queryForObject(
+                "SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=31 AND oe.cycle_id=1",
+                Integer.class);
+        mvc.perform(as(DARIO, post("/api/observer-eligibility/signups/" + signupId + "/regenerate")))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/regenerate")))
+                .andExpect(status().isConflict());
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/-1/regenerate")))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void committeeEndpointsRejectFaculty() throws Exception {
         mvc.perform(as(DARIO, get("/api/observer-eligibility/ac"))).andExpect(status().isForbidden());
         mvc.perform(as(DARIO, post("/api/observer-eligibility/generate"))).andExpect(status().isForbidden());

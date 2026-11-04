@@ -124,6 +124,8 @@ public class ObserverEligibilityService {
             String reason,
             int eligibleObserverCount,
             int remainingObserverCount,
+            int unusedEligibleObserverCount,
+            List<Candidate> previousRecommendations,
             List<Invitation> invitations) {}
 
     public record AcState(Cycle cycle, List<Signup> signups, List<MatchingCase> matchingCases) {}
@@ -260,6 +262,10 @@ public class ObserverEligibilityService {
     }
 
     private List<Candidate> candidates(int signupId) {
+        return candidates(signupId, "PROPOSED");
+    }
+
+    private List<Candidate> candidates(int signupId, String matchStatus) {
         return db.query("""
                 SELECT ob.observer_id, p.professor_id, p.first_name || ' ' || p.last_name AS name,
                 d.department_name, c.course_number FROM observer_match m
@@ -267,8 +273,8 @@ public class ObserverEligibilityService {
                 JOIN department d ON d.department_id=p.department_id
                 JOIN evaluation_signup es ON es.signup_id=m.signup_id
                 JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
-                WHERE m.signup_id=? ORDER BY m.match_id
-                """, (r, n) -> candidate(r, signupId), signupId);
+                WHERE m.signup_id=? AND m.match_status=? ORDER BY m.match_id
+                """, (r, n) -> candidate(r, signupId), signupId, matchStatus);
     }
 
     private Candidate candidate(ResultSet r, int signupId) throws SQLException {
@@ -413,6 +419,7 @@ public class ObserverEligibilityService {
         List<MatchingCase> cases = rows.stream()
                 .map(s -> {
                     List<Invitation> history = invitations.getOrDefault(s.signupId(), List.of());
+                    List<Candidate> previous = candidates(s.signupId(), "SUPERSEDED");
                     boolean matched =
                             s.observerName() != null || history.stream().anyMatch(r -> "CONFIRMED".equals(r.status()));
                     boolean pending = history.stream().anyMatch(r -> "PENDING".equals(r.status()));
@@ -421,6 +428,12 @@ public class ObserverEligibilityService {
                     history.forEach(r -> requested.add(r.observerId()));
                     int remaining = (int) eligible.stream()
                             .filter(id -> !requested.contains(id))
+                            .count();
+                    Set<Integer> recommended = new HashSet<>(requested);
+                    s.candidates().forEach(candidate -> recommended.add(candidate.observerId()));
+                    previous.forEach(candidate -> recommended.add(candidate.observerId()));
+                    int unused = (int) eligible.stream()
+                            .filter(id -> !recommended.contains(id))
                             .count();
                     String status;
                     String reason = null;
@@ -433,7 +446,10 @@ public class ObserverEligibilityService {
                                     .allMatch(candidate -> unsuccessful.contains(candidate.observerId()));
                     if (matched) status = "MATCHED";
                     else if (pending) status = "AWAITING_RESPONSE";
-                    else if (recommendationsExhausted) {
+                    else if (!s.released() && !previous.isEmpty()) {
+                        status = "UNMATCHED";
+                        reason = "RECOMMENDATIONS_AWAITING_RELEASE";
+                    } else if (recommendationsExhausted) {
                         status = "UNMATCHED";
                         reason = "INVITATIONS_UNSUCCESSFUL";
                     } else if (eligible.isEmpty()) {
@@ -441,7 +457,14 @@ public class ObserverEligibilityService {
                         reason = "NO_ELIGIBLE_OBSERVERS";
                     } else status = "AWAITING_INVITATION";
                     return new MatchingCase(
-                            s.signupId(), status, reason, eligible.size(), remaining, List.copyOf(history));
+                            s.signupId(),
+                            status,
+                            reason,
+                            eligible.size(),
+                            remaining,
+                            unused,
+                            previous,
+                            List.copyOf(history));
                 })
                 .toList();
         return new AcState(c, rows, cases);
@@ -599,16 +622,63 @@ public class ObserverEligibilityService {
         return acState(c);
     }
 
+    /** Draws a fresh list only after every current recommendation was declined or expired. */
+    public AcState regenerate(int signupId) {
+        int cycleId = cycleIdOf(signupId);
+        // Serialize against invitation sends, assignments and observer responses.
+        db.queryForObject(
+                "SELECT professor_id FROM professor WHERE professor_id=? FOR UPDATE",
+                Integer.class,
+                signupOwner(signupId));
+        db.queryForObject(
+                "SELECT signup_id FROM evaluation_signup WHERE signup_id=? FOR UPDATE", Integer.class, signupId);
+        Cycle c = lockCycle(cycleId);
+        if (!c.requestsOpen()) throw new ConflictException("The observation period is closed.");
+        Signup signup = managedSignup(signupId, c);
+        if (signup.windowEnd().isBefore(LocalDate.now(clock)))
+            throw new ConflictException("This signup's observation window has closed.");
+        if (!signup.released())
+            throw new ConflictException("Review and send the current candidate list before generating another set.");
+        MatchingCase state = acState(c).matchingCases().stream()
+                .filter(row -> row.signupId() == signupId)
+                .findFirst()
+                .orElseThrow();
+        if (!"UNMATCHED".equals(state.status()) || !"INVITATIONS_UNSUCCESSFUL".equals(state.reason()))
+            throw new ConflictException(
+                    "Every recommended observer must decline or expire, with no confirmed observer or pending invitation, before generating another set.");
+        var pool = new ArrayList<>(unusedEligible(signup, c));
+        if (pool.isEmpty())
+            throw new ConflictException("No additional eligible observers remain. This case still needs AC review.");
+        Collections.shuffle(pool);
+        db.update(
+                "UPDATE observer_match SET match_status='SUPERSEDED' WHERE signup_id=? AND match_status='PROPOSED'",
+                signupId);
+        for (int observerId : pool.stream().limit(LIST_SIZE).toList())
+            db.update(
+                    "INSERT INTO observer_match(signup_id,observer_id,generated_date,match_status) VALUES (?,?,?,'PROPOSED')",
+                    signupId,
+                    observerId,
+                    LocalDate.now(clock));
+        db.update("UPDATE observer_list_state SET released_at=NULL WHERE signup_id=?", signupId);
+        return acState(c);
+    }
+
+    private List<Integer> unusedEligible(Signup signup, Cycle c) {
+        Set<Integer> used = new HashSet<>(db.queryForList("""
+                SELECT observer_id FROM observer_match WHERE signup_id=?
+                UNION SELECT observer_id FROM observer_request WHERE signup_id=?
+                """, Integer.class, signup.signupId(), signup.signupId()));
+        return eligible(signup, c).stream().filter(id -> !used.contains(id)).toList();
+    }
+
     private void refresh(Cycle c) {
         if (!c.requestsOpen()) return;
         for (Signup s : signups(c, true)) {
             if (s.released() || s.candidates().size() >= LIST_SIZE) continue;
-            var eligible = new ArrayList<>(eligible(s, c));
-            var existing = s.candidates().stream().map(Candidate::observerId).toList();
-            eligible.removeAll(existing);
+            var eligible = new ArrayList<>(unusedEligible(s, c));
             Collections.shuffle(eligible);
             for (int observerId :
-                    eligible.stream().limit(LIST_SIZE - existing.size()).toList())
+                    eligible.stream().limit(LIST_SIZE - s.candidates().size()).toList())
                 db.update(
                         "INSERT INTO observer_match(signup_id,observer_id,generated_date,match_status) VALUES (?,?,?,'PROPOSED')",
                         s.signupId(),
@@ -730,7 +800,13 @@ public class ObserverEligibilityService {
             throw new ConflictException(
                     "A candidate is no longer eligible. Review the teaching schedule before release.");
         db.update("UPDATE observer_list_state SET released_at=? WHERE signup_id=?", LocalDateTime.now(clock), signupId);
-        notify(s.professorId(), signupId, "Your generated observer list is ready. Choose an observer to request.");
+        boolean replacement = !candidates(signupId, "SUPERSEDED").isEmpty();
+        notify(
+                s.professorId(),
+                signupId,
+                replacement
+                        ? "A new set of observer recommendations is ready. Your previous invitations were unsuccessful. Choose from the new list to send another invitation."
+                        : "Your generated observer list is ready. Choose an observer to request.");
     }
 
     /**

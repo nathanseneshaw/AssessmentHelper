@@ -51,6 +51,8 @@ export const ac: AcState = {
       reason: null,
       eligibleObserverCount: 6,
       remainingObserverCount: 6,
+      unusedEligibleObserverCount: 1,
+      previousRecommendations: [],
       invitations: [],
     },
     {
@@ -59,6 +61,8 @@ export const ac: AcState = {
       reason: "NO_ELIGIBLE_OBSERVERS",
       eligibleObserverCount: 0,
       remainingObserverCount: 0,
+      unusedEligibleObserverCount: 0,
+      previousRecommendations: [],
       invitations: [],
     },
   ],

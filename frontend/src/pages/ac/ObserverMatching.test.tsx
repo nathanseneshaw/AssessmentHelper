@@ -16,6 +16,7 @@ let posts: string[];
 let unavailable: boolean;
 let refuseAssign: boolean;
 let assigned: unknown[];
+let refuseRegeneration: boolean;
 
 // Everyone who passes the rules: the five listed candidates plus Professor 7, who was not drawn for the list.
 const eligible = [
@@ -36,7 +37,28 @@ beforeEach(() => {
   unavailable = false;
   refuseAssign = false;
   assigned = [];
+  refuseRegeneration = false;
   fakeBackend({
+    "/api/observer-eligibility/signups/1/regenerate": (_init, url) => {
+      posts.push(url.pathname);
+      if (refuseRegeneration)
+        return Response.json(
+          { detail: "No additional eligible observers remain." },
+          { status: 409 },
+        );
+      const first = state.signups[0];
+      const matching = state.matchingCases[0];
+      if (first && matching) {
+        matching.previousRecommendations = first.candidates;
+        const replacement = eligible[eligible.length - 1];
+        if (!replacement) throw new Error("Missing replacement observer");
+        first.candidates = [replacement];
+        first.released = false;
+        matching.reason = "RECOMMENDATIONS_AWAITING_RELEASE";
+        matching.unusedEligibleObserverCount = 0;
+      }
+      return Response.json(state);
+    },
     "/api/observer-eligibility/signups/1/eligible": () =>
       Response.json(eligible),
     "/api/observer-eligibility/signups/1/assign": (init) => {
@@ -68,6 +90,11 @@ beforeEach(() => {
       posts.push(url.pathname);
       const first = state.signups[0];
       if (first) first.released = true;
+      const matching = state.matchingCases[0];
+      if (matching?.reason === "RECOMMENDATIONS_AWAITING_RELEASE") {
+        matching.status = "AWAITING_INVITATION";
+        matching.reason = null;
+      }
       return new Response(null, { status: 204 });
     },
   });
@@ -93,6 +120,7 @@ test("shows unsuccessful invitation history and additional eligible observers", 
   matching.status = "UNMATCHED";
   matching.reason = "INVITATIONS_UNSUCCESSFUL";
   matching.remainingObserverCount = 4;
+  matching.unusedEligibleObserverCount = 4;
   matching.invitations = [
     {
       requestId: 1,
@@ -124,6 +152,88 @@ test("shows unsuccessful invitation history and additional eligible observers", 
   expect(details.getByRole("table")).toBeTruthy();
   expect(details.getByText("Declined")).toBeTruthy();
   expect(details.getByText("Expired")).toBeTruthy();
+});
+
+function exhaustedCase() {
+  const signup = state.signups[0];
+  const matching = state.matchingCases[0];
+  if (!signup || !matching) throw new Error("Missing signup");
+  signup.released = true;
+  state.cycle.candidateListsOpen = true;
+  matching.status = "UNMATCHED";
+  matching.reason = "INVITATIONS_UNSUCCESSFUL";
+  matching.unusedEligibleObserverCount = 1;
+  matching.invitations = signup.candidates.map((c, i) => ({
+    requestId: i + 1,
+    observerId: c.observerId,
+    observerName: c.name,
+    status: "DECLINED",
+    requestedAt: null,
+    expiresAt: null,
+    respondedAt: null,
+  }));
+  return matching;
+}
+
+test("generates a replacement list for review and sends it separately while retaining history", async () => {
+  exhaustedCase();
+  await open();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Generate New Recommendations" }),
+  );
+  await screen.findByText(
+    "New recommendations generated. Review the list, then send it to the observee.",
+  );
+  await screen.findByText("Unmatched: New recommendations awaiting AC review");
+  const card = screen
+    .getByRole("heading", { name: "Eligible observers" })
+    .closest("section");
+  if (!card) throw new Error("Missing card");
+  expect(within(card).getByText("Professor 7")).toBeTruthy();
+  expect(within(card).queryByText("Professor 2")).toBeNull();
+  expect(screen.getByText("Previous recommendations (5)")).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: "Invitation history" }),
+  ).toBeTruthy();
+  expect(posts).toEqual(["/api/observer-eligibility/signups/1/regenerate"]);
+  fireEvent.click(screen.getByRole("button", { name: "Send Candidate List" }));
+  await screen.findByText("Awaiting invitation");
+  expect(posts).toEqual([
+    "/api/observer-eligibility/signups/1/regenerate",
+    "/api/observer-eligibility/signups/1/release",
+  ]);
+});
+
+test("no unused observers leaves the case unmatched and disables new recommendations", async () => {
+  const matching = exhaustedCase();
+  matching.unusedEligibleObserverCount = 0;
+  await open();
+  expect(
+    screen.getByText(/No additional eligible observers remain/),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Generate New Recommendations",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
+test("refused regeneration preserves the current recommendation list", async () => {
+  exhaustedCase();
+  refuseRegeneration = true;
+  await open();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Generate New Recommendations" }),
+  );
+  await screen.findByRole("alert");
+  const card = screen
+    .getByRole("heading", { name: "Eligible observers" })
+    .closest("section");
+  if (!card) throw new Error("Missing card");
+  expect(within(card).getByText("Professor 2")).toBeTruthy();
+  expect(within(card).queryByText("Professor 7")).toBeNull();
 });
 
 test("loads persisted candidates and releases the reviewed list", async () => {

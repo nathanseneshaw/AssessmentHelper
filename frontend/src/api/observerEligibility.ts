@@ -84,9 +84,15 @@ export interface MatchingInvitation {
 export interface MatchingCase {
   signupId: number;
   status: "MATCHED" | "AWAITING_RESPONSE" | "AWAITING_INVITATION" | "UNMATCHED";
-  reason: "NO_ELIGIBLE_OBSERVERS" | "INVITATIONS_UNSUCCESSFUL" | null;
+  reason:
+    | "NO_ELIGIBLE_OBSERVERS"
+    | "INVITATIONS_UNSUCCESSFUL"
+    | "RECOMMENDATIONS_AWAITING_RELEASE"
+    | null;
   eligibleObserverCount: number;
   remainingObserverCount: number;
+  unusedEligibleObserverCount: number;
+  previousRecommendations: Candidate[];
   invitations: MatchingInvitation[];
 }
 export const matchingReason = (matching: MatchingCase | undefined) =>
@@ -94,7 +100,9 @@ export const matchingReason = (matching: MatchingCase | undefined) =>
     ? "No eligible observers"
     : matching?.reason === "INVITATIONS_UNSUCCESSFUL"
       ? "Invitations declined or expired"
-      : "";
+      : matching?.reason === "RECOMMENDATIONS_AWAITING_RELEASE"
+        ? "New recommendations awaiting AC review"
+        : "";
 export function unmatchedSignups(state: AcState): Signup[] {
   const ids = new Set(
     (state.matchingCases ?? [])

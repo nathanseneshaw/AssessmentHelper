@@ -200,6 +200,136 @@ class ObserverEligibilityServiceTests {
         db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-31' WHERE cycle_id=1");
     }
 
+    int exhaustedReleasedList() {
+        int target = darioSignsUp();
+        releaseAfterDeadline(target);
+        for (int professor : candidateProfessors(target))
+            invitation(target, professor, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        return target;
+    }
+
+    void addUnusedObservers(int count) {
+        for (int i = 0; i < count; i++) {
+            String email = "replacement-" + i + "@test.edu";
+            db.update("""
+                    INSERT INTO professor(department_id,professor_rank,first_name,last_name,email,hire_date,active_status)
+                    SELECT department_id,'FULL','Fresh',?,?,'2020-01-01',TRUE FROM professor WHERE professor_id=?
+                    """, "Observer" + i, email, DARIO);
+            int professor = db.queryForObject("SELECT professor_id FROM professor WHERE email=?", Integer.class, email);
+            db.update("INSERT INTO teaching_history(professor_id,section_id) VALUES (?,300)", professor);
+            signup(professor, 300);
+        }
+    }
+
+    @Test
+    void replacementBatchesAreCappedReviewedReleasedAndNeverReusePreviousRecommendations() {
+        int target = exhaustedReleasedList();
+        var original = candidateIds(target);
+        int originalMatch =
+                db.queryForObject("SELECT MIN(match_id) FROM observer_match WHERE signup_id=?", Integer.class, target);
+        int notifications = notificationCount(DARIO);
+        addUnusedObservers(7);
+        service.regenerate(target);
+        var firstBatch = candidateIds(target);
+        assertThat(firstBatch).hasSize(5).doesNotContainAnyElementsOf(original);
+        assertThat(matching(target).previousRecommendations()).hasSize(original.size());
+        assertThat(matching(target).invitations()).hasSize(original.size());
+        assertThat(matching(target).reason()).isEqualTo("RECOMMENDATIONS_AWAITING_RELEASE");
+        assertThat(matching(target).status()).isEqualTo("UNMATCHED");
+        assertThat(list(target).released()).isFalse();
+        assertThat(service.facultyState(DARIO).signup().candidates()).isEmpty();
+        assertThat(options(DARIO).candidates()).isEmpty();
+        assertThat(notificationCount(DARIO)).isEqualTo(notifications);
+        assertThatThrownBy(() -> service.regenerate(target))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("Review and send");
+        assertThat(candidateIds(target)).containsExactlyElementsOf(firstBatch);
+        releaseAfterDeadline(target);
+        assertThat(matching(target).status()).isEqualTo("AWAITING_INVITATION");
+        assertThat(notificationCount(DARIO)).isEqualTo(notifications + 1);
+        assertThat(service.facultyState(DARIO).notifications().getFirst().message())
+                .contains("new set of observer recommendations");
+        assertThat(options(DARIO).candidates()).hasSize(5);
+        assertThatThrownBy(() -> requests.createFromMatch(DARIO, target, originalMatch, null))
+                .isInstanceOf(ConflictException.class);
+        releaseAfterDeadline(target);
+        assertThat(notificationCount(DARIO)).isEqualTo(notifications + 1);
+        for (int observer : firstBatch)
+            requests.decline(requests.create(target, observer, null).requestId());
+        service.regenerate(target);
+        var lastBatch = candidateIds(target);
+        assertThat(lastBatch).hasSize(2).doesNotContainAnyElementsOf(firstBatch).doesNotContainAnyElementsOf(original);
+        assertThat(matching(target).previousRecommendations()).hasSize(original.size() + firstBatch.size());
+        service.generate();
+        assertThat(candidateIds(target)).containsExactlyElementsOf(lastBatch);
+        releaseAfterDeadline(target);
+        for (int observer : lastBatch)
+            requests.decline(requests.create(target, observer, null).requestId());
+        assertThatThrownBy(() -> service.regenerate(target))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("No additional eligible observers");
+        assertThat(candidateIds(target)).containsExactlyElementsOf(lastBatch);
+        assertThat(list(target).released()).isTrue();
+        assertThat(matching(target).invitations()).hasSize(original.size() + firstBatch.size() + lastBatch.size());
+        assertThat(matching(target).status()).isEqualTo("UNMATCHED");
+    }
+
+    @Test
+    void regenerationWithNoUnusedObserversKeepsTheExistingListAndHistory() {
+        int target = exhaustedReleasedList();
+        var original = candidateIds(target);
+        assertThat(matching(target).unusedEligibleObserverCount()).isZero();
+        assertThatThrownBy(() -> service.regenerate(target))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("No additional eligible observers");
+        assertThat(candidateIds(target)).containsExactlyElementsOf(original);
+        assertThat(matching(target).previousRecommendations()).isEmpty();
+        assertThat(list(target).released()).isTrue();
+    }
+
+    @Test
+    void regenerationRejectsUninvitedCandidatesAndLiveRequests() {
+        int target = darioSignsUp();
+        releaseAfterDeadline(target);
+        addUnusedObservers(1);
+        var original = candidateIds(target);
+        assertThatThrownBy(() -> service.regenerate(target)).isInstanceOf(ConflictException.class);
+        invitation(target, LEANDER, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        assertThatThrownBy(() -> service.regenerate(target)).isInstanceOf(ConflictException.class);
+        invitation(target, ARLO, "PENDING", LocalDateTime.parse("2026-10-22T10:00:00"));
+        assertThatThrownBy(() -> service.regenerate(target)).isInstanceOf(ConflictException.class);
+        assertThat(candidateIds(target)).containsExactlyElementsOf(original);
+    }
+
+    @Test
+    void regenerationRejectsAMatchedSignupAndAClosedObservationPeriod() {
+        int target = exhaustedReleasedList();
+        addUnusedObservers(1);
+        int observer = candidateIds(target).getFirst();
+        service.assign(target, observer);
+        assertThatThrownBy(() -> service.regenerate(target)).isInstanceOf(ConflictException.class);
+        db.update("UPDATE evaluation_cycle SET observation_deadline='2026-10-20' WHERE cycle_id=1");
+        assertThatThrownBy(() -> service.regenerate(target))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("observation period is closed");
+        assertThat(matching(target).previousRecommendations()).isEmpty();
+    }
+
+    @Test
+    void replacementReleaseRechecksEligibilityBeforeNotifyingTheObservee() {
+        int target = exhaustedReleasedList();
+        addUnusedObservers(1);
+        int notifications = notificationCount(DARIO);
+        service.regenerate(target);
+        int replacement = candidateIds(target).getFirst();
+        db.update("UPDATE observer SET active_status=FALSE WHERE observer_id=?", replacement);
+        assertThatThrownBy(() -> releaseAfterDeadline(target))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("no longer eligible");
+        assertThat(list(target).released()).isFalse();
+        assertThat(notificationCount(DARIO)).isEqualTo(notifications);
+    }
+
     @Test
     void releaseWaitsUntilTheDayAfterSignupDeadline() {
         int target = darioSignsUp();
