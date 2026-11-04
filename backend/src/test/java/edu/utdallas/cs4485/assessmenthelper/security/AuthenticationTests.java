@@ -1,5 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.security;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -34,6 +36,31 @@ class AuthenticationTests {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate db;
+
+    @Test
+    void everySeededProfessorHasAnAccountWithTheirEmail() {
+        assertThat(db.queryForObject("""
+                SELECT COUNT(*) FROM professor p LEFT JOIN user_account u ON u.professor_id=p.professor_id
+                WHERE u.user_id IS NULL OR u.email<>p.email
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void newlyProvisionedFacultyCanSignInWithTheSharedFacultyPassword() throws Exception {
+        mockMvc.perform(signInRequest("avery.hazelwood@example.edu", "Faculty123!"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Avery Hazelwood"))
+                .andExpect(jsonPath("$.professorId").value(31))
+                .andExpect(jsonPath("$.roles").value(contains("PROFESSOR")));
+        mockMvc.perform(signInRequest("isla.wrenfield@example.edu", "Faculty123!"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Isla Wrenfield"))
+                .andExpect(jsonPath("$.schoolId").value(2))
+                .andExpect(jsonPath("$.roles").value(contains("PROFESSOR")));
+    }
 
     @Test
     void signingInReturnsTheUser() throws Exception {

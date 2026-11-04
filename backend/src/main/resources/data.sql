@@ -610,8 +610,7 @@ UPDATE professor p SET
 WHERE p.email IN (SELECT email FROM demo_faculty);
 DROP TABLE demo_faculty;
 
--- Kaia is on the Assessment Committee. Passwords: Committee123! for Kaia and Faculty123! for Dario, Arlo, Keira
--- and Leander.
+-- Kaia is on the Assessment Committee. Passwords: Committee123! for Kaia and Faculty123! for all other professors.
 INSERT INTO committee_member (professor_id, start_date, end_date, active_status)
 SELECT professor_id, DATE '2026-01-01', NULL, TRUE FROM professor WHERE email = 'kaia.clearbrook@example.edu';
 
@@ -632,6 +631,15 @@ FROM professor WHERE email = 'keira.larkspur@example.edu';
 INSERT INTO user_account (professor_id, username, email, password_hash, is_active)
 SELECT professor_id, 'lcoldwell', email, '{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW', TRUE
 FROM professor WHERE email = 'leander.coldwell@example.edu';
+
+-- Give every remaining professor a demo login while preserving the original accounts and user ids.
+-- Usernames follow the same first-initial + last-name format as the accounts above.
+INSERT INTO user_account (professor_id, username, email, password_hash, is_active)
+SELECT p.professor_id, LOWER(SUBSTRING(p.first_name, 1, 1) || p.last_name), p.email,
+    '{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW', TRUE
+FROM professor p
+WHERE NOT EXISTS (SELECT 1 FROM user_account u WHERE u.professor_id = p.professor_id)
+ORDER BY p.professor_id;
 
 INSERT INTO observation_template (created_by, template_name, version, created_date, active_status)
 SELECT user_id, 'Standard Classroom Observation', 1, DATE '2024-08-01', TRUE
