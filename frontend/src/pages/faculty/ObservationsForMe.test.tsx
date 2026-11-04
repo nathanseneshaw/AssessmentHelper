@@ -93,7 +93,7 @@ test("lists only observations of the professor's own classes, newest first", asy
   expect(dialog.queryByText(/Nina Notstarted/)).toBeNull();
 });
 
-test("only a submitted or completed observation can be opened", async () => {
+test("a submitted observation is reviewed and signed, a completed one viewed, and drafts not opened", async () => {
   const dialog = await openList();
 
   const submitted = await item(dialog, "CS 3345.001");
@@ -105,7 +105,7 @@ test("only a submitted or completed observation can be opened", async () => {
   expect(
     submitted
       .getByRole("link", {
-        name: "View the Fall 2026 CS 3345.001 observation",
+        name: "Review and Sign the Fall 2026 CS 3345.001 observation",
       })
       .getAttribute("href"),
   ).toBe("/faculty/observations/11");
@@ -137,7 +137,9 @@ test("only a submitted or completed observation can be opened", async () => {
     ).toBeDefined();
     expect(draft.queryByRole("link")).toBeNull();
   }
-  expect(dialog.getAllByRole("link", { name: /^View/ })).toHaveLength(2);
+  expect(
+    dialog.getAllByRole("link", { name: /^(View|Review and Sign) the / }),
+  ).toHaveLength(2);
 });
 
 async function openRecord(name: string) {
@@ -148,8 +150,10 @@ async function openRecord(name: string) {
   );
 }
 
-test("View opens a submitted observation read-only, with who submitted it and when", async () => {
-  const view = await openRecord("View the Fall 2026 CS 3345.001 observation");
+test("Review and Sign opens the submitted answers read-only, with who submitted them and when", async () => {
+  const view = await openRecord(
+    "Review and Sign the Fall 2026 CS 3345.001 observation",
+  );
   expect(window.location.pathname).toBe("/faculty/observations/11");
   await view.findByText(
     "Submitted by Oscar Observer on Oct 20, 2026, 9:15 AM CT.",
@@ -169,12 +173,14 @@ test("View opens a submitted observation read-only, with who submitted it and wh
   // The optional last question was left blank.
   expect(responses.getAllByText("No response")).toHaveLength(1);
 
-  // Nothing to start, fill in, save, submit or sign.
-  expect(view.queryAllByRole("button")).toHaveLength(0);
   expect(view.queryByRole("radiogroup")).toBeNull();
-  expect(view.queryAllByRole("textbox")).toHaveLength(0);
   expect(view.queryAllByRole("checkbox")).toHaveLength(0);
-  expect(view.queryAllByText(/sign/i)).toHaveLength(0);
+  expect(
+    view.getAllByRole("textbox").map((box) => box.getAttribute("id")),
+  ).toEqual([view.getByLabelText(/Your comments/).getAttribute("id")]);
+  expect(view.getAllByRole("button").map((b) => b.textContent)).toEqual([
+    "Sign off",
+  ]);
 });
 
 test("a completed observation without stored answers says so for every question", async () => {

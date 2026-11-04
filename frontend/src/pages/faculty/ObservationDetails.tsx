@@ -15,12 +15,15 @@ import { observerChanged } from "../../api/observerEligibility";
 import { Modal } from "../../components/Modal";
 import { ObservationRecord } from "../../components/ObservationRecord";
 import { ObservationForm } from "./ObservationForm";
+import { ObservationSignOff } from "./ObservationSignOff";
 
 const buttonClass =
   "rounded-lg bg-brand-green px-4 py-2 font-semibold text-sm text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50";
 
 const LEAVE_WARNING =
   "Your unsaved answers will be lost. Save a draft first to keep them.";
+const SIGN_OFF_LEAVE_WARNING =
+  "Your comments will be lost. Sign off first to keep them.";
 
 function meetingTime(course: ObservationCourse) {
   const time =
@@ -141,15 +144,16 @@ function Observation({ observationId }: { observationId: number }) {
     observationPath(observationId),
   );
   const [justSubmitted, setJustSubmitted] = useState(false);
+  const [justSigned, setJustSigned] = useState(false);
   const notice = useRef<HTMLParagraphElement>(null);
-  // Answers the observer has typed but not saved. Closing the dialog or the tab asks first.
+  // Answers or sign-off comments typed but not sent yet. Closing the dialog or the tab asks first.
   const [dirty, setDirty] = useState(false);
-  const unsaved = dirty && data?.canEdit === true;
+  const unsaved = dirty && (data?.canEdit === true || data?.canSign === true);
 
-  // The form's buttons are gone once it is submitted, so focus moves to the confirmation.
+  // The buttons are gone once the form is submitted or signed off, so focus moves to the confirmation.
   useEffect(() => {
-    if (justSubmitted) notice.current?.focus();
-  }, [justSubmitted]);
+    if (justSubmitted || justSigned) notice.current?.focus();
+  }, [justSubmitted, justSigned]);
 
   // Reloading or closing the tab shows the browser's own leave-page warning.
   useEffect(() => {
@@ -164,6 +168,11 @@ function Observation({ observationId }: { observationId: number }) {
     setData(observation);
   }
 
+  function signedOff(observation: ObservationDetail) {
+    setJustSigned(true);
+    setData(observation);
+  }
+
   return (
     <Modal
       wide
@@ -171,7 +180,13 @@ function Observation({ observationId }: { observationId: number }) {
       subtitle={
         data ? `${data.course.label} · ${data.semesterLabel}` : undefined
       }
-      leaveWarning={unsaved ? LEAVE_WARNING : undefined}
+      leaveWarning={
+        unsaved
+          ? data?.canSign
+            ? SIGN_OFF_LEAVE_WARNING
+            : LEAVE_WARNING
+          : undefined
+      }
     >
       {error ? (
         <p role="alert" className="text-brand-red">
@@ -193,7 +208,7 @@ function Observation({ observationId }: { observationId: number }) {
         />
       ) : (
         <>
-          {justSubmitted ? (
+          {justSubmitted || justSigned ? (
             <p
               ref={notice}
               role="status"
@@ -201,17 +216,27 @@ function Observation({ observationId }: { observationId: number }) {
               className="mb-5 rounded-lg bg-mist px-4 py-3 font-semibold text-brand-green text-sm outline-none"
             >
               <span aria-hidden="true">✓ </span>
-              You submitted this observation.
+              {justSigned
+                ? "You signed off. The record is complete and locked."
+                : "You submitted this observation."}
             </p>
           ) : (
             <p className="mb-5 rounded-lg bg-mist px-4 py-3 text-sm">
-              {data.viewerRole === "OBSERVEE"
-                ? `Submitted by ${data.observer.name}`
-                : "You submitted this observation"}
+              {data.viewerRole === "OBSERVER"
+                ? "You submitted this observation"
+                : `Submitted by ${data.observer.name}`}
               {data.submittedAt && ` on ${formatTimestamp(data.submittedAt)}`}.
             </p>
           )}
           <ObservationRecord observation={data} />
+          {data.canSign && (
+            <ObservationSignOff
+              observation={data}
+              onSigned={signedOff}
+              onDirtyChange={setDirty}
+              onStale={reload}
+            />
+          )}
         </>
       )}
     </Modal>

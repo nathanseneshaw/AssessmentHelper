@@ -91,4 +91,8 @@ export const completedObservation: ObservationDetail = {
   submittedAt: "2026-10-20T09:15:00",
   canStart: false,
   canEdit: false,
+  locked: true,
+  canSign: false,
+  observeeComments: null,
+  observeeSignedAt: "2026-10-22T14:05:00",
 };

@@ -31,6 +31,9 @@ export function submittedObservation(): ObservationDetail {
     ...structuredClone(completedObservation),
     status: "SUBMITTED",
     viewerRole: "OBSERVEE",
+    locked: false,
+    canSign: true,
+    observeeSignedAt: null,
   };
 }
 

@@ -129,7 +129,7 @@ class FacultyDashboardServiceTests {
         var submitted = service.dashboard(DARIO);
         assertThat(submitted.evaluation().status()).isEqualTo(EvaluationStatus.SUBMITTED);
         assertThat(submitted.termObservations()).isEqualTo(new TermObservations(1, 1, 0));
-        assertThat(types(submitted)).containsExactly(UpcomingType.FEEDBACK);
+        assertThat(types(submitted)).containsExactly(UpcomingType.SIGN_OFF, UpcomingType.FEEDBACK);
 
         complete(observation, "2026-11-10T11:00:00");
         clock.set("2026-11-11");
@@ -137,6 +137,24 @@ class FacultyDashboardServiceTests {
         assertThat(completed.evaluation().status()).isEqualTo(EvaluationStatus.COMPLETED);
         assertThat(completed.evaluation().completedAt()).isEqualTo(LocalDateTime.of(2026, 11, 10, 11, 0));
         assertThat(completed.termObservations()).isEqualTo(new TermObservations(1, 1, 0));
+        assertThat(types(completed)).doesNotContain(UpcomingType.SIGN_OFF);
+    }
+
+    @Test
+    void onlyTheObserveeIsAskedToSignOffAndOnlyUntilTheyDo() {
+        int observation = observationOf(LEANDER);
+        assertThat(types(service.dashboard(LEANDER))).doesNotContain(UpcomingType.SIGN_OFF);
+
+        submit(observation);
+        assertThat(service.dashboard(LEANDER).upcoming())
+                .filteredOn(u -> u.type() == UpcomingType.SIGN_OFF)
+                .singleElement()
+                .extracting(Upcoming::observationId, Upcoming::date, Upcoming::course, Upcoming::with)
+                .containsExactly(observation, LocalDate.of(2026, 11, 4), "CS 3345.001", "Keira Larkspur");
+        assertThat(types(service.dashboard(KEIRA))).doesNotContain(UpcomingType.SIGN_OFF);
+
+        complete(observation, "2026-11-05T10:00:00");
+        assertThat(types(service.dashboard(LEANDER))).doesNotContain(UpcomingType.SIGN_OFF);
     }
 
     @Test
