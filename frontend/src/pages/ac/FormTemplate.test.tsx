@@ -17,6 +17,7 @@ let failSave: boolean;
 let failLoad: boolean;
 let versions: FormTemplate[];
 let restores: number;
+let failRestore: boolean;
 beforeEach(() => {
   template = {
     templateId: 1,
@@ -28,6 +29,7 @@ beforeEach(() => {
   };
   versions = [structuredClone(template)];
   restores = 0;
+  failRestore = false;
   writes = [];
   failSave = false;
   failLoad = false;
@@ -35,6 +37,11 @@ beforeEach(() => {
     "/api/form-template/versions": () => Response.json(versions),
     "/api/form-template/versions/1/restore": () => {
       restores++;
+      if (failRestore)
+        return Response.json(
+          { detail: "Another committee member restored a version first." },
+          { status: 409 },
+        );
       template = {
         ...(versions[versions.length - 1] as FormTemplate),
         templateId: 1,
@@ -157,13 +164,18 @@ test("refreshes shared state on focus without overwriting the open draft", async
     (screen.getByLabelText("Criterion 1 name") as HTMLInputElement).value,
   ).toBe("Other committee edit");
 });
-test("rejects an empty selection and duplicate names before saving", async () => {
+test("rejects an empty selection, blank names, and duplicate names before saving", async () => {
   const dialog = await edit();
   const ui = within(dialog);
   fireEvent.click(ui.getByLabelText("Include criterion 1"));
   fireEvent.click(ui.getByRole("button", { name: "Save Changes" }));
   await screen.findByText(/Select at least one criterion/);
   fireEvent.click(ui.getByLabelText("Include criterion 1"));
+  fireEvent.change(ui.getByLabelText("Criterion 2 name"), {
+    target: { value: "   " },
+  });
+  fireEvent.click(ui.getByRole("button", { name: "Save Changes" }));
+  await screen.findByText("Give every criterion a name before saving.");
   fireEvent.change(ui.getByLabelText("Criterion 2 name"), {
     target: { value: "student engagement" },
   });
@@ -284,6 +296,53 @@ test("views an old version and restores it only after confirmation", async () =>
   expect(screen.getByText("Student Engagement")).toBeDefined();
   expect(screen.queryByText("Updated rubric")).toBeNull();
   expect(screen.queryByText("Included")).toBeNull();
+});
+
+test("a refused restore shows why and keeps the current version", async () => {
+  failRestore = true;
+  const original = structuredClone(template);
+  template = {
+    templateId: 2,
+    version: 2,
+    criteria: [{ title: "Updated rubric", selected: true, notes: false }],
+  };
+  versions = [structuredClone(template), original];
+  render(<App />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Version History" }),
+  );
+  const history = screen.getByRole("dialog", {
+    name: "Template Version History",
+  });
+  fireEvent.change(
+    await within(history).findByRole("combobox", { name: "Version" }),
+    { target: { value: "1" } },
+  );
+  fireEvent.click(
+    within(history).getByRole("button", { name: "Restore This Version" }),
+  );
+  fireEvent.click(
+    within(
+      screen.getByRole("dialog", { name: "Restore version 1?" }),
+    ).getByRole("button", { name: "Confirm Restore" }),
+  );
+
+  expect((await within(history).findByRole("alert")).textContent).toContain(
+    "Another committee member restored a version first.",
+  );
+  expect(restores).toBe(1);
+  expect(
+    screen.queryByRole("dialog", { name: "Restore version 1?" }),
+  ).toBeNull();
+  expect(screen.queryByText(/Version 1 is now current/)).toBeNull();
+  // The list may be stale now, so Restore waits until Retry reloads it.
+  const restore = within(history).getByRole("button", {
+    name: "Restore This Version",
+  }) as HTMLButtonElement;
+  expect(restore.disabled).toBe(true);
+  fireEvent.click(within(history).getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(restore.disabled).toBe(false));
+  expect(within(history).queryByRole("alert")).toBeNull();
 });
 
 test("shared polling can move the active template back to an older version", async () => {

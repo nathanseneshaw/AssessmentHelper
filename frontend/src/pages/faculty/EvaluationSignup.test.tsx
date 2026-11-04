@@ -16,6 +16,7 @@ let saved: EvaluationSignup | undefined;
 let saveFailure = false;
 let catalogFailure = false;
 let emptySections = false;
+let sectionsFailure = false;
 let heldSections: Promise<Response> | undefined;
 const courses = [
   {
@@ -94,6 +95,7 @@ beforeEach(() => {
   saveFailure = false;
   catalogFailure = false;
   emptySections = false;
+  sectionsFailure = false;
   heldSections = undefined;
   fakeBackend({
     // The faculty dashboard behind the dialog loads its own status and observations.
@@ -109,6 +111,11 @@ beforeEach(() => {
     },
     "/api/courses": () => Response.json(courses),
     "/api/sections": (_init, url) => {
+      if (sectionsFailure)
+        return Response.json(
+          { detail: "Teaching assignments are unavailable." },
+          { status: 503 },
+        );
       // A held response stands in for a slow reply for the first semester.
       if (heldSections)
         return url.searchParams.get("semesterId") === "1"
@@ -274,6 +281,32 @@ test("retries failed catalog loading", async () => {
   catalogFailure = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByRole("option", { name: "Fall 2026" });
+});
+
+test("a failed section load says why, blocks saving, and Retry loads them", async () => {
+  sectionsFailure = true;
+  await openSignup();
+  fireEvent.change(screen.getByLabelText("Semester"), {
+    target: { value: "1" },
+  });
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Teaching assignments are unavailable.",
+  );
+  expect((screen.getByLabelText("Course") as HTMLSelectElement).disabled).toBe(
+    true,
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save selection",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+
+  sectionsFailure = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByRole("option", { name: "CS 101 — Intro to Programming" });
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 test("saves a shorter observation window and allows changing only the window", async () => {

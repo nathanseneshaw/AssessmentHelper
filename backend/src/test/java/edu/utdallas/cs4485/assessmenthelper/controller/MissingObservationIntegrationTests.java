@@ -143,6 +143,26 @@ class MissingObservationIntegrationTests {
         assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
     }
 
+    @Test
+    void aStartedButUnsubmittedObservationIsStillLate() {
+        int observer = id("keira.larkspur@example.edu");
+        db.update("""
+                UPDATE observation SET status='IN_PROGRESS'
+                WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
+                """, observer);
+        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
+    }
+
+    @Test
+    void anUndatedObservationIsNotLate() {
+        int observer = id("keira.larkspur@example.edu");
+        db.update("""
+                UPDATE observation SET observation_date=NULL, start_time=NULL
+                WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
+                """, observer);
+        assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+    }
+
     AccountPrincipal principal() {
         return new AccountPrincipal(
                 new CurrentUser(999, professor, 1, "Missing Test", "missing-test@example.edu", List.of(Role.PROFESSOR)),

@@ -55,15 +55,18 @@ class ObserverRequestServiceTests {
 
     private EvaluationSignup signup;
     private Observer observer;
+    private Professor observee;
+    private Department department;
+    private EvaluationCycle cycle;
 
     @BeforeEach
     void createSignupAndObserver() {
         School school = db.insert(new School(null, "Test School"));
-        Department department = db.insert(new Department(null, school.schoolId(), "Test Department", "TEST"));
+        department = db.insert(new Department(null, school.schoolId(), "Test Department", "TEST"));
         Course course = db.insert(new Course(null, department.departmentId(), "T", "1000", "C", "UNDERGRADUATE"));
         Semester semester = db.insert(new Semester(null, "Fall", 2026, null, null));
-        EvaluationCycle cycle = db.insert(new EvaluationCycle(null, semester.semesterId(), null, null, null, "OPEN"));
-        Professor observee = professor(department, "observee@test.edu");
+        cycle = db.insert(new EvaluationCycle(null, semester.semesterId(), null, null, null, "OPEN"));
+        observee = professor(department, "observee@test.edu");
         Professor observerProfessor = professor(department, "observer@test.edu");
         Observee observeeRow = db.insert(new Observee(null, observee.professorId(), cycle.cycleId(), "ACTIVE"));
         observer = db.insert(new Observer(null, observerProfessor.professorId(), cycle.cycleId(), true));
@@ -117,6 +120,46 @@ class ObserverRequestServiceTests {
         assertThatThrownBy(() -> service.create(signup.signupId(), -1, null))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("No observer with id -1");
+    }
+
+    @Test
+    void aSignupWithAConfirmedObserverTakesNoOtherRequests() {
+        Observer second = db.insert(new Observer(
+                null, professor(department, "second-observer@test.edu").professorId(), cycle.cycleId(), true));
+        db.insert(new ObserverMatch(null, signup.signupId(), second.observerId(), NOW.toLocalDate(), "PROPOSED"));
+        ObserverRequest confirmed = service.confirm(
+                service.create(signup.signupId(), observer.observerId(), null).requestId());
+
+        assertThatThrownBy(() -> service.create(signup.signupId(), second.observerId(), null))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This signup already has a confirmed observer request.");
+        // Asking the confirmed observer again is a retry and returns their request.
+        assertThat(service.create(signup.signupId(), observer.observerId(), null))
+                .isEqualTo(confirmed);
+    }
+
+    @Test
+    void createRefusesAnInactiveObservee() {
+        db.update(new Professor(
+                observee.professorId(),
+                observee.departmentId(),
+                observee.professorRank(),
+                observee.firstName(),
+                observee.lastName(),
+                observee.email(),
+                observee.hireDate(),
+                false));
+
+        assertThatThrownBy(() -> service.create(signup.signupId(), observer.observerId(), null))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("This professor is not active.");
+    }
+
+    @Test
+    void optionsForAnUnknownProfessorIsNotFound() {
+        assertThatThrownBy(() -> service.options(-1))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("No professor with id -1");
     }
 
     @Test
