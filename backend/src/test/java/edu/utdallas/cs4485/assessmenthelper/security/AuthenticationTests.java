@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class AuthenticationTests {
 
     // From data.sql: Kaia is an AC member in Computer Science (ECS), Dario (professor 34) is a professor in Computer
-    // Science, and Isla (professor 68) is in Mathematics (NSM).
+    // Science, and Isla (professor 160) is in Mathematics (NSM).
     private static final String KAIA = "kaia.clearbrook@example.edu";
     private static final String KAIA_PASSWORD = "Committee123!";
     private static final String DARIO = "dario.hollowell@example.edu";
@@ -120,7 +120,7 @@ class AuthenticationTests {
         MockHttpSession session = signIn(KAIA, KAIA_PASSWORD);
 
         mockMvc.perform(get("/api/professors/34/evaluations").session(session)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/professors/68/evaluations").session(session)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/professors/160/evaluations").session(session)).andExpect(status().isForbidden());
     }
 
     @Test

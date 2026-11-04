@@ -58,13 +58,13 @@ class EvaluationEligibilityIntegrationTests {
     private EvaluationEligibilityService service;
 
     @Test
-    void seededProfessorsProduceThirteenDueEightOverdueAndTwentyFourUpcoming() throws Exception {
+    void seededProfessorsProduceThirteenDueFifteenOverdueAndSeventyTwoUpcoming() throws Exception {
         assertThat(db.queryForObject("SELECT COUNT(*) FROM professor", Integer.class))
-                .isEqualTo(68);
+                .isEqualTo(160);
         var due = service.findDue();
         var overdue = service.findOverdue();
         assertThat(due.count()).isEqualTo(13);
-        assertThat(overdue.count()).isEqualTo(8);
+        assertThat(overdue.count()).isEqualTo(15);
         assertThat(overdue.faculty().stream()
                         .filter(p -> p.professorId() == LEANDER)
                         .findFirst()
@@ -72,7 +72,7 @@ class EvaluationEligibilityIntegrationTests {
                         .nextDueSemester())
                 .isEqualTo("Spring 2026");
         var all = service.findAll();
-        assertThat(all.count()).isEqualTo(45);
+        assertThat(all.count()).isEqualTo(100);
         assertThat(all.faculty())
                 .allSatisfy(
                         professor -> assertThat(professor.nextDueSemester()).matches("(Spring|Summer|Fall) \\d{4}"));
@@ -85,32 +85,51 @@ class EvaluationEligibilityIntegrationTests {
         assertThat(all.faculty().stream().filter(p -> p.lastEvaluationCycle().equals("Never evaluated")))
                 .extracting(EvaluationEligibilityService.Faculty::lastName)
                 .containsExactlyInAnyOrder(
+                        "Bramblecote",
                         "Brambleton",
+                        "Calderwood",
                         "Coldwell",
+                        "Dappleton",
                         "Duskwood",
                         "Eastbrook",
+                        "Elmhollow",
                         "Harrowgate",
+                        "Heronsgate",
                         "Hollowell",
+                        "Inglemoor",
                         "Ivorydale",
                         "Juniper",
+                        "Lavenham",
+                        "Leafwood",
                         "Millbrook",
+                        "Netherby",
+                        "Orchardleigh",
+                        "Pinegrove",
                         "Quarrington",
                         "Ravenhill",
+                        "Reedmoor",
                         "Rookwood",
+                        "Rushcombe",
+                        "Tamberlyn",
                         "Thornbury",
+                        "Thornfield",
+                        "Timberlake",
                         "Valemont",
+                        "Whitlow",
                         "Winterbourne",
-                        "Wrenfield");
+                        "Wrenfield",
+                        "Yarrowby",
+                        "Yewbank");
         assertThat(all.faculty().stream().filter(p -> p.status().equals("Due")))
                 .containsExactlyElementsOf(due.faculty());
         assertThat(all.faculty().stream().filter(p -> p.status().equals("Overdue")))
                 .containsExactlyElementsOf(overdue.faculty());
         assertThat(all.faculty().stream().filter(p -> p.status().equals("Upcoming")))
-                .hasSize(24);
+                .hasSize(72);
         mvc.perform(get("/api/evaluation-eligibility"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(45))
-                .andExpect(jsonPath("$.faculty.length()").value(45));
+                .andExpect(jsonPath("$.count").value(100))
+                .andExpect(jsonPath("$.faculty.length()").value(100));
         assertThat(overdue.faculty().stream()
                         .filter(professor -> !professor.lastEvaluationCycle().equals("Never evaluated")))
                 .hasSize(6);
@@ -132,7 +151,7 @@ class EvaluationEligibilityIntegrationTests {
                 .andExpect(jsonPath("$.cycleLabel").value("Fall 2026"));
         mvc.perform(get("/api/overdue-evaluations"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(8));
+                .andExpect(jsonPath("$.count").value(15));
     }
 
     @Test
@@ -165,7 +184,7 @@ class EvaluationEligibilityIntegrationTests {
                         "Dear Professor Carrowmore, please sign up."))
                 .isEqualTo(2);
         assertThat(service.findDue().count()).isEqualTo(13);
-        assertThat(service.findOverdue().count()).isEqualTo(8);
+        assertThat(service.findOverdue().count()).isEqualTo(15);
         assertThat(service.findDue().faculty().stream()
                         .filter(p -> p.professorId() == HOLLIS)
                         .findFirst()
@@ -213,7 +232,7 @@ class EvaluationEligibilityIntegrationTests {
                 LEANDER_SIGNUP);
         mvc.perform(get("/api/overdue-evaluations"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(7));
+                .andExpect(jsonPath("$.count").value(14));
         assertThat(service.findDue().faculty())
                 .extracting(EvaluationEligibilityService.Faculty::professorId)
                 .doesNotContain(LEANDER);
@@ -226,7 +245,7 @@ class EvaluationEligibilityIntegrationTests {
     void inactiveFacultyAreExcludedAndMissingCycleConfigurationIsReported() throws Exception {
         db.update("UPDATE professor SET active_status = FALSE WHERE professor_id IN (?, ?)", HOLLIS, LEANDER);
         assertThat(service.findDue().count()).isEqualTo(12);
-        assertThat(service.findOverdue().count()).isEqualTo(7);
+        assertThat(service.findOverdue().count()).isEqualTo(14);
         db.update("""
                 UPDATE semester SET start_date = DATE '2028-08-21', end_date = DATE '2028-12-15'
                 WHERE term = 'Fall' AND academic_year = 2026
