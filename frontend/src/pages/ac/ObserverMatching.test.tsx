@@ -15,6 +15,8 @@ let state: AcState;
 let posts: string[];
 let unavailable: boolean;
 let refuseAssign: boolean;
+let eligibleDown: boolean;
+let generateDown: boolean;
 let assigned: unknown[];
 
 // Everyone who passes the rules: the five listed candidates plus Professor 7, who was not drawn for the list.
@@ -35,10 +37,17 @@ beforeEach(() => {
   posts = [];
   unavailable = false;
   refuseAssign = false;
+  eligibleDown = false;
+  generateDown = false;
   assigned = [];
   fakeBackend({
     "/api/observer-eligibility/signups/1/eligible": () =>
-      Response.json(eligible),
+      eligibleDown
+        ? Response.json(
+            { detail: "Teaching schedules could not be read." },
+            { status: 503 },
+          )
+        : Response.json(eligible),
     "/api/observer-eligibility/signups/1/assign": (init) => {
       if (refuseAssign)
         return Response.json(
@@ -62,6 +71,14 @@ beforeEach(() => {
         : Response.json(state),
     "/api/observer-eligibility/generate": (_init, url) => {
       posts.push(url.pathname);
+      if (generateDown)
+        return Response.json(
+          {
+            detail:
+              "Configure exactly one current semester and evaluation cycle.",
+          },
+          { status: 409 },
+        );
       return Response.json(state);
     },
     "/api/observer-eligibility/signups/1/release": (_init, url) => {
@@ -177,6 +194,34 @@ test("keeps the dialog open with the reason when assignment is refused", async (
   );
   expect(screen.getByRole("dialog")).toBeDefined();
   expect(screen.queryByText(/^Observer:/)).toBeNull();
+});
+
+test("a failed eligibility check says why and offers nobody to assign", async () => {
+  eligibleDown = true;
+  await open();
+  fireEvent.click(button("Assign Observer"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Assign an observer",
+  });
+  expect((await within(dialog).findByRole("alert")).textContent).toBe(
+    "Teaching schedules could not be read.",
+  );
+  expect(within(dialog).queryAllByRole("radio")).toHaveLength(0);
+  expect(button("Assign Observer", within(dialog)).disabled).toBe(true);
+});
+
+test("a failed Generate Matches shows the reason and keeps the lists", async () => {
+  generateDown = true;
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "Generate Matches" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Configure exactly one current semester and evaluation cycle.",
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(
+    screen.getByRole("heading", { name: "Observee: Professor 1" }),
+  ).toBeDefined();
+  expect(button("Generate Matches").disabled).toBe(false);
 });
 
 test("cancel closes the dialog without assigning", async () => {

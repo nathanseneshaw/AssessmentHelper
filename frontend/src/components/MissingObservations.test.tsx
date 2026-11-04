@@ -5,7 +5,7 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
+  waitForElementToBeRemoved,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { observerChanged } from "../api/observerEligibility";
@@ -74,10 +74,10 @@ test("submitted observation disappears after a workflow change", async () => {
   await screen.findByText(late.message);
   alerts = [];
   act(() => observerChanged());
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("region", { name: "Missing observations" }),
-    ).toBeNull(),
+  // Not waitFor(() => expect(region).toBeNull()): each failed check makes bun format the whole element, which
+  // can take long enough to time the test out.
+  await waitForElementToBeRemoved(() =>
+    screen.queryByRole("region", { name: "Missing observations" }),
   );
 });
 

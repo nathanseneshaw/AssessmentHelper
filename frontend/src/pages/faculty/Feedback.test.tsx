@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import {
   cleanup,
   fireEvent,
@@ -16,12 +16,15 @@ import {
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 
 let survey: FeedbackSurvey;
+/** Surveys for the professor's other cycles, after the one under test. */
+let others: FeedbackSurvey[];
 let sent: { ratings: number[]; comments: string } | null;
 let fail: boolean;
 
 beforeEach(() => {
   sent = null;
   fail = false;
+  others = [];
   survey = {
     cycleId: 1,
     label: "Fall 2026",
@@ -30,7 +33,7 @@ beforeEach(() => {
     status: "AVAILABLE",
   };
   fakeBackend({
-    [feedbackPath]: () => Response.json([survey]),
+    [feedbackPath]: () => Response.json([survey, ...others]),
     [`${feedbackPath}/1`]: (init) => {
       sent = JSON.parse(String(init?.body));
       if (fail)
@@ -156,4 +159,47 @@ test.each([
   await open();
   expect(screen.getByText(message)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
+});
+
+test("switching cycles asks before discarding unsent answers", async () => {
+  others = [
+    {
+      cycleId: 2,
+      label: "Fall 2025",
+      observationDeadline: "2025-11-01",
+      feedbackDeadline: "2025-11-10",
+      status: "CLOSED",
+    },
+  ];
+  const confirm = spyOn(window, "confirm").mockReturnValue(false);
+  // Not open(): "Fall 2026" is both the subtitle and an option here.
+  window.history.pushState({}, "", "/faculty/feedback?cycle=1");
+  render(<App />);
+  const cycle = (await screen.findByLabelText(
+    "Evaluation cycle",
+  )) as HTMLSelectElement;
+  const checked = () =>
+    screen.getAllByRole("radio").filter((r) => (r as HTMLInputElement).checked);
+  fireEvent.click(
+    within(screen.getByRole("group", { name: feedbackQuestions[0] })).getByRole(
+      "radio",
+      { name: "4" },
+    ),
+  );
+
+  fireEvent.change(cycle, { target: { value: "2" } });
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(cycle.value).toBe("1");
+  expect(checked()).toHaveLength(1);
+
+  confirm.mockReturnValue(true);
+  fireEvent.change(cycle, { target: { value: "2" } });
+  await screen.findByText(/Submissions are closed/);
+  expect(cycle.value).toBe("2");
+
+  // Nothing is unsent now, so switching back does not ask.
+  fireEvent.change(cycle, { target: { value: "1" } });
+  expect(confirm).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(checked()).toHaveLength(0));
+  expect(screen.getAllByRole("radio").length).toBeGreaterThan(0);
 });

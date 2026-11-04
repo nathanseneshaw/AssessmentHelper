@@ -272,6 +272,31 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
+    void anUndatedObservationIsAskedToBeScheduled() throws Exception {
+        db.update(
+                "UPDATE observation SET observation_date = NULL, start_time = NULL WHERE signup_id = ?",
+                signupOf(LEANDER));
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
+        assertThat(remindersFor(LEANDER))
+                .containsExactly(
+                        "Reminder from the Assessment Committee: your observation of CS 3345.001 by Keira Larkspur does not have a date yet. Schedule it by the observation deadline, Nov 15.");
+    }
+
+    @Test
+    void remindersLeaveOutATimeOrDeadlineThatIsNotSet() throws Exception {
+        db.update("UPDATE observation SET start_time = NULL WHERE signup_id = ?", signupOf(LEANDER));
+        db.update("UPDATE evaluation_cycle SET observation_deadline = NULL WHERE cycle_id = 1");
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
+        assertThat(remindersFor(LEANDER))
+                .containsExactly(
+                        "Reminder from the Assessment Committee: your observation of CS 3345.001 by Keira Larkspur is scheduled for Nov 4.");
+        assertThat(remindersFor(AVERY))
+                .singleElement()
+                .asString()
+                .endsWith(" and send a request so the observation can happen.");
+    }
+
+    @Test
     void onlyTheCommitteeCanTrackObservationsOrSendReminders() throws Exception {
         mvc.perform(get(OBSERVATIONS).with(user(DARIO))).andExpect(status().isForbidden());
         mvc.perform(get(OBSERVATIONS)).andExpect(status().isUnauthorized());

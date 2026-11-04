@@ -24,6 +24,9 @@ let sent: { method: string; path: string; body: Body }[];
 /** One-shot failures: the next read, or the next write. */
 let readFailure: Response | undefined;
 let writeFailure: Response | undefined;
+/** The observations list the API returns, and whether it is failing instead. */
+let listRows: ObservationSummary[];
+let listDown: boolean;
 /** While set, writes wait for it, so a test can look at the pending state. */
 let gate: Promise<void> | undefined;
 /** How many times the dialog told the dashboard behind it that observations changed. */
@@ -150,11 +153,19 @@ beforeEach(() => {
   readFailure = undefined;
   writeFailure = undefined;
   gate = undefined;
+  listRows = myObservations;
+  listDown = false;
   changes = 0;
   window.addEventListener("observer-data-changed", countChange);
   fakeBackend({
     "/api/observer-eligibility/faculty/2": () => Response.json(faculty),
-    "/api/professors/2/observations": () => Response.json(myObservations),
+    "/api/professors/2/observations": () =>
+      listDown
+        ? Response.json(
+            { detail: "Observations are unavailable right now." },
+            { status: 503 },
+          )
+        : Response.json(listRows),
     "/api/observations/5": () => {
       const failure = readFailure;
       readFailure = undefined;
@@ -294,6 +305,34 @@ test("the list shows only the observations I do, with the right action for each"
   expect(
     carla.getByRole("link", { name: /^View observation/ }).getAttribute("href"),
   ).toBe("/faculty/observations/8");
+});
+
+test("the list shows why it could not load, and Retry loads it", async () => {
+  listDown = true;
+  open("/faculty/observations/others");
+  const list = await dialog("Observation Records for Others");
+  const reason = await list.findByText(
+    /Observations are unavailable right now\./,
+  );
+  expect(list.queryAllByRole("listitem")).toHaveLength(0);
+
+  listDown = false;
+  fireEvent.click(
+    within(reason.closest("p") as HTMLElement).getByRole("button", {
+      name: "Retry",
+    }),
+  );
+  await list.findByText("CS 3345.001 · Olivia Observee");
+  expect(list.queryByText(/unavailable right now/)).toBeNull();
+});
+
+test("with nothing to observe, the list says where observations come from", async () => {
+  // Oscar's own evaluation is not one he does.
+  listRows = myObservations.filter((row) => row.role === "OBSERVEE");
+  open("/faculty/observations/others");
+  const list = await dialog("Observation Records for Others");
+  await list.findByText(/You have no observations to do yet\./);
+  expect(list.queryAllByRole("listitem")).toHaveLength(0);
 });
 
 test("Start on the list starts the observation and opens its form", async () => {
