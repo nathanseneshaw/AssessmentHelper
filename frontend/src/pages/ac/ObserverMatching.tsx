@@ -17,6 +17,9 @@ import { PageHeader } from "../../components/PageHeader";
 const secondaryButton =
   "rounded-lg border border-line px-5 py-3 text-sm font-medium hover:bg-mist disabled:cursor-not-allowed disabled:opacity-50";
 
+const assignButton =
+  "cursor-pointer rounded-lg bg-brand-green px-5 py-3 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-btn-gray disabled:opacity-100";
+
 function ObserverCourses({
   candidate,
   onClose,
@@ -226,7 +229,7 @@ function AssignObserver({
           </button>
           <button
             type="submit"
-            className={observerButton}
+            className={assignButton}
             disabled={!chosen || saving}
           >
             {saving ? "Assigning..." : "Assign Observer"}
@@ -684,7 +687,7 @@ export function AcObserverMatching() {
                 </button>
                 <button
                   type="button"
-                  className={secondaryButton}
+                  className={assignButton}
                   disabled={
                     busy ||
                     !!error ||
