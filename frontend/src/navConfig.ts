@@ -24,6 +24,7 @@ export const NAV_ITEMS: Record<Role, NavItem[]> = {
     { label: "Observer Matching", to: "/ac/matching" },
     { label: "Observations", to: "/ac/observations" },
     { label: "Form Template", to: "/ac/form-template" },
+    { label: "Email Templates", to: "/ac/email-templates" },
     { label: "Reports & KPIs", to: "/ac/reports" },
   ],
   professor: [],

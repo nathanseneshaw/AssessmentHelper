@@ -25,6 +25,7 @@ const AC_PAGES = [
   ["/ac/observations", "Observation Tracking"],
   ["/ac/form-template", "Observation Form Template"],
   ["/ac/reports", "Reports & KPIs"],
+  ["/ac/email-templates", "Email Templates"],
 ] as const;
 
 // Faculty pages open as a dialog on top of the faculty dashboard.

@@ -23,7 +23,16 @@ class EvaluationEligibilityServiceTests {
     private final EvaluationNotificationRepository notifications = mock(EvaluationNotificationRepository.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-10-20T15:00:00Z"), ZoneId.of("America/Chicago"));
     private final EvaluationEligibilityService service = new EvaluationEligibilityService(
-            professors, policies, semesters, cycles, observees, signups, observations, notifications, clock);
+            professors,
+            policies,
+            semesters,
+            cycles,
+            observees,
+            signups,
+            observations,
+            notifications,
+            clock,
+            mock(EmailTemplateService.class));
 
     @BeforeEach
     void setup() {
