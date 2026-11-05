@@ -20,14 +20,26 @@ beforeEach(() => {
   state = structuredClone(faculty);
   sent = [];
   fakeBackend({
+    "/api/observer-eligibility/faculty/1/requests/7/dates": () =>
+      Response.json(["2026-11-03", "2026-11-05"]),
     "/api/observer-eligibility/faculty/1": () => Response.json(state),
     "/api/professors/1/observations": () => Response.json([]),
     "/api/professors/1/dashboard": () => Response.json(dashboard),
+    "/api/observer-eligibility/faculty/1/requests/7/schedule": (init, url) => {
+      const body = JSON.parse(String(init?.body));
+      sent.push({ path: url.pathname, body });
+      if (state.incoming[0])
+        state.incoming[0].observationDate = body.observationDate;
+      return new Response(null, { status: 204 });
+    },
     "/api/observer-eligibility/faculty/1/requests/7/respond": (init, url) => {
       const body = JSON.parse(String(init?.body));
       sent.push({ path: url.pathname, body });
       const r = state.incoming[0];
-      if (r) r.status = body.accept ? "CONFIRMED" : "DECLINED";
+      if (r) {
+        r.status = body.accept ? "CONFIRMED" : "DECLINED";
+        r.observationDate = body.observationDate;
+      }
       return new Response(null, { status: 204 });
     },
   });
@@ -74,19 +86,30 @@ test("observer can accept and sees accepted requests", async () => {
   pendingRequest();
   open("/faculty/requests");
   fireEvent.click(await screen.findByRole("button", { name: "Accept" }));
+  const dates = await screen.findByLabelText("Observation date");
+  expect(sent).toHaveLength(0);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Accept & Schedule",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.change(dates, { target: { value: "2026-11-03" } });
+  fireEvent.click(screen.getByRole("button", { name: "Accept & Schedule" }));
   await waitFor(() =>
     expect(
-      screen.getByRole("heading", { name: "Accepted Requests (1)" }),
+      screen.getByRole("heading", { name: "Accepted / Assigned Requests (1)" }),
     ).toBeDefined(),
   );
   expect(sent).toEqual([
     {
       path: "/api/observer-eligibility/faculty/1/requests/7/respond",
-      body: { accept: true },
+      body: { accept: true, observationDate: "2026-11-03" },
     },
   ]);
   const accepted = screen
-    .getByRole("heading", { name: "Accepted Requests (1)" })
+    .getByRole("heading", { name: "Accepted / Assigned Requests (1)" })
     .closest("section");
   if (!accepted) throw Error("Missing accepted section");
   expect(within(accepted).getByText(/Professor 8/)).toBeDefined();
@@ -164,4 +187,58 @@ test("signup is disabled once the signup period closes", async () => {
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+});
+
+test("an AC-assigned observer can choose a date and see the saved schedule", async () => {
+  pendingRequest();
+  const request = state.incoming[0];
+  if (!request) throw Error("Missing request");
+  request.status = "CONFIRMED";
+  request.assignedByAc = true;
+  open("/faculty/requests");
+  await screen.findByText("Assigned by AC");
+  expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Choose Observation Date" }),
+  );
+  fireEvent.change(await screen.findByLabelText("Observation date"), {
+    target: { value: "2026-11-05" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save Observation Date" }),
+  );
+  await screen.findByText(/Observation scheduled: 2026-11-05/);
+  expect(sent).toEqual([
+    {
+      path: "/api/observer-eligibility/faculty/1/requests/7/schedule",
+      body: { observationDate: "2026-11-05" },
+    },
+  ]);
+  expect(
+    screen.queryByRole("button", { name: "Choose Observation Date" }),
+  ).toBeNull();
+});
+
+test("an assigned observation stays pending on the dashboard until its date is chosen", async () => {
+  pendingRequest();
+  const request = state.incoming[0];
+  if (!request) throw Error("Missing request");
+  request.status = "CONFIRMED";
+  request.assignedByAc = true;
+  open("/faculty");
+  await screen.findByRole("link", { name: "Observer Requests (1 pending)" });
+  fireEvent.click(
+    screen.getByRole("link", { name: "Observer Requests (1 pending)" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Choose Observation Date" }),
+  );
+  fireEvent.change(await screen.findByLabelText("Observation date"), {
+    target: { value: "2026-11-05" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save Observation Date" }),
+  );
+  await screen.findByText(/Observation scheduled: 2026-11-05/);
+  await screen.findByRole("link", { name: "Observer Requests (0 pending)" });
 });

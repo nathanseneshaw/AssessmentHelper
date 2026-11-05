@@ -193,7 +193,7 @@ class ObserverEligibilityControllerTests {
         int requestId = JsonPath.read(arloState.getResponse().getContentAsString(), "$.incoming[0].requestId");
         mvc.perform(as(ARLO, post("/api/observer-eligibility/faculty/26/requests/" + requestId + "/respond"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"accept\":true}"))
+                        .content("{\"accept\":true,\"observationDate\":\"2026-11-03\"}"))
                 .andExpect(status().isNoContent());
 
         mvc.perform(as(DARIO, get("/api/observer-eligibility/faculty/34")))
@@ -225,7 +225,11 @@ class ObserverEligibilityControllerTests {
 
         mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
                 .andExpect(jsonPath("$.signups[?(@.signupId == " + signupId + ")].observerName")
-                        .value(contains("Arlo Glimmerton")));
+                        .value(contains("Arlo Glimmerton")))
+                .andExpect(jsonPath("$.matchingCases[?(@.signupId == " + signupId + ")].invitations[*].status")
+                        .value(contains("ASSIGNED")))
+                .andExpect(jsonPath("$.matchingCases[?(@.signupId == " + signupId + ")].status")
+                        .value(contains("MATCHED")));
         mvc.perform(as(DARIO, get("/api/observer-eligibility/faculty/34")))
                 .andExpect(jsonPath("$.outgoing[0].observerName").value("Arlo Glimmerton"))
                 .andExpect(jsonPath("$.outgoing[0].status").value("CONFIRMED"))

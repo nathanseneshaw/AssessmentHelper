@@ -139,7 +139,7 @@ class ObserverEligibilityServiceTests {
         assertThat(candidateProfessors(KEIRA_SIGNUP)).containsExactly(remaining);
         releaseAfterDeadline(KEIRA_SIGNUP);
         var request = requests.create(KEIRA_SIGNUP, candidateIds(KEIRA_SIGNUP).getFirst(), null);
-        requests.confirm(request.requestId());
+        requests.confirm(request.requestId(), dateFor(request.requestId()));
         assertThat(matching(KEIRA_SIGNUP).status()).isEqualTo("MATCHED");
     }
 
@@ -205,6 +205,9 @@ class ObserverEligibilityServiceTests {
         int observerId = candidateIds(target).getFirst();
         service.assign(target, observerId);
         assertThat(matching(target).status()).isEqualTo("MATCHED");
+        assertThat(matching(target).invitations())
+                .extracting(ObserverEligibilityService.Invitation::status)
+                .containsExactly("ASSIGNED");
         int another = candidateIds(target).stream()
                 .filter(id -> id != observerId)
                 .findFirst()
@@ -527,7 +530,7 @@ class ObserverEligibilityServiceTests {
 
         service.respond(firstProfessor, request.requestId(), false);
         assertThat(requests.create(target, second, null).requestId()).isEqualTo(next.requestId());
-        service.respond(secondProfessor, next.requestId(), true);
+        service.respond(secondProfessor, next.requestId(), true, dateFor(next.requestId()));
         assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, target))
                 .isEqualTo(1);
         assertThat(options(DARIO).unavailableReason())
@@ -546,7 +549,9 @@ class ObserverEligibilityServiceTests {
         releaseAfterDeadline(target);
         var request =
                 requests.create(target, list(target).candidates().getFirst().observerId(), null);
-        assertThat(requests.confirm(request.requestId()).status()).isEqualTo("CONFIRMED");
+        assertThat(requests.confirm(request.requestId(), dateFor(request.requestId()))
+                        .status())
+                .isEqualTo("CONFIRMED");
         assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, target))
                 .isEqualTo(1);
         assertThatThrownBy(() -> requests.confirm(request.requestId())).isInstanceOf(ConflictException.class);
@@ -615,5 +620,106 @@ class ObserverEligibilityServiceTests {
                         .orElseThrow()
                         .qualifyingCourses())
                 .contains("CS 3345.008 - Fall 2026");
+    }
+
+    @Test
+    void acceptanceRequiresAnAvailableClassDateAndSavesTheClassTime() {
+        int target = darioSignsUp();
+        releaseAfterDeadline(target);
+        var candidate = list(target).candidates().getFirst();
+        var request = requests.create(target, candidate.observerId(), null);
+        int professor = candidate.professorId();
+        assertThat(service.availableDates(professor, request.requestId()))
+                .containsExactly(
+                        LocalDate.of(2026, 11, 3),
+                        LocalDate.of(2026, 11, 5),
+                        LocalDate.of(2026, 11, 10),
+                        LocalDate.of(2026, 11, 12));
+        assertThatThrownBy(() -> service.respond(professor, request.requestId(), true))
+                .isInstanceOf(IllegalArgumentException.class);
+        for (LocalDate invalid :
+                List.of(LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 17), LocalDate.of(2026, 10, 20)))
+            assertThatThrownBy(() -> service.respond(professor, request.requestId(), true, invalid))
+                    .isInstanceOf(IllegalArgumentException.class);
+        assertThat(requests.findById(request.requestId()).status()).isEqualTo("PENDING");
+        service.respond(professor, request.requestId(), true, LocalDate.of(2026, 11, 3));
+        assertThat(db.queryForObject("SELECT status FROM observation WHERE signup_id=?", String.class, target))
+                .isEqualTo("SCHEDULED");
+        assertThat(db.queryForObject("SELECT start_time FROM observation WHERE signup_id=?", LocalTime.class, target))
+                .isEqualTo(LocalTime.of(13, 0));
+        assertThat(service.facultyState(professor).incoming().getFirst().observationDate())
+                .isEqualTo(LocalDate.of(2026, 11, 3));
+    }
+
+    @Test
+    void assignedObserverChoosesDateWithoutChangingAssignedHistory() {
+        int target = darioSignsUp();
+        var candidate = list(target).candidates().getFirst();
+        service.assign(target, candidate.observerId());
+        var request = service.facultyState(candidate.professorId()).incoming().getFirst();
+        assertThat(request.assignedByAc()).isTrue();
+        assertThat(request.observationDate()).isNull();
+        assertThatThrownBy(() -> service.scheduleObservation(DARIO, request.requestId(), LocalDate.of(2026, 11, 3)))
+                .isInstanceOf(NotFoundException.class);
+        service.scheduleObservation(candidate.professorId(), request.requestId(), LocalDate.of(2026, 11, 3));
+        assertThat(matching(target).invitations().getFirst().status()).isEqualTo("ASSIGNED");
+        assertThat(service.facultyState(candidate.professorId())
+                        .incoming()
+                        .getFirst()
+                        .observationDate())
+                .isEqualTo(LocalDate.of(2026, 11, 3));
+        assertThatThrownBy(() -> service.scheduleObservation(
+                        candidate.professorId(), request.requestId(), LocalDate.of(2026, 11, 5)))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void dateOptionsExcludeTeachingConflictsAndRespectDeadlineChanges() {
+        int target = darioSignsUp();
+        var candidate = list(target).candidates().getFirst();
+        service.assign(target, candidate.observerId());
+        var request = service.facultyState(candidate.professorId()).incoming().getFirst();
+        db.update("UPDATE evaluation_cycle SET observation_deadline='2026-11-05' WHERE cycle_id=1");
+        assertThat(service.availableDates(candidate.professorId(), request.requestId()))
+                .containsExactly(LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 5));
+        db.update(
+                "UPDATE course_section SET meeting_days='T',start_time='13:30:00',end_time='14:30:00' WHERE section_id IN (SELECT section_id FROM teaching_history WHERE professor_id=?) AND semester_id=13",
+                candidate.professorId());
+        assertThat(service.availableDates(candidate.professorId(), request.requestId()))
+                .containsExactly(LocalDate.of(2026, 11, 5));
+        assertThatThrownBy(() -> service.scheduleObservation(
+                        candidate.professorId(), request.requestId(), LocalDate.of(2026, 11, 3)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void availableDatesExcludeAnotherObservationAtTheSameTime() {
+        int target = darioSignsUp();
+        var candidate = list(target).candidates().getFirst();
+        service.assign(target, candidate.observerId());
+        var request = service.facultyState(candidate.professorId()).incoming().getFirst();
+        int otherSignup = db.queryForObject(
+                "SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=? AND oe.cycle_id=1",
+                Integer.class,
+                XIOMARA);
+        db.update("UPDATE evaluation_signup SET section_id=298 WHERE signup_id=?", otherSignup);
+        db.update(
+                "INSERT INTO observation(signup_id,observer_id,template_id,status,observation_date,start_time) VALUES (?,?,(SELECT template_id FROM observation_template WHERE active_status=TRUE FETCH FIRST 1 ROW ONLY),'SCHEDULED','2026-11-03','13:00:00')",
+                otherSignup,
+                candidate.observerId());
+        assertThat(service.availableDates(candidate.professorId(), request.requestId()))
+                .doesNotContain(LocalDate.of(2026, 11, 3))
+                .contains(LocalDate.of(2026, 11, 5));
+        assertThatThrownBy(() -> service.scheduleObservation(
+                        candidate.professorId(), request.requestId(), LocalDate.of(2026, 11, 3)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private LocalDate dateFor(int requestId) {
+        int professor = db.queryForObject(
+                "SELECT ob.professor_id FROM observer_request r JOIN observer ob ON ob.observer_id=r.observer_id WHERE request_id=?",
+                Integer.class,
+                requestId);
+        return service.availableDates(professor, requestId).getFirst();
     }
 }

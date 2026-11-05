@@ -19,7 +19,7 @@ public class ObserverEligibilityController {
         this.service = service;
     }
 
-    public record ResponseBody(Boolean accept) {}
+    public record ResponseBody(Boolean accept, java.time.LocalDate observationDate) {}
 
     public record AssignBody(Integer observerId) {}
 
@@ -80,6 +80,21 @@ public class ObserverEligibilityController {
     @PreAuthorize("@professorAccess.isSelf(principal, #id)")
     public void respond(@PathVariable int id, @PathVariable int requestId, @RequestBody ResponseBody body) {
         if (body.accept() == null) throw new IllegalArgumentException("Choose accept or decline.");
-        service.respond(id, requestId, body.accept());
+        service.respond(id, requestId, body.accept(), body.observationDate());
+    }
+
+    @GetMapping("/faculty/{id}/requests/{requestId}/dates")
+    @PreAuthorize("@professorAccess.isSelf(principal, #id)")
+    public List<java.time.LocalDate> dates(@PathVariable int id, @PathVariable int requestId) {
+        return service.availableDates(id, requestId);
+    }
+
+    public record ScheduleBody(java.time.LocalDate observationDate) {}
+
+    @PostMapping("/faculty/{id}/requests/{requestId}/schedule")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("@professorAccess.isSelf(principal, #id)")
+    public void schedule(@PathVariable int id, @PathVariable int requestId, @RequestBody ScheduleBody body) {
+        service.scheduleObservation(id, requestId, body.observationDate());
     }
 }

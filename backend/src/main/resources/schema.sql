@@ -153,7 +153,8 @@ CREATE TABLE IF NOT EXISTS observer_request (
     request_date TIMESTAMP,
     expiration_date TIMESTAMP,
     response_date TIMESTAMP,
-    status VARCHAR(30)
+    status VARCHAR(30),
+    assigned_by_ac BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS observer_request_time (

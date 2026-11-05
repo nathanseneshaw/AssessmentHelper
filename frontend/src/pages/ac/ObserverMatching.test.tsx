@@ -76,6 +76,22 @@ beforeEach(() => {
       if (first)
         first.observerName =
           eligible.find((c) => c.observerId === body.observerId)?.name ?? null;
+      const matching = state.matchingCases[0];
+      if (matching && first) {
+        matching.status = "MATCHED";
+        matching.reason = null;
+        matching.invitations = [
+          {
+            requestId: 100,
+            observerId: body.observerId,
+            observerName: first.observerName ?? "",
+            status: "ASSIGNED",
+            requestedAt: "2026-10-21T10:00:00",
+            expiresAt: null,
+            respondedAt: "2026-10-21T10:00:00",
+          },
+        ];
+      }
       return new Response(null, { status: 204 });
     },
     "/api/observer-eligibility/ac": () =>
@@ -338,6 +354,8 @@ test("assigns any professor who passes the rules as the observer", async () => {
   expect(assigned).toEqual([{ observerId: 7 }]);
   expect(screen.queryByRole("dialog")).toBeNull();
   await screen.findByText("Observer: Professor 7");
+  expect(within(screen.getByRole("table")).getByText("Assigned")).toBeTruthy();
+  expect(within(screen.getByRole("table")).queryByText("Accepted")).toBeNull();
   expect(button("Assign Observer").disabled).toBe(true);
   expect(button("Send Candidate List").disabled).toBe(true);
 });

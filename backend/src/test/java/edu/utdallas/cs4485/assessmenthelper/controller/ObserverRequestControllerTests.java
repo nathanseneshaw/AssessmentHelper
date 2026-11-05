@@ -92,9 +92,12 @@ class ObserverRequestControllerTests {
 
     @Test
     void confirmingExpiredRequestReturns409() throws Exception {
-        when(service.confirm(1)).thenThrow(new ConflictException("Request 1 has expired"));
+        when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
+        when(service.confirm(1, null)).thenThrow(new ConflictException("Request 1 has expired"));
 
-        mockMvc.perform(post("/api/observer-requests/1/confirm").with(csrf()))
+        mockMvc.perform(post("/api/observer-requests/1/confirm")
+                        .with(user(OBSERVER))
+                        .with(csrf()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("Request 1 has expired"));
     }

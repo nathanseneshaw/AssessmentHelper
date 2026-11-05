@@ -54,6 +54,8 @@ export interface ObserverRequest {
   windowStart: string;
   windowEnd: string;
   status: string;
+  observationDate?: string | null;
+  assignedByAc?: boolean;
 }
 export interface FacultyState {
   cycle: Cycle;

@@ -471,7 +471,11 @@ export function FacultyDashboard() {
           to="/faculty/requests"
         >
           Observer Requests (
-          {data?.incoming?.filter((r) => r.status === "PENDING").length ?? 0}{" "}
+          {data?.incoming?.filter(
+            (r) =>
+              r.status === "PENDING" ||
+              (r.status === "CONFIRMED" && !r.observationDate),
+          ).length ?? 0}{" "}
           pending)
         </Link>
       </div>

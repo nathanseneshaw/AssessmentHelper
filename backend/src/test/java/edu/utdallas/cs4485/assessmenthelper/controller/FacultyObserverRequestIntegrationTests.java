@@ -219,7 +219,20 @@ class FacultyObserverRequestIntegrationTests {
         send(AVERY, signupId, matchId).andExpect(status().isCreated());
         int requestId = db.queryForObject(
                 "SELECT request_id FROM observer_request WHERE signup_id = ?", Integer.class, signupId);
-        mvc.perform(as(KAIA, post("/api/observer-requests/" + requestId + "/confirm")))
+        mvc.perform(as(
+                                new AccountPrincipal(
+                                        new CurrentUser(
+                                                null,
+                                                41,
+                                                1,
+                                                "Keira Larkspur",
+                                                "keira.larkspur@example.edu",
+                                                List.of(Role.PROFESSOR)),
+                                        null,
+                                        true),
+                                post("/api/observer-requests/" + requestId + "/confirm"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observationDate\":\"2026-11-03\"}"))
                 .andExpect(status().isOk());
         mvc.perform(as(AVERY, get("/api/professors/31/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("CONFIRMED"))
@@ -241,10 +254,12 @@ class FacultyObserverRequestIntegrationTests {
                 .findFirst()
                 .orElseThrow();
         var third = service.create(signupId, thirdCandidate.observerId(), null);
-        service.confirm(first.requestId());
+        service.confirm(first.requestId(), java.time.LocalDate.of(2026, 11, 3));
         assertThat(service.findById(second.requestId())).isEqualTo(second);
         assertThat(service.findById(third.requestId())).isEqualTo(third);
-        assertThat(service.confirm(second.requestId()).status()).isEqualTo("CONFIRMED");
+        assertThat(service.confirm(second.requestId(), java.time.LocalDate.of(2026, 11, 3))
+                        .status())
+                .isEqualTo("CONFIRMED");
         assertThat(service.findById(first.requestId()).status()).isEqualTo("CONFIRMED");
         assertThat(service.findById(third.requestId())).isEqualTo(third);
         assertThat(service.decline(third.requestId()).status()).isEqualTo("DECLINED");

@@ -416,15 +416,17 @@ export function AcObserverMatching() {
                         <tr key={r.requestId} className="border-t border-line">
                           <td className="p-2">{r.observerName}</td>
                           <td className="p-2">
-                            {r.status === "CONFIRMED"
-                              ? "Accepted"
-                              : r.status === "PENDING"
-                                ? "Pending"
-                                : r.status === "DECLINED"
-                                  ? "Declined"
-                                  : r.status === "EXPIRED"
-                                    ? "Expired"
-                                    : r.status}
+                            {r.status === "ASSIGNED"
+                              ? "Assigned"
+                              : r.status === "CONFIRMED"
+                                ? "Accepted"
+                                : r.status === "PENDING"
+                                  ? "Pending"
+                                  : r.status === "DECLINED"
+                                    ? "Declined"
+                                    : r.status === "EXPIRED"
+                                      ? "Expired"
+                                      : r.status}
                           </td>
                           <td className="p-2">
                             {r.requestedAt?.replace("T", " ").slice(0, 19) ??
@@ -509,9 +511,11 @@ export function AcObserverMatching() {
                               ? "Expired"
                               : invitation?.status === "PENDING"
                                 ? "Invitation pending"
-                                : invitation?.status === "CONFIRMED"
-                                  ? "Accepted"
-                                  : "Recommended";
+                                : invitation?.status === "ASSIGNED"
+                                  ? "Assigned"
+                                  : invitation?.status === "CONFIRMED"
+                                    ? "Accepted"
+                                    : "Recommended";
                         })()}
                       </span>
                     </li>
