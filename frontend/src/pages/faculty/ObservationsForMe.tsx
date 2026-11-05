@@ -22,12 +22,16 @@ function Action({ observation }: { observation: ObservationSummary }) {
       the {observation.semesterLabel} {observation.courseLabel} observation
     </span>
   );
-  if (
-    observation.status === "SUBMITTED" ||
-    observation.status === "COMPLETED"
-  ) {
+  if (observation.status === "SUBMITTED") {
     return (
       <Link to={to} className={`${linkClass} bg-brand-green text-white`}>
+        Review and Sign{which}
+      </Link>
+    );
+  }
+  if (observation.status === "COMPLETED") {
+    return (
+      <Link to={to} className={`${linkClass} border border-line bg-white`}>
         View{which}
       </Link>
     );

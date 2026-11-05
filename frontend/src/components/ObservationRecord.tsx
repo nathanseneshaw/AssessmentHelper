@@ -3,6 +3,7 @@ import {
   type Criterion,
   formatDate,
   formatTime,
+  formatTimestamp,
   type ObservationAnswer,
   type ObservationDetail,
   type ObservationStatus,
@@ -105,9 +106,13 @@ function Answer({
   );
 }
 
+function signedOn(timestamp: string | null) {
+  return timestamp ? `Signed ${formatTimestamp(timestamp)}` : "Not signed yet";
+}
+
 /**
  * A read-only view of a submitted or completed observation form, for its observer and its observee: who, what and
- * when, and every answer.
+ * when, every answer, and who has signed off.
  */
 export function ObservationRecord({
   observation,
@@ -197,6 +202,37 @@ export function ObservationRecord({
             </li>
           ))}
         </ol>
+      </section>
+
+      <section aria-labelledby={`${ids}-sign-offs`} className="mt-8">
+        <h2 id={`${ids}-sign-offs`} className="font-semibold text-xl">
+          Sign-offs
+        </h2>
+        <dl className="mt-4 grid gap-x-8 gap-y-4 @lg:grid-cols-2">
+          <SummaryItem
+            label="Observer"
+            value={observation.observer.name}
+            detail={signedOn(observation.submittedAt)}
+          />
+          <SummaryItem
+            label="Observee"
+            value={observation.observee.name}
+            detail={signedOn(observation.observeeSignedAt)}
+          />
+        </dl>
+        {observation.observeeComments && (
+          <div className="mt-4">
+            <p className="text-muted text-sm">Observee's comments</p>
+            <div className="mt-1">
+              <Comments text={observation.observeeComments} />
+            </div>
+          </div>
+        )}
+        {observation.locked && (
+          <p className="mt-4 rounded-lg bg-mist px-4 py-3 text-sm">
+            Both have signed, so this record is locked. Nobody can change it.
+          </p>
+        )}
       </section>
     </div>
   );
