@@ -427,10 +427,11 @@ export function AcObserverMatching() {
                                     : r.status}
                           </td>
                           <td className="p-2">
-                            {r.requestedAt?.replace("T", " ") ?? "—"}
+                            {r.requestedAt?.replace("T", " ").slice(0, 19) ??
+                              "—"}
                           </td>
                           <td className="p-2">
-                            {r.expiresAt?.replace("T", " ") ?? "—"}
+                            {r.expiresAt?.replace("T", " ").slice(0, 19) ?? "—"}
                           </td>
                         </tr>
                       ))}

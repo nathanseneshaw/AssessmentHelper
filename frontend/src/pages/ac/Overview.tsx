@@ -13,7 +13,6 @@ import {
 } from "../../api/evaluationEligibility";
 import {
   type AcState,
-  matchingReason,
   unmatchedSignups,
   useObserverData,
 } from "../../api/observerEligibility";
@@ -22,6 +21,7 @@ import { CycleDeadlines } from "../../components/CycleDeadlines";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
 import { OverdueEvaluations } from "./OverdueEvaluations";
+import { UnmatchedFaculty } from "./UnmatchedFaculty";
 
 interface KpiGroup {
   title: string;
@@ -210,6 +210,7 @@ export function AcOverview() {
     reload: reloadMatching,
   } = useObserverData<AcState>("/ac");
   const unmatchedFaculty = matching ? unmatchedSignups(matching) : [];
+  const [unmatchedOpen, setUnmatchedOpen] = useState(false);
   const [queue, setQueue] = useState<OverdueQueue | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -389,7 +390,11 @@ export function AcOverview() {
           title="Unmatched Faculty"
           subtitle="No eligible observers, or all invitations declined or expired"
           action={
-            <ActionButton tone="orange" to="/ac/matching" className="min-w-47">
+            <ActionButton
+              tone="orange"
+              onClick={() => setUnmatchedOpen(true)}
+              className="min-w-47"
+            >
               Resolve Matches
             </ActionButton>
           }
@@ -408,20 +413,17 @@ export function AcOverview() {
               {unmatchedFaculty.length} signup(s) need AC attention.
             </li>
           )}
-          {unmatchedFaculty.map((item) => (
+          {unmatchedFaculty.slice(0, 4).map((item) => (
             <ListRow
               key={item.signupId}
               cells={[item.name, item.department]}
               status={
                 <Link
                   to={`/ac/matching?signup=${item.signupId}`}
-                  className="font-semibold text-brand-red text-sm underline"
+                  aria-label={`Resolve ${item.name}`}
+                  className="justify-self-end rounded-md bg-brand-green px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
                 >
-                  {matchingReason(
-                    matching?.matchingCases?.find(
-                      (c) => c.signupId === item.signupId,
-                    ),
-                  )}
+                  Resolve
                 </Link>
               }
             />
@@ -430,6 +432,14 @@ export function AcOverview() {
       </div>
 
       <CycleDeadlines cycle={matching?.cycle} onSaved={reloadMatching} />
+      {unmatchedOpen && (
+        <UnmatchedFaculty
+          data={matching}
+          error={matchingError}
+          onRetry={reloadMatching}
+          onClose={() => setUnmatchedOpen(false)}
+        />
+      )}
     </div>
   );
 }

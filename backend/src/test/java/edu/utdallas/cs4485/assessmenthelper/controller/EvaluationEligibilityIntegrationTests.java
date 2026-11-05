@@ -58,9 +58,9 @@ class EvaluationEligibilityIntegrationTests {
     private EvaluationEligibilityService service;
 
     @Test
-    void seededProfessorsProduceThirteenDueEightOverdueAndTwentyFourUpcoming() throws Exception {
+    void seededProfessorsProduceThirteenDueEightOverdueAndTwentyFiveUpcoming() throws Exception {
         assertThat(db.queryForObject("SELECT COUNT(*) FROM professor", Integer.class))
-                .isEqualTo(68);
+                .isEqualTo(69);
         var due = service.findDue();
         var overdue = service.findOverdue();
         assertThat(due.count()).isEqualTo(13);
@@ -72,7 +72,7 @@ class EvaluationEligibilityIntegrationTests {
                         .nextDueSemester())
                 .isEqualTo("Spring 2026");
         var all = service.findAll();
-        assertThat(all.count()).isEqualTo(45);
+        assertThat(all.count()).isEqualTo(46);
         assertThat(all.faculty())
                 .allSatisfy(
                         professor -> assertThat(professor.nextDueSemester()).matches("(Spring|Summer|Fall) \\d{4}"));
@@ -86,6 +86,7 @@ class EvaluationEligibilityIntegrationTests {
                 .extracting(EvaluationEligibilityService.Faculty::lastName)
                 .containsExactlyInAnyOrder(
                         "Brambleton",
+                        "Cedarvale",
                         "Coldwell",
                         "Duskwood",
                         "Eastbrook",
@@ -106,11 +107,11 @@ class EvaluationEligibilityIntegrationTests {
         assertThat(all.faculty().stream().filter(p -> p.status().equals("Overdue")))
                 .containsExactlyElementsOf(overdue.faculty());
         assertThat(all.faculty().stream().filter(p -> p.status().equals("Upcoming")))
-                .hasSize(24);
+                .hasSize(25);
         mvc.perform(get("/api/evaluation-eligibility"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.count").value(45))
-                .andExpect(jsonPath("$.faculty.length()").value(45));
+                .andExpect(jsonPath("$.count").value(46))
+                .andExpect(jsonPath("$.faculty.length()").value(46));
         assertThat(overdue.faculty().stream()
                         .filter(professor -> !professor.lastEvaluationCycle().equals("Never evaluated")))
                 .hasSize(6);

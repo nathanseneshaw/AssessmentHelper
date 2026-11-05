@@ -101,7 +101,7 @@ class ObserverEligibilityControllerTests {
         mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cycle.label").value("Fall 2026"))
-                .andExpect(jsonPath("$.signups.length()").value(6));
+                .andExpect(jsonPath("$.signups.length()").value(7));
         mvc.perform(as(KAIA, post("/api/observer-eligibility/generate"))).andExpect(status().isOk());
     }
 

@@ -119,6 +119,31 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
+    void sixEligibleObserversLeaveOneUnusedForKeirasReplacementList() {
+        int rowan = db.queryForObject(
+                "SELECT professor_id FROM professor WHERE email='rowan.cedarvale@example.edu'", Integer.class);
+        var eligible = service.eligibleObservers(KEIRA_SIGNUP).stream()
+                .map(ObserverEligibilityService.Candidate::professorId)
+                .toList();
+        assertThat(eligible).hasSize(6).contains(rowan);
+        service.generate();
+        var first = candidateProfessors(KEIRA_SIGNUP);
+        assertThat(first).hasSize(5).isSubsetOf(eligible);
+        int remaining =
+                eligible.stream().filter(id -> !first.contains(id)).findFirst().orElseThrow();
+        releaseAfterDeadline(KEIRA_SIGNUP);
+        for (int professor : candidateProfessors(KEIRA_SIGNUP))
+            invitation(KEIRA_SIGNUP, professor, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        assertThat(matching(KEIRA_SIGNUP).unusedEligibleObserverCount()).isEqualTo(1);
+        service.regenerate(KEIRA_SIGNUP);
+        assertThat(candidateProfessors(KEIRA_SIGNUP)).containsExactly(remaining);
+        releaseAfterDeadline(KEIRA_SIGNUP);
+        var request = requests.create(KEIRA_SIGNUP, candidateIds(KEIRA_SIGNUP).getFirst(), null);
+        requests.confirm(request.requestId());
+        assertThat(matching(KEIRA_SIGNUP).status()).isEqualTo("MATCHED");
+    }
+
+    @Test
     void staleRecommendationsDoNotHideTheAbsenceOfEligibleObservers() {
         int target = darioSignsUp();
         db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
@@ -437,10 +462,12 @@ class ObserverEligibilityServiceTests {
     void listsAreCappedAtFiveStayStableAndReleasedListsStopGrowing() {
         int dario = darioSignsUp();
         assertThat(candidateProfessors(dario)).containsExactlyInAnyOrder(LEANDER, ARLO, AVERY, KEIRA);
-        // Six people are eligible to observe Keira, so her list is capped at five.
+        // Keira's list remains capped at five even with the expanded pool.
         assertThat(candidateProfessors(KEIRA_SIGNUP))
                 .hasSize(5)
-                .isSubsetOf(LEANDER, ARLO, AVERY, XIOMARA, PERRIN, DARIO);
+                .isSubsetOf(service.eligibleObservers(KEIRA_SIGNUP).stream()
+                        .map(ObserverEligibilityService.Candidate::professorId)
+                        .toList());
         var darioIds = candidateIds(dario);
         var keiraIds = candidateIds(KEIRA_SIGNUP);
         service.generate();

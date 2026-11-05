@@ -848,3 +848,45 @@ FROM observation_template t CROSS JOIN (VALUES
     ('Clarity and Audibility',9)
 ) c(title,sort_order)
 WHERE t.active_status=TRUE;
+
+-- A seventh signed-up professor for testing Keira's replacement recommendation workflow.
+-- TR 13:00 does not overlap Keira's CS 3345.HON (TR 10:00-11:15).
+INSERT INTO professor(department_id,professor_rank,first_name,last_name,email,hire_date,active_status)
+SELECT department_id,'FULL','Rowan','Cedarvale','rowan.cedarvale@example.edu',DATE '2026-02-01',TRUE
+FROM department WHERE department_code='CS';
+
+INSERT INTO course_section(course_id,semester_id,section_number,meeting_days,start_time,end_time,location)
+SELECT co.course_id,s.semester_id,'901','TR',TIME '13:00:00',TIME '14:15:00','Demo classroom'
+FROM course co CROSS JOIN semester s
+WHERE co.course_code='CS' AND co.course_number='3345' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO teaching_history(professor_id,section_id)
+SELECT p.professor_id,cs.section_id FROM professor p CROSS JOIN course_section cs
+JOIN course co ON co.course_id=cs.course_id JOIN semester s ON s.semester_id=cs.semester_id
+WHERE p.email='rowan.cedarvale@example.edu' AND co.course_code='CS' AND co.course_number='3345'
+    AND cs.section_number='901' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO observee(professor_id,cycle_id,status)
+SELECT p.professor_id,c.cycle_id,'ACTIVE' FROM professor p CROSS JOIN evaluation_cycle c
+JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='rowan.cedarvale@example.edu' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO observer(professor_id,cycle_id,active_status)
+SELECT professor_id,cycle_id,TRUE FROM observee
+WHERE professor_id=(SELECT professor_id FROM professor WHERE email='rowan.cedarvale@example.edu');
+
+INSERT INTO evaluation_signup(observee_id,section_id,signup_date,status)
+SELECT oe.observee_id,t.section_id,DATE '2026-10-12','PENDING'
+FROM observee oe JOIN professor p ON p.professor_id=oe.professor_id
+JOIN teaching_history t ON t.professor_id=p.professor_id
+WHERE p.email='rowan.cedarvale@example.edu';
+
+INSERT INTO observer_list_state(signup_id,window_start,window_end)
+SELECT es.signup_id,DATEADD('DAY',1,c.signup_deadline),c.observation_deadline
+FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
+JOIN evaluation_cycle c ON c.cycle_id=oe.cycle_id
+WHERE oe.professor_id=(SELECT professor_id FROM professor WHERE email='rowan.cedarvale@example.edu');
+
+INSERT INTO user_account(professor_id,username,email,password_hash,is_active)
+SELECT professor_id,'rcedarvale',email,'{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW',TRUE
+FROM professor WHERE email='rowan.cedarvale@example.edu';

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -86,9 +87,60 @@ test("unmatched faculty includes failed invitations and links to their matching 
   await waitFor(() => expect(kpi("Unmatched Faculty").value).toBe("2"));
   expect(
     screen
-      .getByRole("link", { name: "Invitations declined or expired" })
+      .getByRole("link", { name: "Resolve Professor 1" })
       .getAttribute("href"),
   ).toBe("/ac/matching?signup=1");
+});
+
+test("Resolve Matches lists every unmatched faculty member and opens the selected case directly", async () => {
+  const signup = matchingState.signups[1];
+  const matching = matchingState.matchingCases[1];
+  if (!signup || !matching) throw new Error("Missing fixture");
+  matchingState.signups = Array.from({ length: 6 }, (_, i) => ({
+    ...signup,
+    signupId: i + 1,
+    professorId: i + 1,
+    name: `Observee ${i + 1}`,
+  }));
+  matchingState.matchingCases = matchingState.signups.map((s) => ({
+    ...matching,
+    signupId: s.signupId,
+  }));
+  await openOverview();
+  const button = screen.getByRole("button", { name: "Resolve Matches" });
+  await waitFor(() => expect(kpi("Unmatched Faculty").value).toBe("6"));
+  expect(
+    screen.getAllByRole("link", { name: /^Resolve Observee/ }),
+  ).toHaveLength(4);
+  fireEvent.click(button);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Unmatched Faculty",
+  });
+  expect(
+    within(dialog).getAllByRole("link", { name: /^Resolve Observee/ }),
+  ).toHaveLength(6);
+  fireEvent.click(
+    within(dialog).getByRole("link", { name: "Resolve Observee 6" }),
+  );
+  await screen.findByRole("heading", { name: "Observee: Observee 6" });
+  expect(window.location.pathname + window.location.search).toBe(
+    "/ac/matching?signup=6",
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("the unmatched overlay closes without navigating away from the overview", async () => {
+  await openOverview();
+  const button = screen.getByRole("button", { name: "Resolve Matches" });
+  button.focus();
+  fireEvent.click(button);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Unmatched Faculty",
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(window.location.pathname).toBe("/ac");
+  expect(document.activeElement).toBe(button);
 });
 
 test("confirmed and pending cases are excluded even if their stored candidate lists are empty", async () => {

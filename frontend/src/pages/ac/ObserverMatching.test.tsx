@@ -127,8 +127,8 @@ test("shows unsuccessful invitation history and additional eligible observers", 
       observerId: 2,
       observerName: "Professor 2",
       status: "DECLINED",
-      requestedAt: "2026-10-20T09:00:00",
-      expiresAt: "2026-10-22T09:00:00",
+      requestedAt: "2026-10-20T09:00:00.123456",
+      expiresAt: "2026-10-22T09:00:00.987654",
       respondedAt: "2026-10-20T10:00:00",
     },
     {
@@ -152,6 +152,8 @@ test("shows unsuccessful invitation history and additional eligible observers", 
   expect(details.getByRole("table")).toBeTruthy();
   expect(details.getByText("Declined")).toBeTruthy();
   expect(details.getByText("Expired")).toBeTruthy();
+  expect(details.queryByText(/123456|987654/)).toBeNull();
+  expect(details.getAllByText("2026-10-20 09:00:00")).toHaveLength(2);
 });
 
 function exhaustedCase() {

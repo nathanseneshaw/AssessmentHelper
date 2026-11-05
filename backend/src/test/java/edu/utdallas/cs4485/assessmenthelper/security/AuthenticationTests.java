@@ -60,6 +60,10 @@ class AuthenticationTests {
                 .andExpect(jsonPath("$.name").value("Isla Wrenfield"))
                 .andExpect(jsonPath("$.schoolId").value(2))
                 .andExpect(jsonPath("$.roles").value(contains("PROFESSOR")));
+        mockMvc.perform(signInRequest("rowan.cedarvale@example.edu", "Faculty123!"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Rowan Cedarvale"))
+                .andExpect(jsonPath("$.roles").value(contains("PROFESSOR")));
     }
 
     @Test
