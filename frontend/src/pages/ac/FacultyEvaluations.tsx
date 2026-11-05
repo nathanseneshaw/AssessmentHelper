@@ -5,7 +5,7 @@ import { PageHeader } from "../../components/PageHeader";
 
 type Rank = "Assistant" | "Associate" | "Full";
 // Shown in capitals; stored in sentence case so screen readers say the word.
-type Status = "Due" | "Upcoming" | "Overdue";
+type Status = "Due" | "Upcoming" | "Overdue" | "Due next semester";
 
 interface QueueRow {
   professorId: number;
@@ -36,6 +36,7 @@ const filters: Filter[] = [
 const STATUS_COLORS: Record<Status, string> = {
   Due: "text-brand-orange",
   Upcoming: "text-brand-green",
+  "Due next semester": "text-brand-green",
   Overdue: "text-brand-red",
 };
 

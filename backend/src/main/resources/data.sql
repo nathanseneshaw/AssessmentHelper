@@ -890,3 +890,31 @@ WHERE oe.professor_id=(SELECT professor_id FROM professor WHERE email='rowan.ced
 INSERT INTO user_account(professor_id,username,email,password_hash,is_active)
 SELECT professor_id,'rcedarvale',email,'{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW',TRUE
 FROM professor WHERE email='rowan.cedarvale@example.edu';
+
+-- A pre-deadline signup with no eligible observer, so AC deferral can be tested without reopening registration.
+-- Bianca teaches only the graduate course level; the other seeded observers teach undergraduate levels.
+INSERT INTO observee(professor_id,cycle_id,status)
+SELECT p.professor_id,c.cycle_id,'ACTIVE' FROM professor p CROSS JOIN evaluation_cycle c
+JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='bianca.goldmere@example.edu' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO observer(professor_id,cycle_id,active_status)
+SELECT oe.professor_id,oe.cycle_id,TRUE FROM observee oe JOIN professor p ON p.professor_id=oe.professor_id
+JOIN evaluation_cycle c ON c.cycle_id=oe.cycle_id JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='bianca.goldmere@example.edu' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO evaluation_signup(observee_id,section_id,signup_date,status)
+SELECT oe.observee_id,cs.section_id,DATE '2026-10-12','PENDING'
+FROM observee oe JOIN professor p ON p.professor_id=oe.professor_id
+JOIN evaluation_cycle c ON c.cycle_id=oe.cycle_id
+JOIN course_section cs ON cs.semester_id=c.semester_id JOIN course co ON co.course_id=cs.course_id
+JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='bianca.goldmere@example.edu' AND co.course_code='CS' AND co.course_number='6363'
+    AND cs.section_number='003' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO observer_list_state(signup_id,window_start,window_end)
+SELECT es.signup_id,DATEADD('DAY',1,c.signup_deadline),c.observation_deadline
+FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
+JOIN professor p ON p.professor_id=oe.professor_id JOIN evaluation_cycle c ON c.cycle_id=oe.cycle_id
+JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='bianca.goldmere@example.edu' AND s.term='Fall' AND s.academic_year=2026;

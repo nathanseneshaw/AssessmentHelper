@@ -39,6 +39,20 @@ beforeEach(() => {
   assigned = [];
   refuseRegeneration = false;
   fakeBackend({
+    "/api/observer-eligibility/signups/1/defer": (init, url) => {
+      posts.push(url.pathname);
+      const matching = state.matchingCases[0];
+      if (!matching) throw Error("Missing case");
+      matching.status = "DEFERRED";
+      matching.canDefer = false;
+      matching.deferral = {
+        reason: JSON.parse(String(init?.body)).reason,
+        deferredBy: "Kaia Clearbrook",
+        deferredAt: "2026-11-02T10:00:00",
+        targetSemester: "Spring 2027",
+      };
+      return new Response(null, { status: 204 });
+    },
     "/api/observer-eligibility/signups/1/regenerate": (_init, url) => {
       posts.push(url.pathname);
       if (refuseRegeneration)
@@ -297,7 +311,7 @@ test("zero candidates alert AC and prevent release; arrows wrap", async () => {
   await open();
   fireEvent.click(screen.getByRole("button", { name: "Next observee" }));
   expect(screen.getByRole("alert").textContent).toContain(
-    "No eligible observers",
+    "No generated observers.",
   );
   expect(
     (
@@ -327,6 +341,9 @@ function button(
 }
 
 async function openAssign() {
+  const matching = exhaustedCase();
+  matching.unusedEligibleObserverCount = 0;
+  matching.canAssign = true;
   await open();
   fireEvent.click(button("Assign Observer"));
   const dialog = await screen.findByRole("dialog", {
@@ -357,7 +374,7 @@ test("assigns any professor who passes the rules as the observer", async () => {
   expect(within(screen.getByRole("table")).getByText("Assigned")).toBeTruthy();
   expect(within(screen.getByRole("table")).queryByText("Accepted")).toBeNull();
   expect(button("Assign Observer").disabled).toBe(true);
-  expect(button("Send Candidate List").disabled).toBe(true);
+  expect(button("Candidate List Sent").disabled).toBe(true);
 });
 
 test("keeps the dialog open with the reason when assignment is refused", async () => {
@@ -406,4 +423,53 @@ test("send stays disabled and gray until signup closes", async () => {
   expect(send.className).toContain("disabled:bg-btn-gray");
   fireEvent.click(send);
   expect(posts).toHaveLength(0);
+});
+
+test("manual assignment is disabled until all recommendations decline and the pool is exhausted", async () => {
+  await open();
+  expect(button("Assign Observer").disabled).toBe(true);
+  expect(
+    screen.queryByRole("button", { name: "Defer to Next Semester" }),
+  ).toBeNull();
+});
+
+test("expired invitations and further recommendations leave manual assignment disabled", async () => {
+  const matching = exhaustedCase();
+  matching.canAssign = false;
+  const invitation = matching.invitations[0];
+  if (!invitation) throw Error("Missing invitation");
+  invitation.status = "EXPIRED";
+  await open();
+  expect(button("Assign Observer").disabled).toBe(true);
+});
+
+test("AC can defer a case with zero eligible observers and see its recorded reason", async () => {
+  const matching = state.matchingCases[0];
+  if (!matching) throw Error("Missing case");
+  matching.status = "UNMATCHED";
+  matching.reason = "NO_ELIGIBLE_OBSERVERS";
+  matching.eligibleObserverCount = 0;
+  matching.canAssign = false;
+  matching.canDefer = true;
+  await open();
+  expect(button("Assign Observer").disabled).toBe(true);
+  fireEvent.click(button("Defer to Next Semester"));
+  const reason = screen.getByLabelText(/Reason/);
+  fireEvent.change(reason, { target: { value: " " } });
+  expect(button("Confirm Deferral").disabled).toBe(true);
+  fireEvent.change(reason, {
+    target: { value: "No matching observers for this section" },
+  });
+  fireEvent.click(button("Confirm Deferral"));
+  await screen.findByText("Due next semester");
+  expect(
+    screen.getByText("Reason: No matching observers for this section"),
+  ).toBeTruthy();
+  expect(screen.getByText("Due: Spring 2027")).toBeTruthy();
+  expect(screen.getByText(/Deferred by Kaia Clearbrook/)).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Defer to Next Semester" }),
+  ).toBeNull();
+  expect(button("Send Candidate List").disabled).toBe(true);
+  expect(posts).toContain("/api/observer-eligibility/signups/1/defer");
 });

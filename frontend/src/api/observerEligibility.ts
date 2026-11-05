@@ -85,7 +85,12 @@ export interface MatchingInvitation {
 }
 export interface MatchingCase {
   signupId: number;
-  status: "MATCHED" | "AWAITING_RESPONSE" | "AWAITING_INVITATION" | "UNMATCHED";
+  status:
+    | "MATCHED"
+    | "AWAITING_RESPONSE"
+    | "AWAITING_INVITATION"
+    | "UNMATCHED"
+    | "DEFERRED";
   reason:
     | "NO_ELIGIBLE_OBSERVERS"
     | "INVITATIONS_UNSUCCESSFUL"
@@ -94,6 +99,14 @@ export interface MatchingCase {
   eligibleObserverCount: number;
   remainingObserverCount: number;
   unusedEligibleObserverCount: number;
+  canAssign?: boolean;
+  canDefer?: boolean;
+  deferral?: {
+    reason: string;
+    deferredBy: string;
+    deferredAt: string;
+    targetSemester: string;
+  } | null;
   previousRecommendations: Candidate[];
   invitations: MatchingInvitation[];
 }

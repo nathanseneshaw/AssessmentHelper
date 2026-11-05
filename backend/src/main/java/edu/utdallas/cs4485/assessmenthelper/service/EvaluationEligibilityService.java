@@ -42,6 +42,7 @@ public class EvaluationEligibilityService {
     private final ObservationRepository observations;
     private final EvaluationNotificationRepository notifications;
     private final Clock clock;
+    private final edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals;
 
     public EvaluationEligibilityService(
             ProfessorRepository professors,
@@ -52,7 +53,8 @@ public class EvaluationEligibilityService {
             EvaluationSignupRepository signups,
             ObservationRepository observations,
             EvaluationNotificationRepository notifications,
-            Clock clock) {
+            Clock clock,
+            edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals) {
         this.professors = professors;
         this.policies = policies;
         this.semesters = semesters;
@@ -62,6 +64,7 @@ public class EvaluationEligibilityService {
         this.observations = observations;
         this.notifications = notifications;
         this.clock = clock;
+        this.deferrals = deferrals;
     }
 
     public record Faculty(
@@ -159,6 +162,7 @@ public class EvaluationEligibilityService {
             if (cycle.cycleId().equals(notification.cycleId()))
                 notifiedAt.merge(notification.professorId(), notification.sentAt(), (a, b) -> a.isAfter(b) ? a : b);
         }
+        var deferred = deferrals.findAll();
         List<Faculty> faculty = new ArrayList<>();
         for (Professor professor : activeProfessors) {
             var policy = policyMap.get(professor.professorRank());
@@ -172,6 +176,17 @@ public class EvaluationEligibilityService {
                 throw conflict(
                         "Professor " + professor.professorId() + " needs a hire date or completed evaluation date.");
             var result = EvaluationDueRules.calculate(anchor, interval, semester);
+            LocalDate last = lastCompleted.get(professor.professorId());
+            LocalDate target = deferred.stream()
+                    .filter(d -> d.professorId().equals(professor.professorId())
+                            && !d.deferredAt().toLocalDate().isAfter(today)
+                            && (last == null || last.isBefore(d.deferredAt().toLocalDate())))
+                    .map(d -> semesterMap.get(d.targetSemesterId()))
+                    .filter(java.util.Objects::nonNull)
+                    .map(Semester::startDate)
+                    .max(Comparator.naturalOrder())
+                    .orElse(null);
+            result = EvaluationDueRules.deferred(result, target, semester);
             boolean dueThisCycle = result.dueThisCycle();
             boolean overdue = result.overdue();
             if (due == null || (due ? dueThisCycle : overdue)) {
@@ -196,7 +211,9 @@ public class EvaluationEligibilityService {
                         dueSemester,
                         interval,
                         notifiedAt.get(professor.professorId()),
-                        dueThisCycle ? "Due" : overdue ? "Overdue" : "Upcoming"));
+                        target != null && target.isAfter(semester.endDate())
+                                ? "Due next semester"
+                                : dueThisCycle ? "Due" : overdue ? "Overdue" : "Upcoming"));
             }
         }
         faculty.sort(Comparator.comparing(Faculty::name).thenComparing(Faculty::professorId));

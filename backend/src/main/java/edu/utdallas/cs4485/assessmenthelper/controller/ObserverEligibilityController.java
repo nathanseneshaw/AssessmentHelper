@@ -75,6 +75,21 @@ public class ObserverEligibilityController {
         service.assign(id, body.observerId());
     }
 
+    public record DeferBody(String reason) {}
+
+    @PostMapping("/signups/{id}/defer")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('AC')")
+    public void defer(
+            @PathVariable int id,
+            @RequestBody DeferBody body,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal
+                    edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal principal) {
+        if (principal.user().professorId() == null)
+            throw new IllegalArgumentException("An AC faculty profile is required.");
+        service.defer(id, principal.user().professorId(), body.reason());
+    }
+
     @PostMapping("/faculty/{id}/requests/{requestId}/respond")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("@professorAccess.isSelf(principal, #id)")

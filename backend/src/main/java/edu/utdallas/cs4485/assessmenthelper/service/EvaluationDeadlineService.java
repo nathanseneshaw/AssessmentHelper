@@ -27,18 +27,21 @@ public class EvaluationDeadlineService {
     private final EvaluationRecordService recordService;
     private final SemesterRepository semesterRepository;
     private final Clock clock;
+    private final edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals;
 
     public EvaluationDeadlineService(
             ProfessorRepository professorRepository,
             EvaluationPolicyService policyService,
             EvaluationRecordService recordService,
             SemesterRepository semesterRepository,
-            Clock clock) {
+            Clock clock,
+            edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals) {
         this.professorRepository = professorRepository;
         this.policyService = policyService;
         this.recordService = recordService;
         this.semesterRepository = semesterRepository;
         this.clock = clock;
+        this.deferrals = deferrals;
     }
 
     /**
@@ -84,6 +87,17 @@ public class EvaluationDeadlineService {
                         "No unique semester contains today's date. Configure semester dates first.");
             }
             var result = EvaluationDueRules.calculate(anchor, policy.evaluationIntervalYears(), current.getFirst());
+            var allSemesters = semesterRepository.findAll();
+            LocalDate target = deferrals.findByProfessorId(professorId).stream()
+                    .filter(d -> !d.deferredAt().toLocalDate().isAfter(today)
+                            && (lastEvaluation == null
+                                    || lastEvaluation.isBefore(d.deferredAt().toLocalDate())))
+                    .flatMap(d ->
+                            allSemesters.stream().filter(s -> s.semesterId().equals(d.targetSemesterId())))
+                    .map(edu.utdallas.cs4485.assessmenthelper.entity.Semester::startDate)
+                    .max(naturalOrder())
+                    .orElse(null);
+            result = EvaluationDueRules.deferred(result, target, current.getFirst());
             nextDue = result.nextDue();
             overdue = result.overdue() && EvaluationDueRules.applies(professor, policy);
         }

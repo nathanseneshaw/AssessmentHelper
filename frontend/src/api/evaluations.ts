@@ -85,6 +85,7 @@ export function initials(name: string | null | undefined) {
 export function evaluationStatusLabel(status: string | null) {
   if (!status) return "Not started";
   if (status.toUpperCase() === "COMPLETED") return "Completed";
+  if (status.toUpperCase() === "DEFERRED") return "Deferred";
   if (status.toUpperCase() === "ACTIVE") return "In progress";
   return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
 }

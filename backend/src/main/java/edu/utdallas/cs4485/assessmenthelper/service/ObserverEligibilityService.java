@@ -128,7 +128,36 @@ public class ObserverEligibilityService {
             int remainingObserverCount,
             int unusedEligibleObserverCount,
             List<Candidate> previousRecommendations,
-            List<Invitation> invitations) {}
+            List<Invitation> invitations,
+            boolean canAssign,
+            boolean canDefer,
+            Deferral deferral) {}
+
+    public record Deferral(String reason, String deferredBy, LocalDateTime deferredAt, String targetSemester) {}
+
+    public Deferral deferral(int signupId) {
+        return db
+                .query(
+                        """
+                SELECT d.reason,d.deferred_at,p.first_name || ' ' || p.last_name AS actor,
+                s.term || ' ' || s.academic_year AS target FROM evaluation_deferral d
+                JOIN professor p ON p.professor_id=d.deferred_by JOIN semester s ON s.semester_id=d.target_semester_id
+                WHERE d.signup_id=?
+                """,
+                        (r, n) -> new Deferral(
+                                r.getString("reason"),
+                                r.getString("actor"),
+                                r.getObject("deferred_at", LocalDateTime.class),
+                                r.getString("target")),
+                        signupId)
+                .stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void requireNotDeferred(int signupId) {
+        if (deferral(signupId) != null) throw new ConflictException("This evaluation is deferred to next semester.");
+    }
 
     public record AcState(Cycle cycle, List<Signup> signups, List<MatchingCase> matchingCases) {}
 
@@ -448,7 +477,9 @@ public class ObserverEligibilityService {
                     boolean recommendationsExhausted = !s.candidates().isEmpty()
                             && s.candidates().stream()
                                     .allMatch(candidate -> unsuccessful.contains(candidate.observerId()));
-                    if (matched) status = "MATCHED";
+                    Deferral deferred = deferral(s.signupId());
+                    if (deferred != null) status = "DEFERRED";
+                    else if (matched) status = "MATCHED";
                     else if (pending) status = "AWAITING_RESPONSE";
                     else if (!s.released() && !previous.isEmpty()) {
                         status = "UNMATCHED";
@@ -468,7 +499,29 @@ public class ObserverEligibilityService {
                             remaining,
                             unused,
                             previous,
-                            List.copyOf(history));
+                            List.copyOf(history),
+                            deferred == null
+                                    && c.candidateListsOpen()
+                                    && c.requestsOpen()
+                                    && !matched
+                                    && !pending
+                                    && !s.windowEnd().isBefore(LocalDate.now(clock))
+                                    && s.released()
+                                    && unused == 0
+                                    && !eligible.isEmpty()
+                                    && !recommended.isEmpty()
+                                    && recommended.stream()
+                                            .allMatch(id -> history.stream()
+                                                    .anyMatch(r ->
+                                                            r.observerId() == id && "DECLINED".equals(r.status()))),
+                            deferred == null
+                                    && c.signupDeadline() != null
+                                    && LocalDate.now(clock).isAfter(c.signupDeadline())
+                                    && c.cycleId() == cycle().cycleId()
+                                    && !matched
+                                    && !pending
+                                    && eligible(s, c, false).isEmpty(),
+                            deferred);
                 })
                 .toList();
         return new AcState(c, rows, cases);
@@ -628,6 +681,7 @@ public class ObserverEligibilityService {
 
     /** Draws a fresh list only after every current recommendation was declined or expired. */
     public AcState regenerate(int signupId) {
+        requireNotDeferred(signupId);
         int cycleId = cycleIdOf(signupId);
         // Serialize against invitation sends, assignments and observer responses.
         db.queryForObject(
@@ -678,7 +732,7 @@ public class ObserverEligibilityService {
     private void refresh(Cycle c) {
         if (!c.requestsOpen()) return;
         for (Signup s : signups(c, true)) {
-            if (s.released() || s.candidates().size() >= LIST_SIZE) continue;
+            if (deferral(s.signupId()) != null || s.released() || s.candidates().size() >= LIST_SIZE) continue;
             var eligible = new ArrayList<>(unusedEligible(s, c));
             Collections.shuffle(eligible);
             for (int observerId :
@@ -697,6 +751,10 @@ public class ObserverEligibilityService {
     }
 
     private List<Integer> eligible(Signup signup, Cycle c) {
+        return eligible(signup, c, true);
+    }
+
+    private List<Integer> eligible(Signup signup, Cycle c, boolean remainingDatesOnly) {
         var target = db.queryForMap("""
                 SELECT p.department_id, co.course_number FROM professor p, course_section s
                 JOIN course co ON co.course_id=s.course_id WHERE p.professor_id=? AND s.section_id=?
@@ -745,7 +803,7 @@ public class ObserverEligibilityService {
             if (!unknown
                     && hasMeeting(
                             signup.section(),
-                            signup.windowStart().isBefore(LocalDate.now(clock))
+                            remainingDatesOnly && signup.windowStart().isBefore(LocalDate.now(clock))
                                     ? LocalDate.now(clock)
                                     : signup.windowStart(),
                             signup.windowEnd(),
@@ -790,6 +848,7 @@ public class ObserverEligibilityService {
     }
 
     public void release(int signupId) {
+        requireNotDeferred(signupId);
         Cycle c = lockCycle(cycleIdOf(signupId));
         if (!c.requestsOpen()) throw new ConflictException("The observation period is closed.");
         Signup s = managedSignup(signupId, c);
@@ -829,6 +888,7 @@ public class ObserverEligibilityService {
         Cycle c = lockCycle(cycleId);
         if (!c.requestsOpen()) throw new ConflictException("The observation period is closed.");
         Signup s = managedSignup(signupId, c);
+        requireNotDeferred(signupId);
         if (s.observerName() != null) throw new ConflictException("An observer is already assigned to this signup.");
         var pending = requests(c).stream()
                 .filter(r -> r.signupId() == signupId && "PENDING".equals(r.status()))
@@ -839,6 +899,13 @@ public class ObserverEligibilityService {
                             + " to respond. Assign an observer if the request is declined or expires.");
         if (!eligible(s, c).contains(observerId))
             throw new ConflictException("This professor is not eligible to observe this signup.");
+        MatchingCase matching = acState(c).matchingCases().stream()
+                .filter(row -> row.signupId() == signupId)
+                .findFirst()
+                .orElseThrow();
+        if (!matching.canAssign())
+            throw new ConflictException(
+                    "Every generated observer must decline and no additional eligible observers can remain before manual assignment.");
         var templates = db.queryForList(
                 "SELECT template_id FROM observation_template WHERE active_status=TRUE ORDER BY version DESC,template_id DESC",
                 Integer.class);
@@ -870,6 +937,49 @@ public class ObserverEligibilityService {
                         + s.section().label() + " ("
                         + s.section().meetingDays() + " " + s.section().startTime() + "-"
                         + s.section().endTime() + ").");
+    }
+
+    public void defer(int signupId, int actorProfessorId, String reason) {
+        if (reason == null || reason.isBlank() || reason.trim().length() > 1000)
+            throw new IllegalArgumentException("Provide a reason of 1 to 1000 characters.");
+        db.queryForObject(
+                "SELECT professor_id FROM professor WHERE professor_id=? FOR UPDATE",
+                Integer.class,
+                signupOwner(signupId));
+        db.queryForObject(
+                "SELECT signup_id FROM evaluation_signup WHERE signup_id=? FOR UPDATE", Integer.class, signupId);
+        Cycle c = lockCycle(cycleIdOf(signupId));
+        MatchingCase matching = acState(c).matchingCases().stream()
+                .filter(row -> row.signupId() == signupId)
+                .findFirst()
+                .orElseThrow();
+        if (!matching.canDefer())
+            throw new ConflictException(
+                    "Only an unmatched faculty member with no eligible observers can be deferred after signup closes.");
+        var next = db.queryForList("""
+                SELECT s.semester_id FROM semester s WHERE s.start_date >
+                (SELECT current_sem.end_date FROM semester current_sem WHERE current_sem.semester_id=?)
+                ORDER BY s.start_date,s.semester_id FETCH FIRST 1 ROW ONLY
+                """, Integer.class, c.semesterId());
+        if (next.isEmpty())
+            throw new ConflictException("Configure the next semester before deferring this evaluation.");
+        db.update(
+                "INSERT INTO evaluation_deferral(signup_id,professor_id,target_semester_id,reason,deferred_by,deferred_at) VALUES (?,?,?,?,?,?)",
+                signupId,
+                signupOwner(signupId),
+                next.getFirst(),
+                reason.trim(),
+                actorProfessorId,
+                LocalDateTime.now(clock));
+        db.update("UPDATE evaluation_signup SET status='DEFERRED' WHERE signup_id=?", signupId);
+        db.update(
+                "UPDATE observee SET status='DEFERRED' WHERE observee_id=(SELECT observee_id FROM evaluation_signup WHERE signup_id=?)",
+                signupId);
+        notify(
+                signupOwner(signupId),
+                signupId,
+                "The Assessment Committee marked your evaluation Due next semester ("
+                        + deferral(signupId).targetSemester() + "). Reason: " + reason.trim());
     }
 
     private Signup managedSignup(int id, Cycle c) {

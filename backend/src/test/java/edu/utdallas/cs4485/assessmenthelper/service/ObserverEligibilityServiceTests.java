@@ -203,11 +203,12 @@ class ObserverEligibilityServiceTests {
     void manualAssignmentAndMultipleAcceptedObserversDoNotInflateTheUnmatchedList() {
         int target = darioSignsUp();
         int observerId = candidateIds(target).getFirst();
+        exhaustForAssignment(target);
         service.assign(target, observerId);
         assertThat(matching(target).status()).isEqualTo("MATCHED");
         assertThat(matching(target).invitations())
                 .extracting(ObserverEligibilityService.Invitation::status)
-                .containsExactly("ASSIGNED");
+                .contains("ASSIGNED");
         int another = candidateIds(target).stream()
                 .filter(id -> id != observerId)
                 .findFirst()
@@ -332,8 +333,8 @@ class ObserverEligibilityServiceTests {
     @Test
     void regenerationRejectsAMatchedSignupAndAClosedObservationPeriod() {
         int target = exhaustedReleasedList();
-        addUnusedObservers(1);
         int observer = candidateIds(target).getFirst();
+        exhaustForAssignment(target);
         service.assign(target, observer);
         assertThatThrownBy(() -> service.regenerate(target)).isInstanceOf(ConflictException.class);
         db.update("UPDATE evaluation_cycle SET observation_deadline='2026-10-20' WHERE cycle_id=1");
@@ -655,6 +656,7 @@ class ObserverEligibilityServiceTests {
     void assignedObserverChoosesDateWithoutChangingAssignedHistory() {
         int target = darioSignsUp();
         var candidate = list(target).candidates().getFirst();
+        exhaustForAssignment(target);
         service.assign(target, candidate.observerId());
         var request = service.facultyState(candidate.professorId()).incoming().getFirst();
         assertThat(request.assignedByAc()).isTrue();
@@ -677,6 +679,7 @@ class ObserverEligibilityServiceTests {
     void dateOptionsExcludeTeachingConflictsAndRespectDeadlineChanges() {
         int target = darioSignsUp();
         var candidate = list(target).candidates().getFirst();
+        exhaustForAssignment(target);
         service.assign(target, candidate.observerId());
         var request = service.facultyState(candidate.professorId()).incoming().getFirst();
         db.update("UPDATE evaluation_cycle SET observation_deadline='2026-11-05' WHERE cycle_id=1");
@@ -696,6 +699,7 @@ class ObserverEligibilityServiceTests {
     void availableDatesExcludeAnotherObservationAtTheSameTime() {
         int target = darioSignsUp();
         var candidate = list(target).candidates().getFirst();
+        exhaustForAssignment(target);
         service.assign(target, candidate.observerId());
         var request = service.facultyState(candidate.professorId()).incoming().getFirst();
         int otherSignup = db.queryForObject(
@@ -713,6 +717,103 @@ class ObserverEligibilityServiceTests {
         assertThatThrownBy(() -> service.scheduleObservation(
                         candidate.professorId(), request.requestId(), LocalDate.of(2026, 11, 3)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void manualAssignmentRequiresAllDeclinesAndExhaustionOfTheWholePool() {
+        int target = darioSignsUp();
+        int observer = candidateIds(target).getFirst();
+        assertThat(matching(target).canAssign()).isFalse();
+        assertThatThrownBy(() -> service.assign(target, observer)).isInstanceOf(ConflictException.class);
+        exhaustForAssignment(target);
+        assertThat(matching(target).canAssign()).isTrue();
+        assertThat(matching(target).canDefer()).isFalse();
+        assertThatThrownBy(() -> service.defer(target, 12, "No matching observers"))
+                .isInstanceOf(ConflictException.class);
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-31' WHERE cycle_id=1");
+        addUnusedObservers(1);
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        assertThat(matching(target).canAssign()).isFalse();
+        assertThatThrownBy(() -> service.assign(target, observer)).isInstanceOf(ConflictException.class);
+        service.regenerate(target);
+        assertThat(matching(target).canAssign()).isFalse();
+    }
+
+    @Test
+    void expiredAndUninvitedRecommendationsCannotUnlockManualAssignment() {
+        int target = darioSignsUp();
+        int observer = candidateIds(target).getFirst();
+        exhaustForAssignment(target);
+        int request = db.queryForObject(
+                "SELECT MIN(request_id) FROM observer_request WHERE signup_id=?", Integer.class, target);
+        db.update("UPDATE observer_request SET status='EXPIRED' WHERE request_id=?", request);
+        assertThat(matching(target).canAssign()).isFalse();
+        assertThatThrownBy(() -> service.assign(target, observer)).isInstanceOf(ConflictException.class);
+        db.update("DELETE FROM observer_request WHERE request_id=?", request);
+        assertThat(matching(target).canAssign()).isFalse();
+        assertThatThrownBy(() -> service.assign(target, observer)).isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void deferralRequiresZeroEligibleObserversAndPreservesTheDecision() {
+        int target = darioSignsUp();
+        assertThatThrownBy(() -> service.defer(target, 12, "No matching observers"))
+                .isInstanceOf(ConflictException.class);
+        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        assertThat(matching(target).canDefer()).isTrue();
+        assertThat(matching(target).canAssign()).isFalse();
+        assertThatThrownBy(() -> service.defer(target, 12, " ")).isInstanceOf(IllegalArgumentException.class);
+        service.defer(target, 12, "  No matching observers  ");
+        var state = matching(target);
+        assertThat(state.status()).isEqualTo("DEFERRED");
+        assertThat(state.canAssign()).isFalse();
+        assertThat(state.canDefer()).isFalse();
+        assertThat(state.deferral().reason()).isEqualTo("No matching observers");
+        assertThat(state.deferral().targetSemester()).isEqualTo("Spring 2027");
+        assertThat(state.deferral().deferredBy()).isEqualTo("Kaia Clearbrook");
+        assertThat(state.deferral().deferredAt()).isEqualTo(LocalDateTime.of(2026, 10, 21, 10, 0));
+        assertThat(service.facultyState(DARIO).notifications().getFirst().message())
+                .contains("Due next semester");
+        assertThatThrownBy(() -> service.defer(target, 12, "Again")).isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> service.release(target)).isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> service.regenerate(target)).isInstanceOf(ConflictException.class);
+        service.generate();
+        assertThat(matching(target).status()).isEqualTo("DEFERRED");
+    }
+
+    @Test
+    void demoBiancaCanBeDeferredWithoutChangingExistingObservationDates() {
+        int signup = db.queryForObject(
+                "SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=27 AND oe.cycle_id=1",
+                Integer.class);
+        assertThat(matching(signup).eligibleObserverCount()).isZero();
+        assertThat(matching(signup).reason()).isEqualTo("NO_ELIGIBLE_OBSERVERS");
+        assertThat(service.eligibleObservers(signup)).isEmpty();
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        assertThat(matching(signup).canDefer()).isTrue();
+        assertThat(matching(signup).canAssign()).isFalse();
+        int before = db.queryForObject("SELECT COUNT(*) FROM observation", Integer.class);
+        service.defer(signup, 12, "No matching observers");
+        assertThat(matching(signup).status()).isEqualTo("DEFERRED");
+        assertThat(matching(signup).deferral().targetSemester()).isEqualTo("Spring 2027");
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation", Integer.class))
+                .isEqualTo(before);
+    }
+
+    void exhaustForAssignment(int target) {
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        db.update("UPDATE observer_list_state SET released_at='2026-10-21T10:00:00' WHERE signup_id=?", target);
+        for (int professor : candidateProfessors(target)) {
+            int observer = db.queryForObject(
+                    "SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1", Integer.class, professor);
+            if (db.queryForObject(
+                            "SELECT COUNT(*) FROM observer_request WHERE signup_id=? AND observer_id=?",
+                            Integer.class,
+                            target,
+                            observer)
+                    == 0) invitation(target, professor, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        }
     }
 
     private LocalDate dateFor(int requestId) {
