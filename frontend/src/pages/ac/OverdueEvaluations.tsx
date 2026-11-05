@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
   type EvaluationKind,
+  getNotificationPreview,
   type NotificationEmail,
-  notificationTemplate,
   type OverdueFaculty,
   type OverdueQueue,
   rankLabel,
@@ -35,6 +35,9 @@ export function OverdueEvaluations({
   const titleId = useId();
   const [faculty, setFaculty] = useState<OverdueFaculty | null>(null);
   const [email, setEmail] = useState<NotificationEmail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const previewRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => previewRequest.current?.abort(), []);
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -51,16 +54,19 @@ export function OverdueEvaluations({
     };
   }, []);
 
+  const draftReady = email !== null;
   useEffect(() => {
     if (sent)
       dialog.current?.querySelector<HTMLButtonElement>("[data-done]")?.focus();
-    else if (faculty)
+    else if (faculty && draftReady)
       dialog.current
         ?.querySelector<HTMLInputElement>("input[name=subject]")
         ?.focus();
-  }, [sent, faculty]);
+  }, [sent, faculty, draftReady]);
 
   function back() {
+    previewRequest.current?.abort();
+    setLoading(false);
     setFaculty(null);
     setEmail(null);
     setError("");
@@ -72,6 +78,35 @@ export function OverdueEvaluations({
         )
         ?.focus(),
     );
+  }
+
+  async function compose(person: OverdueFaculty) {
+    previewRequest.current?.abort();
+    const controller = new AbortController();
+    previewRequest.current = controller;
+    returnFocus.current = person.professorId;
+    setFaculty(person);
+    setEmail(null);
+    setLoading(true);
+    setError("");
+    try {
+      const draft = await getNotificationPreview(
+        queue.cycleId,
+        person.professorId,
+        kind,
+        controller.signal,
+      );
+      if (!controller.signal.aborted) setEmail(draft);
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not load email template.",
+        );
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
   }
 
   async function send() {
@@ -114,10 +149,10 @@ export function OverdueEvaluations({
       {sent ? (
         <>
           <h2 id={titleId} className="font-semibold text-xl text-brand-green">
-            Email Sent
+            Email Recorded
           </h2>
           <p role="status" className="mt-3 text-sm">
-            The evaluation notification has been sent.
+            The simulated email has been recorded. No email was delivered.
           </p>
           <div className="mt-10 flex justify-end">
             <button
@@ -127,6 +162,35 @@ export function OverdueEvaluations({
               className="rounded-lg bg-brand-green px-8 py-2 text-white"
             >
               Done
+            </button>
+          </div>
+        </>
+      ) : faculty && !email ? (
+        <>
+          <h2 id={titleId} className="font-bold text-xl">
+            Prepare notification
+          </h2>
+          {loading ? (
+            <p role="status" className="my-4">
+              Loading email template...
+            </p>
+          ) : (
+            <p role="alert" className="my-4 text-brand-red">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-3">
+            {!loading && (
+              <button
+                type="button"
+                className={primary}
+                onClick={() => void compose(faculty)}
+              >
+                Retry
+              </button>
+            )}
+            <button type="button" className={secondary} onClick={back}>
+              Back
             </button>
           </div>
         </>
@@ -140,7 +204,8 @@ export function OverdueEvaluations({
                   : "Notify Faculty Member"}
               </h2>
               <p className="mt-1 text-sm text-muted">
-                Review and edit the email before sending.
+                Review and edit the email. Sending records a simulated email; it
+                does not deliver mail.
               </p>
             </div>
             <button
@@ -280,18 +345,7 @@ export function OverdueEvaluations({
                         data-professor-id={person.professorId}
                         className={primary}
                         aria-label={`${person.lastNotifiedAt ? "Follow up with" : "Notify"} ${person.name}`}
-                        onClick={() => {
-                          returnFocus.current = person.professorId;
-                          setFaculty(person);
-                          setEmail(
-                            notificationTemplate(
-                              person,
-                              queue.cycleLabel,
-                              kind,
-                            ),
-                          );
-                          setError("");
-                        }}
+                        onClick={() => void compose(person)}
                       >
                         {person.lastNotifiedAt ? "Follow Up" : "Notify"}
                       </button>
