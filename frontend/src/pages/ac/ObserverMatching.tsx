@@ -694,7 +694,7 @@ export function AcObserverMatching() {
                   }
                   title={
                     !matching?.canAssign
-                      ? "Available after every generated observer declines and no additional eligible observers remain."
+                      ? "Available after every generated invitation is declined or expired and no additional eligible observers remain."
                       : undefined
                   }
                   onClick={() => {
@@ -705,8 +705,9 @@ export function AcObserverMatching() {
                   Assign Observer
                 </button>
                 <p className="w-full text-sm text-muted">
-                  Manual assignment is available after every generated observer
-                  declines and no additional eligible observers remain.
+                  Manual assignment is available after every generated
+                  invitation is declined or expired and no additional eligible
+                  observers remain.
                 </p>
               </div>
             </section>

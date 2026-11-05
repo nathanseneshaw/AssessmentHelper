@@ -740,15 +740,14 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void expiredAndUninvitedRecommendationsCannotUnlockManualAssignment() {
+    void expiredInvitationsAllowAssignmentButUninvitedRecommendationsDoNot() {
         int target = darioSignsUp();
         int observer = candidateIds(target).getFirst();
         exhaustForAssignment(target);
         int request = db.queryForObject(
                 "SELECT MIN(request_id) FROM observer_request WHERE signup_id=?", Integer.class, target);
         db.update("UPDATE observer_request SET status='EXPIRED' WHERE request_id=?", request);
-        assertThat(matching(target).canAssign()).isFalse();
-        assertThatThrownBy(() -> service.assign(target, observer)).isInstanceOf(ConflictException.class);
+        assertThat(matching(target).canAssign()).isTrue();
         db.update("DELETE FROM observer_request WHERE request_id=?", request);
         assertThat(matching(target).canAssign()).isFalse();
         assertThatThrownBy(() -> service.assign(target, observer)).isInstanceOf(ConflictException.class);
@@ -799,6 +798,23 @@ class ObserverEligibilityServiceTests {
         assertThat(matching(signup).deferral().targetSemester()).isEqualTo("Spring 2027");
         assertThat(db.queryForObject("SELECT COUNT(*) FROM observation", Integer.class))
                 .isEqualTo(before);
+    }
+
+    @Test
+    void expiredEarlierBatchesDoNotBlockAssignmentAfterTheFinalBatchIsExhausted() {
+        int target = exhaustedReleasedList();
+        int original = candidateIds(target).getFirst();
+        db.update("UPDATE observer_request SET status='EXPIRED' WHERE signup_id=? AND observer_id=?", target, original);
+        addUnusedObservers(1);
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        service.regenerate(target);
+        service.release(target);
+        int replacement = candidateProfessors(target).getFirst();
+        invitation(target, replacement, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+        assertThat(matching(target).canAssign()).isTrue();
+        assertThat(matching(target).canDefer()).isFalse();
+        service.assign(target, original);
+        assertThat(matching(target).status()).isEqualTo("MATCHED");
     }
 
     void exhaustForAssignment(int target) {

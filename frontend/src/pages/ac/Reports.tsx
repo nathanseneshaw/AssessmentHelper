@@ -65,7 +65,7 @@ function buildReport({
   const unmatched = unmatchedSignups(matching).length;
   // Every observation with an observer has been scheduled, whether or not it has happened yet.
   const scheduled = tracking.observations.filter(
-    (o) => o.status !== "AWAITING_OBSERVER",
+    (o) => o.status !== "AWAITING_OBSERVER" && o.status !== "DEFERRED",
   ).length;
   const completed = tracking.observations.filter(
     (o) => o.status === "COMPLETED",

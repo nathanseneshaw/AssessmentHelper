@@ -54,6 +54,7 @@ public class AcDashboardService {
      * completed. SCHEDULED: any other observation that is not completed, including one with no date yet.
      */
     public enum Status {
+        DEFERRED,
         AWAITING_OBSERVER,
         SCHEDULED,
         COMPLETED,
@@ -74,7 +75,10 @@ public class AcDashboardService {
             Status status,
             boolean observeeSigned,
             boolean observerSigned,
-            LocalDateTime completedAt) {}
+            LocalDateTime completedAt,
+
+            @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+            EvaluationRecord.Deferral deferral) {}
 
     public record Observations(
             int cycleId, String cycleLabel, LocalDate observationDeadline, List<TrackedObservation> observations) {}
@@ -96,14 +100,19 @@ public class AcDashboardService {
                 .count();
         var tracked = tracked(due.cycleId());
         int observed = (int) tracked.stream()
-                .filter(o -> o.status() != Status.AWAITING_OBSERVER)
+                .filter(o -> o.status() != Status.AWAITING_OBSERVER && o.status() != Status.DEFERRED)
                 .count();
         int missing =
                 (int) tracked.stream().filter(o -> o.status() == Status.MISSING).count();
+        var activeSignups = ac.matchingCases().stream()
+                .filter(c -> !"DEFERRED".equals(c.status()))
+                .map(ObserverEligibilityService.MatchingCase::signupId)
+                .collect(java.util.stream.Collectors.toSet());
         int fullLists = (int) ac.signups().stream()
+                .filter(s -> activeSignups.contains(s.signupId()))
                 .filter(s -> s.candidates().size() >= ObserverEligibilityService.LIST_SIZE)
                 .count();
-        int signups = ac.signups().size();
+        int signups = activeSignups.size();
         return new Metrics(
                 due.cycleId(),
                 due.cycleLabel(),
@@ -166,7 +175,7 @@ public class AcDashboardService {
                             "your observation of " + o.observee() + "'s " + o.course() + status,
                             now);
                 }
-                case COMPLETED -> {}
+                case COMPLETED, DEFERRED -> {}
             }
         }
         return new Reminders(sent);
@@ -189,7 +198,10 @@ public class AcDashboardService {
                 SELECT es.signup_id, oe.professor_id AS observee_id, p.first_name || ' ' || p.last_name AS observee,
                 ob.professor_id AS observer_id, op.first_name || ' ' || op.last_name AS observer,
                 c.course_code, c.course_number, s.section_number, ls.released_at, o.observation_id,
-                o.observation_date, o.start_time, o.status, o.observee_signed, o.observer_signed, o.completed_at
+                o.observation_date, o.start_time, o.status, o.observee_signed, o.observer_signed, o.completed_at,
+                es.status AS signup_status, d.reason, d.deferred_at,
+                dp.first_name || ' ' || dp.last_name AS deferred_by,
+                ds.term || ' ' || ds.academic_year AS target_semester
                 FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
                 JOIN professor p ON p.professor_id=oe.professor_id
                 JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
@@ -197,15 +209,20 @@ public class AcDashboardService {
                 LEFT JOIN observation o ON o.signup_id=es.signup_id
                 LEFT JOIN observer ob ON ob.observer_id=o.observer_id
                 LEFT JOIN professor op ON op.professor_id=ob.professor_id
+                LEFT JOIN evaluation_deferral d ON d.signup_id=es.signup_id
+                LEFT JOIN professor dp ON dp.professor_id=d.deferred_by
+                LEFT JOIN semester ds ON ds.semester_id=d.target_semester_id
                 WHERE oe.cycle_id=? AND es.status<>'CANCELLED' ORDER BY es.signup_id
                 """,
                 (r, n) -> {
                     LocalDate date = r.getObject("observation_date", LocalDate.class);
-                    Status status = r.getObject("observation_id") == null
-                            ? Status.AWAITING_OBSERVER
-                            : "COMPLETED".equalsIgnoreCase(r.getString("status"))
-                                    ? Status.COMPLETED
-                                    : date != null && date.isBefore(today) ? Status.MISSING : Status.SCHEDULED;
+                    Status status = "DEFERRED".equals(r.getString("signup_status"))
+                            ? Status.DEFERRED
+                            : r.getObject("observation_id") == null
+                                    ? Status.AWAITING_OBSERVER
+                                    : "COMPLETED".equalsIgnoreCase(r.getString("status"))
+                                            ? Status.COMPLETED
+                                            : date != null && date.isBefore(today) ? Status.MISSING : Status.SCHEDULED;
                     return new TrackedObservation(
                             r.getInt("signup_id"),
                             r.getInt("observee_id"),
@@ -220,7 +237,14 @@ public class AcDashboardService {
                             status,
                             r.getBoolean("observee_signed"),
                             r.getBoolean("observer_signed"),
-                            r.getObject("completed_at", LocalDateTime.class));
+                            r.getObject("completed_at", LocalDateTime.class),
+                            r.getObject("deferred_at") == null
+                                    ? null
+                                    : new EvaluationRecord.Deferral(
+                                            r.getString("reason"),
+                                            r.getString("deferred_by"),
+                                            r.getObject("deferred_at", LocalDateTime.class),
+                                            r.getString("target_semester")));
                 },
                 cycleId);
     }

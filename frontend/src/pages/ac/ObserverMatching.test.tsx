@@ -433,14 +433,15 @@ test("manual assignment is disabled until all recommendations decline and the po
   ).toBeNull();
 });
 
-test("expired invitations and further recommendations leave manual assignment disabled", async () => {
+test("expired invitations allow manual assignment after recommendations are exhausted", async () => {
   const matching = exhaustedCase();
-  matching.canAssign = false;
+  matching.canAssign = true;
+  matching.unusedEligibleObserverCount = 0;
   const invitation = matching.invitations[0];
   if (!invitation) throw Error("Missing invitation");
   invitation.status = "EXPIRED";
   await open();
-  expect(button("Assign Observer").disabled).toBe(true);
+  expect(button("Assign Observer").disabled).toBe(false);
 });
 
 test("AC can defer a case with zero eligible observers and see its recorded reason", async () => {

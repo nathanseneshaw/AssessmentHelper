@@ -276,3 +276,41 @@ test("when the observations fail to load, the cards are unavailable and Retry lo
   expect(screen.queryByRole("alert")).toBeNull();
   expect(kpi("Scheduled").value).toBe("1");
 });
+
+test("deferred cases show their decision details instead of Awaiting Observer", async () => {
+  const data = structuredClone(observationTracking);
+  const row = data.observations[0];
+  if (!row) throw Error("Missing observation");
+  row.status = "DEFERRED";
+  row.observerId = null;
+  row.observer = null;
+  row.date = null;
+  row.startTime = null;
+  row.deferral = {
+    reason: "No eligible observers",
+    deferredBy: "Kaia Clearbrook",
+    deferredAt: "2026-11-02T09:00:00",
+    targetSemester: "Spring 2027",
+  };
+  data.observations = [row];
+  answerObservations = () => Response.json(data);
+  window.history.pushState({}, "", "/ac/observations");
+  render(<App />);
+  await screen.findByText("Deferred", { selector: "td" });
+  expect(screen.queryByText("Awaiting Observer")).toBeNull();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Send Reminders",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: `View ${row.observee}'s deferral` }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Deferral Details",
+  });
+  expect(within(dialog).getByText("No eligible observers")).toBeTruthy();
+  expect(within(dialog).getByText("Deferred to Spring 2027")).toBeTruthy();
+});

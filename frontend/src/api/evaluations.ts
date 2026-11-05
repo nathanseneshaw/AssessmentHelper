@@ -9,6 +9,13 @@ export interface EvaluationPolicy {
   version: number;
 }
 
+export interface EvaluationDeferral {
+  reason: string;
+  deferredBy: string;
+  deferredAt: string;
+  targetSemester: string;
+}
+
 export interface EvaluationRecord {
   cycleId: number;
   term: string;
@@ -16,6 +23,7 @@ export interface EvaluationRecord {
   status: string | null;
   observationCount: number;
   lastObservationCompletedAt: string | null;
+  deferral?: EvaluationDeferral | null;
 }
 
 export function getEvaluationPolicies(): Promise<EvaluationPolicy[]> {

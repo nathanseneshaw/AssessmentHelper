@@ -107,6 +107,9 @@ class AcDashboardIntegrationTests {
     @Autowired
     private MovableClock clock;
 
+    @Autowired
+    private edu.utdallas.cs4485.assessmenthelper.service.ObserverEligibilityService matching;
+
     @BeforeEach
     void resetClock() {
         clock.set(TODAY);
@@ -318,5 +321,39 @@ class AcDashboardIntegrationTests {
     private int observerOf(int professorId) {
         return db.queryForObject(
                 "SELECT observer_id FROM observer WHERE professor_id = ? AND cycle_id = 1", Integer.class, professorId);
+    }
+
+    @Test
+    void deferredCasesAreTrackedSeparatelySkippedByRemindersAndVisibleInHistory() throws Exception {
+        clock.set("2026-11-02T15:00:00Z");
+        int signup = signupOf(27);
+        matching.defer(signup, 12, "No graduate-level observers available");
+        observations()
+                .andExpect(
+                        jsonPath("$.observations[?(@.observeeId == 27)].status").value("DEFERRED"))
+                .andExpect(jsonPath("$.observations[?(@.observeeId == 27)].deferral.reason")
+                        .value("No graduate-level observers available"))
+                .andExpect(jsonPath("$.observations[?(@.observeeId == 27)].deferral.targetSemester")
+                        .value("Spring 2027"));
+        metrics()
+                .andExpect(jsonPath("$.observerUtilization.total").value(7))
+                .andExpect(jsonPath("$.observerUtilization.count").value(1))
+                .andExpect(jsonPath("$.listSufficiency.total").value(7));
+        db.update("UPDATE observer_list_state SET released_at='2026-11-02T09:00:00' WHERE signup_id=?", signup);
+        int before =
+                db.queryForObject("SELECT COUNT(*) FROM observer_notification WHERE professor_id=27", Integer.class);
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM observer_notification WHERE professor_id=27", Integer.class))
+                .isEqualTo(before);
+        clock.set("2027-01-20T15:00:00Z");
+        mvc.perform(get("/api/professors/27/evaluations").with(user(KAIA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.cycleId == 1)].status").value("DEFERRED"))
+                .andExpect(
+                        jsonPath("$[?(@.cycleId == 1)].deferral.reason").value("No graduate-level observers available"))
+                .andExpect(jsonPath("$[?(@.cycleId == 1)].deferral.deferredBy").value("Kaia Clearbrook"))
+                .andExpect(jsonPath("$[?(@.cycleId == 1)].deferral.deferredAt").value("2026-11-02T09:00:00"))
+                .andExpect(
+                        jsonPath("$[?(@.cycleId == 1)].deferral.targetSemester").value("Spring 2027"));
     }
 }

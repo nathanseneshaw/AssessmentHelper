@@ -512,8 +512,9 @@ public class ObserverEligibilityService {
                                     && !recommended.isEmpty()
                                     && recommended.stream()
                                             .allMatch(id -> history.stream()
-                                                    .anyMatch(r ->
-                                                            r.observerId() == id && "DECLINED".equals(r.status()))),
+                                                    .anyMatch(r -> r.observerId() == id
+                                                            && ("DECLINED".equals(r.status())
+                                                                    || "EXPIRED".equals(r.status())))),
                             deferred == null
                                     && c.signupDeadline() != null
                                     && LocalDate.now(clock).isAfter(c.signupDeadline())
@@ -905,7 +906,7 @@ public class ObserverEligibilityService {
                 .orElseThrow();
         if (!matching.canAssign())
             throw new ConflictException(
-                    "Every generated observer must decline and no additional eligible observers can remain before manual assignment.");
+                    "Every generated invitation must be declined or expired and no additional eligible observers can remain before manual assignment.");
         var templates = db.queryForList(
                 "SELECT template_id FROM observation_template WHERE active_status=TRUE ORDER BY version DESC,template_id DESC",
                 Integer.class);
