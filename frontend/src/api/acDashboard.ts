@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import type { EvaluationDeferral } from "./evaluations";
 
 /** A part of a whole, such as signups with an observer out of all signups. */
 export interface Ratio {
@@ -29,6 +30,7 @@ export function getDashboardMetrics(
  * SCHEDULED is any other observation that is not completed, even one with no date yet.
  */
 export type ObservationStatus =
+  | "DEFERRED"
   | "AWAITING_OBSERVER"
   | "SCHEDULED"
   | "COMPLETED"
@@ -49,6 +51,7 @@ export interface TrackedObservation {
   observeeSigned: boolean;
   observerSigned: boolean;
   completedAt: string | null;
+  deferral?: EvaluationDeferral | null;
 }
 
 export interface ObservationTracking {

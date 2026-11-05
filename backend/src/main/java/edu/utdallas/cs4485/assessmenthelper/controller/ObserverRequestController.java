@@ -46,8 +46,11 @@ public class ObserverRequestController {
     }
 
     @PostMapping("/{requestId}/confirm")
-    public ObserverRequest confirm(@PathVariable Integer requestId) {
-        return service.confirm(requestId);
+    @PreAuthorize("@professorAccess.isRequestedObserver(principal, #requestId)")
+    public ObserverRequest confirm(
+            @PathVariable Integer requestId,
+            @RequestBody(required = false) ObserverEligibilityController.ScheduleBody body) {
+        return service.confirm(requestId, body == null ? null : body.observationDate());
     }
 
     @PostMapping("/{requestId}/decline")

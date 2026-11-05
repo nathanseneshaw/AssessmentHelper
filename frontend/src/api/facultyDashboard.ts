@@ -15,6 +15,7 @@ export interface Profile {
  * SUBMITTED: the observer submitted the form. COMPLETED: the observation record is complete.
  */
 export type EvaluationStatus =
+  | "DEFERRED"
   | "NOT_DUE"
   | "NOT_SIGNED_UP"
   | "AWAITING_OBSERVER"
@@ -38,7 +39,7 @@ export interface Schedule {
   intervalYears: number | null;
   nextDueDate: string | null;
   nextDueSemester: string | null;
-  dueStatus: "Due" | "Overdue" | "Upcoming" | null;
+  dueStatus: "Due" | "Overdue" | "Upcoming" | "Due next semester" | null;
 }
 
 /** completed counts submitted observations too, since submitting is the observer's last step. */

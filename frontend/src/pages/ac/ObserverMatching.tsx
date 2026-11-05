@@ -4,7 +4,9 @@ import {
   type AcState,
   type Candidate,
   getEligibleObservers,
+  matchingReason,
   observerButton,
+  observerChanged,
   postObserver,
   type Signup,
   schedule,
@@ -14,6 +16,75 @@ import { PageHeader } from "../../components/PageHeader";
 
 const secondaryButton =
   "rounded-lg border border-line px-5 py-3 text-sm font-medium hover:bg-mist disabled:cursor-not-allowed disabled:opacity-50";
+
+const assignButton =
+  "cursor-pointer rounded-lg bg-brand-green px-5 py-3 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:bg-btn-gray disabled:opacity-100";
+
+function ObserverCourses({
+  candidate,
+  onClose,
+}: {
+  candidate: Candidate;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    dialog.current?.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = overflow;
+      previous?.focus();
+    };
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      className="fixed inset-0 m-auto max-h-[85vh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-xl border border-line bg-white p-6 text-ink shadow-xl backdrop:bg-ink/40"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 id={titleId} className="font-bold text-xl">
+            Qualifying courses
+          </h2>
+          <p className="mt-1 text-sm text-muted">{candidate.name}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="cursor-pointer rounded-md border border-line px-3 py-1 text-sm hover:bg-mist"
+        >
+          Close
+        </button>
+      </div>
+      <p className="mt-4 text-sm text-muted">
+        Teaching history that qualifies this professor to observe the selected
+        course.
+      </p>
+      {candidate.qualifyingCourses.length ? (
+        <ul className="mt-4 space-y-2">
+          {[...new Set(candidate.qualifyingCourses)].map((course) => (
+            <li
+              key={course}
+              className="rounded-lg border border-line p-3 text-sm"
+            >
+              {course}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-sm">No qualifying courses recorded.</p>
+      )}
+    </dialog>
+  );
+}
 
 /** Lists everyone who passes the eligibility rules, not only the drawn candidates, and confirms one as the observer. */
 function AssignObserver({
@@ -158,7 +229,7 @@ function AssignObserver({
           </button>
           <button
             type="submit"
-            className={observerButton}
+            className={assignButton}
             disabled={!chosen || saving}
           >
             {saving ? "Assigning..." : "Assign Observer"}
@@ -177,16 +248,25 @@ export function AcObserverMatching() {
   );
   const [busy, setBusy] = useState(false);
   const [assigning, setAssigning] = useState(false);
+  const [deferring, setDeferring] = useState(false);
+  const [deferReason, setDeferReason] = useState("No matching observers");
+  const [coursesFor, setCoursesFor] = useState<Candidate | null>(null);
   const [message, setMessage] = useState("");
   const [failure, setFailure] = useState("");
   const signups = data?.signups ?? [];
   const signup = signups.find((s) => s.signupId === selected) ?? signups[0];
+  const matching = data?.matchingCases?.find(
+    (c) => c.signupId === signup?.signupId,
+  );
   const index = signups.findIndex((s) => s.signupId === signup?.signupId);
-  const step = (amount: number) =>
+  const step = (amount: number) => {
+    setDeferring(false);
+    setAssigning(false);
     setSelected(
       signups[(index + amount + signups.length) % signups.length]?.signupId ??
         null,
     );
+  };
   async function act(release: boolean) {
     setBusy(true);
     setMessage("");
@@ -209,8 +289,57 @@ export function AcObserverMatching() {
       setBusy(false);
     }
   }
+  async function regenerate() {
+    if (!signup || busy) return;
+    setBusy(true);
+    setMessage("");
+    setFailure("");
+    try {
+      await postObserver(`/signups/${signup.signupId}/regenerate`);
+      setMessage(
+        "New recommendations generated. Review the list, then send it to the observee.",
+      );
+      reload();
+    } catch (cause) {
+      setFailure(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to generate new recommendations.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function deferEvaluation(event: React.FormEvent) {
+    event.preventDefault();
+    if (!signup || busy) return;
+    setBusy(true);
+    setFailure("");
+    setMessage("");
+    try {
+      await postObserver(`/signups/${signup.signupId}/defer`, {
+        reason: deferReason.trim(),
+      });
+      setDeferring(false);
+      setMessage("Evaluation marked Due next semester.");
+      reload();
+      observerChanged();
+    } catch (cause) {
+      setFailure(
+        cause instanceof Error ? cause.message : "Unable to defer evaluation.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div>
+      {coursesFor && (
+        <ObserverCourses
+          candidate={coursesFor}
+          onClose={() => setCoursesFor(null)}
+        />
+      )}
       <PageHeader
         title="Observer Matching"
         subtitle="Review system-generated eligible observers and resolve unmatched signups."
@@ -272,6 +401,162 @@ export function AcObserverMatching() {
           <p className="mt-1 text-sm text-muted">
             Observation window: {signup.windowStart} - {signup.windowEnd}
           </p>
+          {matching && (
+            <section
+              className="mt-4 rounded-lg border border-line bg-white p-4"
+              aria-label="Matching status"
+            >
+              <p
+                className={`font-semibold ${matching.status === "UNMATCHED" ? "text-brand-red" : "text-brand-green"}`}
+              >
+                {matching.status === "DEFERRED"
+                  ? "Due next semester"
+                  : matching.status === "UNMATCHED"
+                    ? `Unmatched: ${matchingReason(matching)}`
+                    : matching.status === "MATCHED"
+                      ? "Matched"
+                      : matching.status === "AWAITING_RESPONSE"
+                        ? "Awaiting observer response"
+                        : "Awaiting invitation"}
+              </p>
+              {matching.status === "UNMATCHED" && (
+                <p className="mt-2 text-sm">
+                  {matching.reason === "RECOMMENDATIONS_AWAITING_RELEASE"
+                    ? "Review the new recommendations below, then send the candidate list to notify the observee."
+                    : matching.reason === "INVITATIONS_UNSUCCESSFUL"
+                      ? "All recommended observers have declined or their invitations have expired. No observer is confirmed."
+                      : "No professors currently meet the eligibility requirements for this observation window."}
+                  {matching.reason === "INVITATIONS_UNSUCCESSFUL" &&
+                    (matching.unusedEligibleObserverCount > 0
+                      ? ` ${matching.unusedEligibleObserverCount} additional eligible observer(s) have not been recommended.`
+                      : " No additional eligible observers remain. This case still needs AC review.")}
+                </p>
+              )}
+              {matching.deferral && (
+                <div className="mt-2 space-y-1 text-sm">
+                  <p>Due: {matching.deferral.targetSemester}</p>
+                  <p>Reason: {matching.deferral.reason}</p>
+                  <p className="text-muted">
+                    Deferred by {matching.deferral.deferredBy} on{" "}
+                    {matching.deferral.deferredAt
+                      .replace("T", " ")
+                      .slice(0, 19)}
+                  </p>
+                </div>
+              )}
+              {matching?.canDefer && (
+                <button
+                  type="button"
+                  className={`${observerButton} mt-4 cursor-pointer shadow-sm`}
+                  disabled={busy || !!error}
+                  onClick={() => {
+                    setDeferring(true);
+                    setDeferReason("No matching observers");
+                  }}
+                >
+                  Defer to Next Semester
+                </button>
+              )}
+              {deferring && matching?.canDefer && (
+                <form
+                  className="w-full space-y-3 rounded-lg border border-line bg-white p-4"
+                  onSubmit={deferEvaluation}
+                >
+                  <p>
+                    This evaluation will be due next semester because no
+                    eligible observers exist. The decision and reason will be
+                    saved, and the faculty member will be notified.
+                  </p>
+                  <label
+                    className="block font-medium"
+                    htmlFor="deferral-reason"
+                  >
+                    Reason <span className="text-brand-red">*</span>
+                  </label>
+                  <textarea
+                    id="deferral-reason"
+                    className="w-full rounded border border-line p-2"
+                    required
+                    maxLength={1000}
+                    value={deferReason}
+                    onChange={(e) => setDeferReason(e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="submit"
+                      className={observerButton}
+                      disabled={busy || !deferReason.trim()}
+                    >
+                      Confirm Deferral
+                    </button>
+                    <button
+                      type="button"
+                      className={secondaryButton}
+                      disabled={busy}
+                      onClick={() => setDeferring(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+              {matching.invitations.length > 0 && (
+                <div className="mt-4 overflow-x-auto">
+                  <h3 className="font-semibold text-sm">Invitation history</h3>
+                  <table className="mt-2 w-full text-left text-sm">
+                    <thead>
+                      <tr>
+                        <th className="p-2">Observer</th>
+                        <th className="p-2">Status</th>
+                        <th className="p-2">Sent</th>
+                        <th className="p-2">Expires</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matching.invitations.map((r) => (
+                        <tr key={r.requestId} className="border-t border-line">
+                          <td className="p-2">{r.observerName}</td>
+                          <td className="p-2">
+                            {r.status === "ASSIGNED"
+                              ? "Assigned"
+                              : r.status === "CONFIRMED"
+                                ? "Accepted"
+                                : r.status === "PENDING"
+                                  ? "Pending"
+                                  : r.status === "DECLINED"
+                                    ? "Declined"
+                                    : r.status === "EXPIRED"
+                                      ? "Expired"
+                                      : r.status}
+                          </td>
+                          <td className="p-2">
+                            {r.requestedAt?.replace("T", " ").slice(0, 19) ??
+                              "—"}
+                          </td>
+                          <td className="p-2">
+                            {r.expiresAt?.replace("T", " ").slice(0, 19) ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {matching.previousRecommendations.length > 0 && (
+                <details className="mt-4 text-sm">
+                  <summary className="cursor-pointer font-semibold">
+                    Previous recommendations (
+                    {matching.previousRecommendations.length})
+                  </summary>
+                  <ul className="mt-2 space-y-2">
+                    {matching.previousRecommendations.map((c) => (
+                      <li key={c.observerId}>{c.name}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </section>
+          )}
           {signup.observerName && (
             <p className="mt-3 font-semibold text-brand-green">
               Observer: {signup.observerName}
@@ -307,20 +592,39 @@ export function AcObserverMatching() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold">{c.name}</p>
-                        <p className="mt-1 text-xs text-muted">
-                          {[...new Set(c.qualifyingCourses)].join("; ")}
-                        </p>
+                        <button
+                          type="button"
+                          aria-label={`See courses for ${c.name}`}
+                          onClick={() => setCoursesFor(c)}
+                          className="mt-1 cursor-pointer text-xs text-brand-green underline hover:opacity-80"
+                        >
+                          See Courses
+                        </button>
                       </div>
-                      <span className="text-sm text-brand-green">
-                        Available
+                      <span className="text-sm text-muted">
+                        {(() => {
+                          const invitation = matching?.invitations.find(
+                            (r) => r.observerId === c.observerId,
+                          );
+                          return invitation?.status === "DECLINED"
+                            ? "Declined"
+                            : invitation?.status === "EXPIRED"
+                              ? "Expired"
+                              : invitation?.status === "PENDING"
+                                ? "Invitation pending"
+                                : invitation?.status === "ASSIGNED"
+                                  ? "Assigned"
+                                  : invitation?.status === "CONFIRMED"
+                                    ? "Accepted"
+                                    : "Recommended";
+                        })()}
                       </span>
                     </li>
                   ))}
                 </ul>
               ) : (
                 <p role="alert" className="mt-8 font-semibold text-brand-red">
-                  No eligible observers. AC attention is required. This list
-                  updates as more professors sign up.
+                  No generated observers.
                 </p>
               )}
             </section>
@@ -339,6 +643,23 @@ export function AcObserverMatching() {
                 <li>Active professor signed up for evaluation</li>
               </ol>
               <div className="mt-auto flex flex-wrap gap-3 pt-10">
+                {matching?.reason === "INVITATIONS_UNSUCCESSFUL" && (
+                  <button
+                    type="button"
+                    className={observerButton}
+                    disabled={
+                      busy ||
+                      !!error ||
+                      !data.cycle.requestsOpen ||
+                      !signup.released ||
+                      !!signup.observerName ||
+                      matching.unusedEligibleObserverCount === 0
+                    }
+                    onClick={() => void regenerate()}
+                  >
+                    Generate New Recommendations
+                  </button>
+                )}
                 {!data.cycle.candidateListsOpen && !signup.released && (
                   <p className="w-full text-sm text-muted">
                     Candidate lists can be sent after the signup deadline (
@@ -353,6 +674,7 @@ export function AcObserverMatching() {
                     busy ||
                     !!error ||
                     signup.released ||
+                    matching?.status === "DEFERRED" ||
                     !!signup.observerName ||
                     !signup.candidates.length ||
                     !data.cycle.candidateListsOpen
@@ -365,12 +687,18 @@ export function AcObserverMatching() {
                 </button>
                 <button
                   type="button"
-                  className={secondaryButton}
+                  className={assignButton}
                   disabled={
                     busy ||
                     !!error ||
                     !!signup.observerName ||
-                    !data.cycle.requestsOpen
+                    !data.cycle.requestsOpen ||
+                    !matching?.canAssign
+                  }
+                  title={
+                    !matching?.canAssign
+                      ? "Available after every generated invitation is declined or expired and no additional eligible observers remain."
+                      : undefined
                   }
                   onClick={() => {
                     setMessage("");
@@ -379,6 +707,11 @@ export function AcObserverMatching() {
                 >
                   Assign Observer
                 </button>
+                <p className="w-full text-sm text-muted">
+                  Manual assignment is available after every generated
+                  invitation is declined or expired and no additional eligible
+                  observers remain.
+                </p>
               </div>
             </section>
           </div>

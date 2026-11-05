@@ -54,6 +54,8 @@ export interface ObserverRequest {
   windowStart: string;
   windowEnd: string;
   status: string;
+  observationDate?: string | null;
+  assignedByAc?: boolean;
 }
 export interface FacultyState {
   cycle: Cycle;
@@ -70,6 +72,59 @@ export interface FacultyState {
 export interface AcState {
   cycle: Cycle;
   signups: Signup[];
+  matchingCases: MatchingCase[];
+}
+export interface MatchingInvitation {
+  requestId: number;
+  observerId: number;
+  observerName: string;
+  status: string;
+  requestedAt: string | null;
+  expiresAt: string | null;
+  respondedAt: string | null;
+}
+export interface MatchingCase {
+  signupId: number;
+  status:
+    | "MATCHED"
+    | "AWAITING_RESPONSE"
+    | "AWAITING_INVITATION"
+    | "UNMATCHED"
+    | "DEFERRED";
+  reason:
+    | "NO_ELIGIBLE_OBSERVERS"
+    | "INVITATIONS_UNSUCCESSFUL"
+    | "RECOMMENDATIONS_AWAITING_RELEASE"
+    | null;
+  eligibleObserverCount: number;
+  remainingObserverCount: number;
+  unusedEligibleObserverCount: number;
+  canAssign?: boolean;
+  canDefer?: boolean;
+  deferral?: {
+    reason: string;
+    deferredBy: string;
+    deferredAt: string;
+    targetSemester: string;
+  } | null;
+  previousRecommendations: Candidate[];
+  invitations: MatchingInvitation[];
+}
+export const matchingReason = (matching: MatchingCase | undefined) =>
+  matching?.reason === "NO_ELIGIBLE_OBSERVERS"
+    ? "No eligible observers"
+    : matching?.reason === "INVITATIONS_UNSUCCESSFUL"
+      ? "Invitations declined or expired"
+      : matching?.reason === "RECOMMENDATIONS_AWAITING_RELEASE"
+        ? "New recommendations awaiting AC review"
+        : "";
+export function unmatchedSignups(state: AcState): Signup[] {
+  const ids = new Set(
+    (state.matchingCases ?? [])
+      .filter((c) => c.status === "UNMATCHED")
+      .map((c) => c.signupId),
+  );
+  return (state.signups ?? []).filter((s) => ids.has(s.signupId));
 }
 export const observerBase = "/api/observer-eligibility";
 export const schedule = (s: Section) =>

@@ -41,7 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Runs on data.sql's Fall 2026 demo (evaluation cycle 1). 13 faculty are due. Leander (13), Arlo (26), Avery (31),
  * Keira (41), Xiomara (54) and Perrin (17) have signed up and all have generated lists; Leander is overdue rather than
  * due, so five due faculty have signed up. Only Leander's signup has an observation, SCHEDULED for 2026-11-04. The
- * lists for Leander and Avery have four candidates each and the other four lists are empty.
+ * lists for Leander and Avery have four candidates each; the other lists are initially empty, including Rowan's.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -107,6 +107,9 @@ class AcDashboardIntegrationTests {
     @Autowired
     private MovableClock clock;
 
+    @Autowired
+    private edu.utdallas.cs4485.assessmenthelper.service.ObserverEligibilityService matching;
+
     @BeforeEach
     void resetClock() {
         clock.set(TODAY);
@@ -116,8 +119,8 @@ class AcDashboardIntegrationTests {
     void committeeSeesTheSeededCycleMetrics() throws Exception {
         metrics().andExpect(status().isOk()).andExpect(content().json("""
                         {"cycleId":1,"cycleLabel":"Fall 2026","facultyDue":13,"listSize":5,
-                        "participation":{"count":5,"total":13},"observerUtilization":{"count":1,"total":6},
-                        "listSufficiency":{"count":0,"total":6},"missingObservations":0}
+                        "participation":{"count":5,"total":13},"observerUtilization":{"count":1,"total":8},
+                        "listSufficiency":{"count":0,"total":8},"missingObservations":0}
                         """, JsonCompareMode.STRICT));
     }
 
@@ -139,13 +142,13 @@ class AcDashboardIntegrationTests {
         metrics()
                 .andExpect(jsonPath("$.participation.count").value(6))
                 .andExpect(jsonPath("$.participation.total").value(13))
-                .andExpect(jsonPath("$.observerUtilization.total").value(6));
+                .andExpect(jsonPath("$.observerUtilization.total").value(8));
 
         db.update("UPDATE evaluation_signup SET status = 'CANCELLED' WHERE signup_id = ?", signupOf(ARLO));
         metrics()
                 .andExpect(jsonPath("$.participation.count").value(5))
-                .andExpect(jsonPath("$.observerUtilization.total").value(5))
-                .andExpect(jsonPath("$.listSufficiency.total").value(5));
+                .andExpect(jsonPath("$.observerUtilization.total").value(7))
+                .andExpect(jsonPath("$.listSufficiency.total").value(7));
     }
 
     @Test
@@ -185,7 +188,7 @@ class AcDashboardIntegrationTests {
                 observerOf(ARLO));
         metrics()
                 .andExpect(jsonPath("$.listSufficiency.count").value(1))
-                .andExpect(jsonPath("$.listSufficiency.total").value(6));
+                .andExpect(jsonPath("$.listSufficiency.total").value(8));
     }
 
     @Test
@@ -196,7 +199,7 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath("$.cycleId").value(1))
                 .andExpect(jsonPath("$.cycleLabel").value("Fall 2026"))
                 .andExpect(jsonPath("$.observationDeadline").value("2026-11-15"))
-                .andExpect(jsonPath("$.observations.length()").value(6))
+                .andExpect(jsonPath("$.observations.length()").value(8))
                 .andExpect(jsonPath(leander + ".observee").value("Leander Coldwell"))
                 .andExpect(jsonPath(leander + ".observer").value("Keira Larkspur"))
                 .andExpect(jsonPath(leander + ".observerId").value(KEIRA))
@@ -204,7 +207,7 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath(leander + ".date").value("2026-11-04"))
                 .andExpect(jsonPath(leander + ".startTime").value("08:30:00"))
                 .andExpect(jsonPath(leander + ".status").value("SCHEDULED"))
-                .andExpect(jsonPath("$.observations[?(@.status == 'AWAITING_OBSERVER')]", hasSize(5)))
+                .andExpect(jsonPath("$.observations[?(@.status == 'AWAITING_OBSERVER')]", hasSize(7)))
                 .andExpect(
                         jsonPath("$.observations[?(@.status == 'AWAITING_OBSERVER')].observer", everyItem(nullValue())))
                 .andExpect(jsonPath(
@@ -233,7 +236,7 @@ class AcDashboardIntegrationTests {
 
         // A cancelled signup leaves the list, as it leaves the dashboard's counts.
         db.update("UPDATE evaluation_signup SET status = 'CANCELLED' WHERE signup_id = ?", signupOf(ARLO));
-        observations().andExpect(jsonPath("$.observations.length()").value(5));
+        observations().andExpect(jsonPath("$.observations.length()").value(7));
     }
 
     @Test
@@ -343,5 +346,39 @@ class AcDashboardIntegrationTests {
     private int observerOf(int professorId) {
         return db.queryForObject(
                 "SELECT observer_id FROM observer WHERE professor_id = ? AND cycle_id = 1", Integer.class, professorId);
+    }
+
+    @Test
+    void deferredCasesAreTrackedSeparatelySkippedByRemindersAndVisibleInHistory() throws Exception {
+        clock.set("2026-11-02T15:00:00Z");
+        int signup = signupOf(27);
+        matching.defer(signup, 12, "No graduate-level observers available");
+        observations()
+                .andExpect(
+                        jsonPath("$.observations[?(@.observeeId == 27)].status").value("DEFERRED"))
+                .andExpect(jsonPath("$.observations[?(@.observeeId == 27)].deferral.reason")
+                        .value("No graduate-level observers available"))
+                .andExpect(jsonPath("$.observations[?(@.observeeId == 27)].deferral.targetSemester")
+                        .value("Spring 2027"));
+        metrics()
+                .andExpect(jsonPath("$.observerUtilization.total").value(7))
+                .andExpect(jsonPath("$.observerUtilization.count").value(1))
+                .andExpect(jsonPath("$.listSufficiency.total").value(7));
+        db.update("UPDATE observer_list_state SET released_at='2026-11-02T09:00:00' WHERE signup_id=?", signup);
+        int before =
+                db.queryForObject("SELECT COUNT(*) FROM observer_notification WHERE professor_id=27", Integer.class);
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM observer_notification WHERE professor_id=27", Integer.class))
+                .isEqualTo(before);
+        clock.set("2027-01-20T15:00:00Z");
+        mvc.perform(get("/api/professors/27/evaluations").with(user(KAIA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.cycleId == 1)].status").value("DEFERRED"))
+                .andExpect(
+                        jsonPath("$[?(@.cycleId == 1)].deferral.reason").value("No graduate-level observers available"))
+                .andExpect(jsonPath("$[?(@.cycleId == 1)].deferral.deferredBy").value("Kaia Clearbrook"))
+                .andExpect(jsonPath("$[?(@.cycleId == 1)].deferral.deferredAt").value("2026-11-02T09:00:00"))
+                .andExpect(
+                        jsonPath("$[?(@.cycleId == 1)].deferral.targetSemester").value("Spring 2027"));
     }
 }

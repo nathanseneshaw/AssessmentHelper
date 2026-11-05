@@ -36,6 +36,16 @@ final class EvaluationDueRules {
      */
     record Result(LocalDate firstDue, LocalDate nextDue, boolean dueThisCycle, boolean overdue) {}
 
+    /** An outstanding deferral moves the obligation, without pretending an evaluation was completed. */
+    static Result deferred(Result original, LocalDate target, Semester current) {
+        if (target == null) return original;
+        return new Result(
+                original.firstDue(),
+                target,
+                !target.isBefore(current.startDate()) && !target.isAfter(current.endDate()),
+                target.isBefore(current.startDate()));
+    }
+
     /** Inactive professors and inactive policies are excluded from due and overdue. */
     static boolean applies(Professor professor, EvaluationPolicy policy) {
         return Boolean.TRUE.equals(professor.activeStatus()) && Boolean.TRUE.equals(policy.activeStatus());
