@@ -299,11 +299,7 @@ class ObservationLockingIntegrationTests {
         sign(kaia, "Mine.").andExpect(status().isForbidden());
 
         // Another school's committee has no part in this record.
-        AccountPrincipal otherSchool = new AccountPrincipal(
-                new CurrentUser(null, id(kaia), 2, "Kaia Clearbrook", "kaia.clearbrook@example.edu", List.of(Role.AC)),
-                null,
-                true);
-        read(otherSchool).andExpect(status().isForbidden());
+        read(otherSchoolCommittee()).andExpect(status().isForbidden());
     }
 
     @Test
@@ -338,7 +334,7 @@ class ObservationLockingIntegrationTests {
     void onlyCommitteeMembersCanForwardAndTheRecipientMustExist() throws Exception {
         complete(null);
 
-        for (AccountPrincipal other : List.of(keira, leander, dario))
+        for (AccountPrincipal other : List.of(keira, leander, dario, otherSchoolCommittee()))
             forward(other, id(dario)).andExpect(status().isForbidden());
         forward(kaia, 999_999).andExpect(status().isNotFound());
         write(
@@ -450,6 +446,14 @@ class ObservationLockingIntegrationTests {
 
     private String body(List<Answer> answers) {
         return json.writeValueAsString(new ObservationController.ResponsesBody(answers));
+    }
+
+    // Kaia as a committee member of another school.
+    private AccountPrincipal otherSchoolCommittee() {
+        return new AccountPrincipal(
+                new CurrentUser(null, id(kaia), 2, "Kaia Clearbrook", "kaia.clearbrook@example.edu", List.of(Role.AC)),
+                null,
+                true);
     }
 
     private static Integer id(AccountPrincipal principal) {

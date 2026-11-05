@@ -70,14 +70,14 @@ class EvaluationSignupIntegrationTests {
     void listsCatalogAndCombinesSemesterCourseAndProfessorFilters() throws Exception {
         mvc.perform(as(HOLLIS, get("/api/semesters")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(17));
+                .andExpect(jsonPath("$.length()").value(23));
         mvc.perform(as(HOLLIS, get("/api/semesters?signupOpen=true")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].semesterId").value(13));
         mvc.perform(as(HOLLIS, get("/api/courses")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(5));
+                .andExpect(jsonPath("$.length()").value(28));
         mvc.perform(as(HOLLIS, get("/api/sections?semesterId=13&courseId=2&professorId=9")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(3))
@@ -88,9 +88,9 @@ class EvaluationSignupIntegrationTests {
         mvc.perform(as(HOLLIS, get("/api/sections?semesterId=13&professorId=38")))
                 .andExpect(jsonPath("$.length()").value(0));
         mvc.perform(as(HOLLIS, get("/api/sections?semesterId=2")))
-                .andExpect(jsonPath("$.length()").value(33));
+                .andExpect(jsonPath("$.length()").value(81));
         mvc.perform(as(HOLLIS, get("/api/sections?courseId=4")))
-                .andExpect(jsonPath("$.length()").value(14));
+                .andExpect(jsonPath("$.length()").value(20));
     }
 
     @Test

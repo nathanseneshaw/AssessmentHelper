@@ -17,6 +17,7 @@ import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 
 let records: EvaluationRecord[];
 let failures: Response[];
+let observationsDown: boolean;
 
 beforeEach(() => {
   records = [
@@ -38,6 +39,7 @@ beforeEach(() => {
     },
   ];
   failures = [];
+  observationsDown = false;
   fakeBackend({
     [`/api/professors/${OLIVIA.professorId}/evaluations`]: () =>
       failures.shift() ?? Response.json(records),
@@ -46,7 +48,12 @@ beforeEach(() => {
     [`/api/observer-eligibility/faculty/${OLIVIA.professorId}`]: () =>
       Response.json(facultyStateFor(OLIVIA)),
     [`/api/professors/${OLIVIA.professorId}/observations`]: () =>
-      Response.json(oliviaObservations()),
+      observationsDown
+        ? Response.json(
+            { detail: "Observations are unavailable right now." },
+            { status: 503 },
+          )
+        : Response.json(oliviaObservations()),
     "/api/feedback-surveys": () => Response.json([]),
   });
   signInAs("professor", OLIVIA);
@@ -177,4 +184,22 @@ test("past deferred cycles show their saved decision details after semester roll
   expect(within(details).getByText("Kaia Clearbrook")).toBeTruthy();
   expect(within(details).getByText("2026-03-01 09:15:12")).toBeTruthy();
   expect(within(details).getByText("Deferred to Fall 2026")).toBeTruthy();
+});
+
+test("a cycle's details say why they could not load, and Retry loads them", async () => {
+  observationsDown = true;
+  const dialog = await openHistory("?cycle=2");
+  const detail = await within(dialog).findByRole("region", {
+    name: "Fall 2026 observations",
+  });
+  const alert = await within(detail).findByRole("alert");
+  expect(alert.textContent).toContain(
+    "Observations are unavailable right now.",
+  );
+  expect(within(detail).queryAllByRole("listitem")).toHaveLength(0);
+
+  observationsDown = false;
+  fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+  await within(detail).findByText("CS 4348.501");
+  expect(within(detail).queryByRole("alert")).toBeNull();
 });

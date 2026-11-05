@@ -11,6 +11,8 @@ import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import edu.utdallas.cs4485.assessmenthelper.service.FormTemplateService;
 import jakarta.servlet.http.Cookie;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -91,17 +93,52 @@ class FormTemplateControllerTests {
     @Test
     void rejectsInvalidChangesWithoutModifyingSharedTemplate() throws Exception {
         int original = service.current().templateId();
+        // Every criterion sends notes, as the editor does; without it the JSON would be refused before validation.
         for (String criteria : List.of(
                 "[]",
-                "[{\"title\":\" \" ,\"selected\":true}]",
-                "[{\"title\":\"Only one\",\"selected\":false}]",
-                "[{\"title\":\"Same\",\"selected\":true},{\"title\":\" same \" ,\"selected\":true}]")) {
+                "[{\"title\":\" \" ,\"selected\":true,\"notes\":false}]",
+                "[{\"title\":\"Only one\",\"selected\":false,\"notes\":false}]",
+                "[{\"title\":\"Same\",\"selected\":true,\"notes\":false},{\"title\":\" same \" ,\"selected\":true,\"notes\":false}]",
+                "[null]",
+                "[{\"title\":\"" + "x".repeat(501) + "\",\"selected\":true,\"notes\":false}]",
+                IntStream.rangeClosed(1, 101)
+                        .mapToObj(i -> "{\"title\":\"Criterion " + i + "\",\"selected\":true,\"notes\":false}")
+                        .collect(Collectors.joining(",", "[", "]")))) {
             mvc.perform(as(AC, put("/api/form-template"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body(original, criteria)))
                     .andExpect(status().isBadRequest());
         }
+        for (String incomplete : List.of("{\"templateId\":" + original + "}", "{\"criteria\":" + CRITERIA + "}")) {
+            mvc.perform(as(AC, put("/api/form-template"))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(incomplete))
+                    .andExpect(status().isBadRequest());
+        }
         assertThat(service.current().templateId()).isEqualTo(original);
+    }
+
+    @Test
+    void restoreRefusesTheCurrentVersionAndNeedsTheVersionOnScreen() throws Exception {
+        int current = service.current().templateId();
+        mvc.perform(as(AC, post("/api/form-template/versions/" + current + "/restore"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"templateId\":" + current + "}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("This version is already current."));
+        mvc.perform(as(AC, post("/api/form-template/versions/" + current + "/restore"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+        assertThat(service.history()).hasSize(1);
+    }
+
+    @Test
+    void withoutAnActiveTemplateTheEditorReportsAConflict() throws Exception {
+        db.update("UPDATE observation_template SET active_status=FALSE");
+        mvc.perform(as(AC, get("/api/form-template")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Configure an active observation template first."));
     }
 
     @Test
