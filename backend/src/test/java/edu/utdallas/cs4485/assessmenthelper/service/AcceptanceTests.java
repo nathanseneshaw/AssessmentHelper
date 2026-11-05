@@ -1,14 +1,15 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.HashSet;
 import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,8 +18,6 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
-
-import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository;
 
 /**
  * Acceptance tests named after the team's test cases (TC 16 to TC 23). Same data and clock as
