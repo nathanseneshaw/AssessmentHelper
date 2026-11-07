@@ -67,6 +67,10 @@ class FacultyObserverRequestIntegrationTests {
             new CurrentUser(null, 31, 1, "Avery Hazelwood", "avery.hazelwood@example.edu", List.of(Role.PROFESSOR)),
             null,
             true);
+    private static final AccountPrincipal KEIRA = new AccountPrincipal(
+            new CurrentUser(4, 41, 1, "Keira Larkspur", "keira.larkspur@example.edu", List.of(Role.PROFESSOR)),
+            null,
+            true);
 
     @Autowired
     private MockMvc mvc;
@@ -219,7 +223,7 @@ class FacultyObserverRequestIntegrationTests {
         send(AVERY, signupId, matchId).andExpect(status().isCreated());
         int requestId = db.queryForObject(
                 "SELECT request_id FROM observer_request WHERE signup_id = ?", Integer.class, signupId);
-        mvc.perform(as(KAIA, post("/api/observer-requests/" + requestId + "/confirm")))
+        mvc.perform(as(KEIRA, post("/api/observer-requests/" + requestId + "/confirm")))
                 .andExpect(status().isOk());
         mvc.perform(as(AVERY, get("/api/professors/31/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("CONFIRMED"))
@@ -323,7 +327,7 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     private ResultActions legacySend(int observer) throws Exception {
-        return mvc.perform(as(AVERY, post("/api/observer-requests"))
+        return mvc.perform(as(KAIA, post("/api/observer-requests"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"signupId\":" + signupId + ",\"observerId\":" + observer + "}"));
     }
