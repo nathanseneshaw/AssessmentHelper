@@ -243,6 +243,21 @@ function upcomingItem(item: Upcoming, cycleLabel: string): UpcomingItem {
         when: due(item.date),
         urgent: true,
       };
+    case "SIGN_OFF": {
+      const observed = formatWhen(item.date, item.startTime);
+      return {
+        ...badge(item.date),
+        key: `sign-off-${item.observationId}`,
+        title: `Sign Off — ${item.course}`,
+        detail: `Observer: ${item.with}`,
+        action: "Review and Sign",
+        actionContext: ` (${item.course})`,
+        to: `/faculty/observations/${item.observationId}`,
+        status: "Action needed",
+        when: observed ? `Observed ${observed}` : "Ready for your review",
+        urgent: true,
+      };
+    }
     case "OBSERVATION": {
       const observing = item.role === "OBSERVER";
       return {

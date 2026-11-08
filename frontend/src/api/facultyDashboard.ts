@@ -77,10 +77,11 @@ export interface ObservationItem {
 
 /**
  * SIGNUP: sign up by the cycle's deadline. OBSERVATION: an observation this cycle whose form is not submitted yet.
- * FEEDBACK: process feedback on a submitted or completed observation this cycle.
+ * FEEDBACK: process feedback on a submitted or completed observation this cycle. SIGN_OFF: a submitted observation
+ * the observee has not signed off yet.
  */
 export interface Upcoming {
-  type: "SIGNUP" | "OBSERVATION" | "FEEDBACK";
+  type: "SIGNUP" | "OBSERVATION" | "FEEDBACK" | "SIGN_OFF";
   date: string | null;
   startTime: string | null;
   overdue: boolean;

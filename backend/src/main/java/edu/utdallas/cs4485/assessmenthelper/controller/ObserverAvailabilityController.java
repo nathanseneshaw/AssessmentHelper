@@ -3,6 +3,7 @@ package edu.utdallas.cs4485.assessmenthelper.controller;
 import edu.utdallas.cs4485.assessmenthelper.entity.CourseSection;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverAvailabilityService;
 import java.util.List;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/observer-availability")
+@PreAuthorize("hasRole('AC')")
 public class ObserverAvailabilityController {
 
     /** {@code conflicts} lists the observer's own sections that clash with the signup's class. */
