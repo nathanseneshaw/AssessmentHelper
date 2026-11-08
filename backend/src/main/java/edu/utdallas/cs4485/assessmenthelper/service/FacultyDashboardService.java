@@ -114,12 +114,13 @@ public class FacultyDashboardService {
     /**
      * SIGNUP: sign up by the cycle's signup deadline. OBSERVATION: an observation this cycle whose form is not submitted
      * yet. FEEDBACK: process feedback on a submitted or completed observation this cycle, due by the cycle's feedback
-     * deadline.
+     * deadline. SIGN_OFF: a submitted observation the observee has not signed off yet.
      */
     public enum UpcomingType {
         SIGNUP,
         OBSERVATION,
-        FEEDBACK
+        FEEDBACK,
+        SIGN_OFF
     }
 
     /** One action item. The observation fields are null for SIGNUP. overdue is true once the date has passed. */
@@ -218,18 +219,31 @@ public class FacultyDashboardService {
                         o.status(),
                         o.course(),
                         o.with()));
-            else if (!r.feedbackGiven())
-                upcoming.add(new Upcoming(
-                        UpcomingType.FEEDBACK,
-                        cycle.feedbackDeadline(),
-                        null,
-                        cycle.feedbackDeadline() != null
-                                && cycle.feedbackDeadline().isBefore(today),
-                        o.observationId(),
-                        o.role(),
-                        o.status(),
-                        o.course(),
-                        o.with()));
+            else {
+                if (o.role() == Role.OBSERVEE && o.status() == ObservationStatus.SUBMITTED)
+                    upcoming.add(new Upcoming(
+                            UpcomingType.SIGN_OFF,
+                            o.date(),
+                            o.startTime(),
+                            false,
+                            o.observationId(),
+                            o.role(),
+                            o.status(),
+                            o.course(),
+                            o.with()));
+                if (!r.feedbackGiven())
+                    upcoming.add(new Upcoming(
+                            UpcomingType.FEEDBACK,
+                            cycle.feedbackDeadline(),
+                            null,
+                            cycle.feedbackDeadline() != null
+                                    && cycle.feedbackDeadline().isBefore(today),
+                            o.observationId(),
+                            o.role(),
+                            o.status(),
+                            o.course(),
+                            o.with()));
+            }
         }
         // Soonest first; items without a date yet go last.
         upcoming.sort(Comparator.comparing(Upcoming::date, Comparator.nullsLast(Comparator.naturalOrder())));

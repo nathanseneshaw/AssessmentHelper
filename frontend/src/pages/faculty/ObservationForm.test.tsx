@@ -53,6 +53,8 @@ function notStarted(): ObservationDetail {
     submittedAt: null,
     canStart: true,
     canEdit: false,
+    locked: false,
+    observeeSignedAt: null,
   };
 }
 
@@ -777,6 +779,8 @@ test("reopening a submitted observation shows the answers read-only, and when th
     ...structuredClone(completedObservation),
     observationId: 5,
     status: "SUBMITTED",
+    locked: false,
+    observeeSignedAt: null,
   };
   open();
   const view = await dialog();

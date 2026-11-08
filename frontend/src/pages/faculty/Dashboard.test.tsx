@@ -290,6 +290,38 @@ test.each(["CLOSED", "UNCONFIGURED"] as const)(
   },
 );
 
+test("a submitted observation of the professor's class asks them to review and sign it", async () => {
+  surveys = [];
+  current.upcoming = [
+    {
+      type: "SIGN_OFF",
+      date: "2026-10-20",
+      startTime: "08:30:00",
+      overdue: false,
+      observationId: 30,
+      role: "OBSERVEE",
+      status: "SUBMITTED",
+      course: "CS 4348.501",
+      with: "Silas Brightwater",
+    },
+  ];
+  await open();
+
+  expect(upcomingActions()).toEqual([
+    {
+      name: "Review and Sign (CS 4348.501)",
+      href: "/faculty/observations/30",
+    },
+  ]);
+  const signOff = upcoming("Sign Off — CS 4348.501");
+  expect(signOff.textContent).toContain("OCT20");
+  expect(signOff.textContent).toContain("Observer: Silas Brightwater");
+  expect(signOff.textContent).toContain("Action needed");
+  expect(signOff.textContent).toContain("Observed Oct 20, 2026, 8:30 AM");
+  expect(signOff.innerHTML).toContain("bg-peach");
+  expect(within(section("Upcoming")).getByText("1 item due")).toBeDefined();
+});
+
 test("a due professor who has not signed up is asked to sign up", async () => {
   // Only an observee in the cycle has a survey.
   surveys = [];
