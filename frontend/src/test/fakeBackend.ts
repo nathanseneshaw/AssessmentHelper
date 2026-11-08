@@ -70,6 +70,8 @@ export function fakeBackend(routes: Record<string, Route> = {}) {
         signedInUser = null;
         return new Response(null, { status: 204 });
       default:
+        if (path === "/api/email-templates" && !routes[path])
+          return Response.json({ templates: [], placeholders: [] });
         return (
           routes[path]?.(init, url) ??
           (/^\/api\/professors\/\d+\/missing-observations$/.test(path)

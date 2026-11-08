@@ -10,7 +10,7 @@ import {
 import { MemoryRouter } from "react-router-dom";
 import { API_URL } from "../../api/client";
 import {
-  notificationTemplate,
+  getNotificationPreview,
   type OverdueQueue,
 } from "../../api/evaluationEligibility";
 import { AuthProvider } from "../../auth/AuthContext";
@@ -28,11 +28,36 @@ afterEach(() => {
 function mockFetch(
   handler: (input: unknown, init?: RequestInit) => Promise<Response>,
 ) {
-  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) =>
-    String(input).endsWith("/ac-dashboard/metrics")
-      ? Response.json(metrics)
-      : handler(input, init),
-  ) as unknown as typeof fetch;
+  const notified = new Set<number>();
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const path = String(input);
+    const preview = path.match(
+      /\/api\/(due|overdue)-evaluations\/1\/professors\/(\d+)\/email-preview$/,
+    );
+    if (preview) {
+      const id = Number(preview[2]);
+      const person = queue.faculty.find((p) => p.professorId === id);
+      if (!person) throw new Error("Unknown preview fixture");
+      return Response.json({
+        recipient: person.email,
+        subject:
+          (notified.has(id) ? "Follow Up: " : "") +
+          (preview[1] === "due"
+            ? "Faculty Evaluation Due - Fall 2026"
+            : "Faculty Evaluation Overdue - Fall 2026 Evaluation Required"),
+        body:
+          "Dear Professor " +
+          person.lastName +
+          ", Please complete your evaluation signup.",
+      });
+    }
+    if (path.endsWith("/ac-dashboard/metrics")) return Response.json(metrics);
+    const response = await handler(input, init);
+    const sent = path.match(/professors\/(\d+)\/notifications$/);
+    if (sent && init?.method === "POST" && response.ok)
+      notified.add(Number(sent[1]));
+    return response;
+  }) as unknown as typeof fetch;
 }
 
 const queue: OverdueQueue = {
@@ -88,25 +113,11 @@ function openModal(props: Partial<Parameters<typeof OverdueEvaluations>[0]>) {
   );
 }
 
-function sampleFaculty(index: number) {
-  const faculty = queue.faculty[index];
-  if (!faculty) throw new Error("Missing faculty test fixture");
-  return faculty;
-}
-
-test("personalizes rank, interval, name, history, and follow-up", () => {
-  const alice = notificationTemplate(sampleFaculty(0), queue.cycleLabel);
-  const bob = notificationTemplate(sampleFaculty(1), queue.cycleLabel);
-  expect(alice.body).toContain("Dear Professor Nguyen,");
-  expect(alice.body).toContain("every 2 years");
-  expect(bob.body).toContain("every year");
-  expect(bob.recipient).toBe("bob@utdallas.edu");
-  expect(
-    notificationTemplate(
-      { ...sampleFaculty(0), lastNotifiedAt: "2026-10-20T10:00:00" },
-      queue.cycleLabel,
-    ).subject,
-  ).toStartWith("Follow Up:");
+test("loads the server-rendered draft for the selected notification", async () => {
+  mockFetch(async () => Response.json(queue));
+  const draft = await getNotificationPreview(1, 1, "due");
+  expect(draft.recipient).toBe("alice@utdallas.edu");
+  expect(draft.subject).toBe("Faculty Evaluation Due - Fall 2026");
 });
 
 test("opens overlay, saves edited email, confirms, and offers follow-up without reducing count", async () => {
@@ -128,17 +139,17 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
   fireEvent.click(viewAll);
   expect(screen.getByRole("dialog")).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: "Notify Alice Nguyen" }));
-  expect((screen.getByLabelText("To") as HTMLInputElement).value).toBe(
+  expect(((await screen.findByLabelText("To")) as HTMLInputElement).value).toBe(
     "alice@utdallas.edu",
   );
-  fireEvent.change(screen.getByLabelText("Subject"), {
+  fireEvent.change(await screen.findByLabelText("Subject"), {
     target: { value: "Personal reminder" },
   });
-  fireEvent.change(screen.getByLabelText("Message"), {
+  fireEvent.change(await screen.findByLabelText("Message"), {
     target: { value: "Please complete your evaluation, Alice." },
   });
   fireEvent.click(screen.getByRole("button", { name: "Send Email" }));
-  await screen.findByRole("heading", { name: "Email Sent" });
+  await screen.findByRole("heading", { name: "Email Recorded" });
   expect(body?.subject).toBe("Personal reminder");
   expect(body?.body).toBe("Please complete your evaluation, Alice.");
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
@@ -153,11 +164,11 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
   expect(within(row).getByText("Notified")).toBeDefined();
   fireEvent.click(followUp);
   expect(
-    (screen.getByLabelText("Subject") as HTMLInputElement).value,
+    ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
   ).toStartWith("Follow Up:");
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   fireEvent.click(screen.getByRole("button", { name: "Notify Bob Martinez" }));
-  expect((screen.getByLabelText("To") as HTMLInputElement).value).toBe(
+  expect(((await screen.findByLabelText("To")) as HTMLInputElement).value).toBe(
     "bob@utdallas.edu",
   );
 });
@@ -180,11 +191,12 @@ test("failed send keeps draft and overdue status", async () => {
   );
   fireEvent.click(viewAll);
   fireEvent.click(screen.getByRole("button", { name: "Notify Alice Nguyen" }));
+  await screen.findByLabelText("Subject");
   fireEvent.click(screen.getByRole("button", { name: "Send Email" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Could not save notification",
   );
-  expect(screen.queryByRole("heading", { name: "Email Sent" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Email Recorded" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(
     screen.getByRole("button", { name: "Notify Alice Nguyen" }),
@@ -243,17 +255,17 @@ test("due overlay personalizes an editable email, saves to the due endpoint, and
   fireEvent.click(
     within(dialog).getByRole("button", { name: "Notify Alice Nguyen" }),
   );
-  expect((screen.getByLabelText("Subject") as HTMLInputElement).value).toBe(
-    "Faculty Evaluation Due - Fall 2026",
-  );
   expect(
-    (screen.getByLabelText("Message") as HTMLTextAreaElement).value,
+    ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
+  ).toBe("Faculty Evaluation Due - Fall 2026");
+  expect(
+    ((await screen.findByLabelText("Message")) as HTMLTextAreaElement).value,
   ).toContain("Dear Professor Nguyen,");
-  fireEvent.change(screen.getByLabelText("Subject"), {
+  fireEvent.change(await screen.findByLabelText("Subject"), {
     target: { value: "Your evaluation is due" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Send Email" }));
-  await screen.findByRole("heading", { name: "Email Sent" });
+  await screen.findByRole("heading", { name: "Email Recorded" });
   expect(savedUrl).toBe(
     `${API_URL}/api/due-evaluations/1/professors/1/notifications`,
   );
@@ -267,7 +279,7 @@ test("due overlay personalizes an editable email, saves to the due endpoint, and
     screen.getByRole("button", { name: "Follow up with Alice Nguyen" }),
   );
   expect(
-    (screen.getByLabelText("Subject") as HTMLInputElement).value,
+    ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
   ).toStartWith("Follow Up: Faculty Evaluation Due");
 });
 
@@ -300,7 +312,8 @@ const notSignedUp = {
   emptyMessage: "All due faculty have signed up.",
 } as const;
 
-test("custom title and count label replace the default wording without changing the due rows or email", () => {
+test("custom title and count label replace the default wording without changing the due rows or email", async () => {
+  mockFetch(async () => Response.json(queue));
   openModal(notSignedUp);
   const dialog = screen.getByRole("dialog", {
     name: "Faculty Not Yet Signed Up",
@@ -327,9 +340,9 @@ test("custom title and count label replace the default wording without changing 
   if (!row) throw new Error("Missing professor row");
   expect(within(row).getByText("Due")).toBeDefined();
   fireEvent.click(notify);
-  expect((screen.getByLabelText("Subject") as HTMLInputElement).value).toBe(
-    "Faculty Evaluation Due - Fall 2026",
-  );
+  expect(
+    ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
+  ).toBe("Faculty Evaluation Due - Fall 2026");
 });
 
 test("custom empty message replaces the default empty state", () => {
@@ -373,4 +386,58 @@ test("default wording is derived from kind when no custom text is passed", () =>
   expect(
     within(dialog).getByText("No faculty are overdue for evaluation."),
   ).toBeDefined();
+});
+
+test("template load failure can be retried without recording an email", async () => {
+  let attempts = 0;
+  globalThis.fetch = mock(async (input: unknown) => {
+    if (String(input).endsWith("/email-preview")) {
+      attempts++;
+      return attempts === 1
+        ? Response.json({ detail: "Template inactive" }, { status: 409 })
+        : Response.json({
+            recipient: "alice@utdallas.edu",
+            subject: "Saved server template",
+            body: "Server draft",
+          });
+    }
+    throw new Error("Unexpected request");
+  }) as unknown as typeof fetch;
+  openModal({});
+  fireEvent.click(screen.getByRole("button", { name: "Notify Alice Nguyen" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Template inactive",
+  );
+  expect(screen.queryByRole("button", { name: "Send Email" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(
+    ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
+  ).toBe("Saved server template");
+});
+
+test("returning to the list cancels a pending preview", async () => {
+  let resolve: ((response: Response) => void) | undefined;
+  globalThis.fetch = mock(
+    () =>
+      new Promise<Response>((r) => {
+        resolve = r;
+      }),
+  ) as unknown as typeof fetch;
+  openModal({});
+  fireEvent.click(screen.getByRole("button", { name: "Notify Alice Nguyen" }));
+  await screen.findByText("Loading email template...");
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  resolve?.(
+    Response.json({
+      recipient: "alice@utdallas.edu",
+      subject: "Late result",
+      body: "Late result",
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Notify Alice Nguyen" }),
+    ).toBeTruthy(),
+  );
+  expect(screen.queryByLabelText("Subject")).toBeNull();
 });

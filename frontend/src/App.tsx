@@ -4,6 +4,7 @@ import { RequireRole } from "./auth/RequireRole";
 import "./index.css";
 import { AppLayout } from "./layouts/AppLayout";
 import { HOME_PATH } from "./navConfig";
+import { AcEmailTemplates } from "./pages/ac/EmailTemplates";
 import { AcFacultyEvaluations } from "./pages/ac/FacultyEvaluations";
 import { AcFormTemplate } from "./pages/ac/FormTemplate";
 import { AcObservations } from "./pages/ac/Observations";
@@ -49,6 +50,7 @@ export function App() {
               <Route path="matching" element={<AcObserverMatching />} />
               <Route path="observations" element={<AcObservations />} />
               <Route path="form-template" element={<AcFormTemplate />} />
+              <Route path="email-templates" element={<AcEmailTemplates />} />
               <Route path="reports" element={<AcReports />} />
               <Route path="*" element={<NotFound />} />
             </Route>
