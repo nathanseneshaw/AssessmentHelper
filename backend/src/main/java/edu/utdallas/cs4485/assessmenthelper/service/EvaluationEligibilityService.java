@@ -55,7 +55,7 @@ public class EvaluationEligibilityService {
             ObservationRepository observations,
             EvaluationNotificationRepository notifications,
             Clock clock,
-            edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals) {
+            edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals,
             EmailTemplateService emailTemplates) {
         this.professors = professors;
         this.policies = policies;
