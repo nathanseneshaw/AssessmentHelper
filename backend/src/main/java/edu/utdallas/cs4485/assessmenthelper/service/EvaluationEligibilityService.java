@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +42,7 @@ public class EvaluationEligibilityService {
     private final EvaluationSignupRepository signups;
     private final ObservationRepository observations;
     private final EvaluationNotificationRepository notifications;
+    private final NotificationEmailSender emailSender;
     private final Clock clock;
     private final edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals;
     private final EmailTemplateService emailTemplates;
@@ -57,6 +59,35 @@ public class EvaluationEligibilityService {
             Clock clock,
             edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals,
             EmailTemplateService emailTemplates) {
+        this(
+                professors,
+                policies,
+                semesters,
+                cycles,
+                observees,
+                signups,
+                observations,
+                notifications,
+                (recipient, subject, body) -> {},
+                clock,
+                deferrals,
+                emailTemplates);
+    }
+
+    @Autowired
+    public EvaluationEligibilityService(
+            ProfessorRepository professors,
+            EvaluationPolicyRepository policies,
+            SemesterRepository semesters,
+            EvaluationCycleRepository cycles,
+            ObserveeRepository observees,
+            EvaluationSignupRepository signups,
+            ObservationRepository observations,
+            EvaluationNotificationRepository notifications,
+            NotificationEmailSender emailSender,
+            Clock clock,
+            edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals,
+            EmailTemplateService emailTemplates) {
         this.professors = professors;
         this.policies = policies;
         this.semesters = semesters;
@@ -65,6 +96,7 @@ public class EvaluationEligibilityService {
         this.signups = signups;
         this.observations = observations;
         this.notifications = notifications;
+        this.emailSender = emailSender;
         this.clock = clock;
         this.deferrals = deferrals;
         this.emailTemplates = emailTemplates;
@@ -254,6 +286,7 @@ public class EvaluationEligibilityService {
                     HttpStatus.BAD_REQUEST,
                     "Provide the professor's email, a subject (up to 255 characters), and a message (up to 16000 characters).");
         }
+        emailSender.send(email.recipient(), email.subject(), email.body());
         return notifications.save(new EvaluationNotification(
                 null, professorId, cycleId, faculty.email(), email.subject(), email.body(), LocalDateTime.now(clock)));
     }

@@ -98,6 +98,11 @@ The application includes sample accounts for testing. Open the drop down under t
 ## Development Notes
 
 - The application currently uses an in-memory H2 database. Data resets whenever the backend restarts.
-- Email notifications are simulated and do not send actual emails.
+- Email notifications are simulated by default. To send real email, set
+  `APP_EMAIL_ENABLED=true` and configure `SMTP_HOST`, `SMTP_PORT`,
+  `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM` in the backend environment.
+  TLS settings use `SMTP_STARTTLS` and `SMTP_SSL`. Keep credentials out of source
+  control. For development, `APP_EMAIL_TEST_MODE=true` with
+  `APP_EMAIL_TEST_RECIPIENT` routes real test messages to one inbox.
 - The backend must be running for authentication and API functionality.
 - API endpoints can be explored using Swagger UI.
