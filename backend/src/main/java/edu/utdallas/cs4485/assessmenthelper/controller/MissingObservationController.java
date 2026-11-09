@@ -20,4 +20,11 @@ public class MissingObservationController {
     public List<MissingObservationService.Alert> missing(@PathVariable int professorId) {
         return service.findByProfessor(professorId);
     }
+
+    /** Committee only: signups past the observation deadline with no completed observation. */
+    @GetMapping("/api/missing-observations")
+    @PreAuthorize("hasRole('AC')")
+    public MissingObservationService.MissingSignups missingSignups() {
+        return service.findMissingSignups();
+    }
 }

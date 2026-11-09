@@ -1,8 +1,10 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
@@ -11,7 +13,10 @@ import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import edu.utdallas.cs4485.assessmenthelper.service.MissingObservationService;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -184,5 +189,141 @@ class MissingObservationIntegrationTests {
     void anonymousCannotReadAlerts() throws Exception {
         mvc.perform(get("/api/professors/" + professor + "/missing-observations"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // GET /api/missing-observations. data.sql's Fall 2026 cycle has six signups (Leander, Arlo, Avery, Keira,
+    // Xiomara and Perrin) and only Leander's has an observation: Keira's, SCHEDULED. The clock is a day past the
+    // 2026-11-15 observation deadline.
+
+    private static final String URL = "/api/missing-observations";
+    private static final String LEANDER = "leander.coldwell@example.edu";
+    private static final String AVERY = "avery.hazelwood@example.edu";
+
+    private static final AccountPrincipal COMMITTEE = new AccountPrincipal(
+            new CurrentUser(
+                    1, 12, 1, "Kaia Clearbrook", "kaia.clearbrook@example.edu", List.of(Role.AC, Role.PROFESSOR)),
+            null,
+            true);
+
+    int signupOf(String email) {
+        return db.queryForObject("""
+                SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
+                JOIN professor p ON p.professor_id=oe.professor_id WHERE p.email=? AND oe.cycle_id=1
+                """, Integer.class, email);
+    }
+
+    List<MissingObservationService.MissingSignup> missing() {
+        return service.findMissingSignups().signups();
+    }
+
+    List<String> missingObservees() {
+        var names = new ArrayList<String>();
+        for (var signup : missing()) {
+            names.add(signup.observee());
+        }
+        return names;
+    }
+
+    MissingObservationService.MissingSignup missingFor(String email) {
+        int signupId = signupOf(email);
+        for (var signup : missing()) {
+            if (signup.signupId() == signupId) {
+                return signup;
+            }
+        }
+        throw new AssertionError("Not listed as missing: " + email);
+    }
+
+    void setObservationStatus(String email, String status) {
+        db.update("UPDATE observation SET status=? WHERE signup_id=?", status, signupOf(email));
+    }
+
+    @Test
+    void everySignupWithoutACompletedObservationIsListedAfterTheDeadline() {
+        var result = service.findMissingSignups();
+        assertThat(result.cycleId()).isEqualTo(1);
+        assertThat(result.cycleLabel()).isEqualTo("Fall 2026");
+        assertThat(result.observationDeadline()).isEqualTo(LocalDate.of(2026, 11, 15));
+        assertThat(missingObservees()).hasSize(6);
+        assertThat(missingObservees()).contains("Leander Coldwell", "Avery Hazelwood");
+    }
+
+    @Test
+    void aSignupWithAnObservationShowsItsObserverAndProgress() {
+        var leander = missingFor(LEANDER);
+        assertThat(leander.observer()).isEqualTo("Keira Larkspur");
+        assertThat(leander.observationStatus()).isEqualTo("SCHEDULED");
+        assertThat(leander.course()).startsWith("CS 3345.");
+    }
+
+    @Test
+    void aSignupNobodyAcceptedHasNoObservationDetails() {
+        var avery = missingFor(AVERY);
+        assertThat(avery.observer()).isNull();
+        assertThat(avery.observationStatus()).isNull();
+    }
+
+    @Test
+    void aCompletedObservationTakesTheSignupOffTheList() {
+        setObservationStatus(LEANDER, "COMPLETED");
+        assertThat(missingObservees()).hasSize(5);
+        assertThat(missingObservees()).doesNotContain("Leander Coldwell");
+    }
+
+    @Test
+    void aSubmittedObservationIsStillMissingUntilTheObserveeSignsOff() {
+        setObservationStatus(LEANDER, "SUBMITTED");
+        assertThat(missingFor(LEANDER).observationStatus()).isEqualTo("SUBMITTED");
+    }
+
+    @Test
+    void aCancelledSignupIsNotListed() {
+        db.update("UPDATE evaluation_signup SET status='CANCELLED' WHERE signup_id=?", signupOf(AVERY));
+        assertThat(missingObservees()).hasSize(5);
+        assertThat(missingObservees()).doesNotContain("Avery Hazelwood");
+    }
+
+    @Test
+    void aSignupWithSeveralObservationsIsListedOnceUnlessOneIsCompleted() {
+        int signup = signupOf(LEANDER);
+        db.update("""
+                INSERT INTO observation (signup_id, observer_id, template_id, observation_date, status)
+                SELECT ?, ob.observer_id, (SELECT MIN(template_id) FROM observation_template), DATE '2026-11-05',
+                'ACCEPTED'
+                FROM observer ob JOIN professor p ON p.professor_id=ob.professor_id
+                WHERE p.email=? AND ob.cycle_id=1
+                """, signup, AVERY);
+        assertThat(Collections.frequency(missingObservees(), "Leander Coldwell"))
+                .isEqualTo(1);
+        db.update("UPDATE observation SET status='COMPLETED' WHERE signup_id=? AND status='ACCEPTED'", signup);
+        assertThat(missingObservees()).doesNotContain("Leander Coldwell");
+    }
+
+    @Test
+    void theObservationDeadlineDayIsStillOnTime() {
+        db.update("UPDATE evaluation_cycle SET observation_deadline=DATE '2026-11-16' WHERE cycle_id=1");
+        assertThat(missing()).isEmpty();
+    }
+
+    @Test
+    void aCycleWithoutAnObservationDeadlineHasNothingMissing() {
+        db.update("UPDATE evaluation_cycle SET observation_deadline=NULL WHERE cycle_id=1");
+        assertThat(service.findMissingSignups().observationDeadline()).isNull();
+        assertThat(missing()).isEmpty();
+    }
+
+    @Test
+    void committeeGetsTheMissingSignupsAsJson() throws Exception {
+        mvc.perform(get(URL).with(user(COMMITTEE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cycleId").value(1))
+                .andExpect(jsonPath("$.observationDeadline").value("2026-11-15"))
+                .andExpect(jsonPath("$.signups", hasSize(6)));
+    }
+
+    @Test
+    void professorsAndAnonymousCannotReadTheMissingSignups() throws Exception {
+        mvc.perform(get(URL).with(user(principal()))).andExpect(status().isForbidden());
+        mvc.perform(get(URL)).andExpect(status().isUnauthorized());
     }
 }

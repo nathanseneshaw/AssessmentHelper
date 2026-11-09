@@ -1,8 +1,11 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -30,6 +33,64 @@ public class MissingObservationService {
     }
 
     public record Alert(String kind, Integer observationId, LocalDate dueDate, String message) {}
+
+    /**
+     * A signup with no completed observation. {@code observer} and {@code observationStatus} are null when no
+     * observer has accepted the signup yet.
+     */
+    public record MissingSignup(
+            int signupId, int observeeId, String observee, String course, String observer, String observationStatus) {}
+
+    /** The current cycle's signups that are past its observation deadline without a completed observation. */
+    public record MissingSignups(
+            int cycleId, String cycleLabel, LocalDate observationDeadline, List<MissingSignup> signups) {}
+
+    /**
+     * Committee view of the current cycle: every non-cancelled signup without a COMPLETED observation, once the
+     * observation deadline has passed (the deadline day itself is still on time). Before then, or when the cycle has
+     * no deadline, the list is empty. A SUBMITTED observation still counts, since the record is not complete until
+     * the observee signs off.
+     */
+    @Transactional(readOnly = true)
+    public MissingSignups findMissingSignups() {
+        var cycle = eligibility.cycle();
+        LocalDate deadline = cycle.observationDeadline();
+        if (deadline == null || !LocalDate.now(clock).isAfter(deadline)) {
+            return new MissingSignups(cycle.cycleId(), cycle.label(), deadline, List.of());
+        }
+        List<MissingSignup> rows = db.query("""
+                SELECT es.signup_id, oe.professor_id AS observee_id, p.first_name || ' ' || p.last_name AS observee,
+                c.course_code, c.course_number, s.section_number,
+                op.first_name || ' ' || op.last_name AS observer, o.status
+                FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
+                JOIN professor p ON p.professor_id=oe.professor_id
+                JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
+                LEFT JOIN observation o ON o.signup_id=es.signup_id
+                LEFT JOIN observer ob ON ob.observer_id=o.observer_id
+                LEFT JOIN professor op ON op.professor_id=ob.professor_id
+                WHERE oe.cycle_id=? AND es.status<>'CANCELLED'
+                AND NOT EXISTS (SELECT 1 FROM observation d WHERE d.signup_id=es.signup_id
+                AND UPPER(d.status)='COMPLETED')
+                ORDER BY p.last_name, p.first_name, es.signup_id, o.observation_id
+                """, this::missingSignup, cycle.cycleId());
+        // A signup can have one observation per observer, so it can come back more than once; the last row wins.
+        var latest = new LinkedHashMap<Integer, MissingSignup>();
+        for (var row : rows) {
+            latest.put(row.signupId(), row);
+        }
+        return new MissingSignups(cycle.cycleId(), cycle.label(), deadline, List.copyOf(latest.values()));
+    }
+
+    private MissingSignup missingSignup(ResultSet rs, int row) throws SQLException {
+        String course = rs.getString("course_code") + " " + rs.getString("course_number");
+        return new MissingSignup(
+                rs.getInt("signup_id"),
+                rs.getInt("observee_id"),
+                rs.getString("observee"),
+                course + "." + rs.getString("section_number"),
+                rs.getString("observer"),
+                rs.getString("status"));
+    }
 
     @Transactional(readOnly = true)
     public List<Alert> findByProfessor(int professorId) {
