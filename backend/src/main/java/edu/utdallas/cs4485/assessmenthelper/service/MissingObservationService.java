@@ -71,14 +71,15 @@ public class MissingObservationService {
                 WHERE oe.cycle_id=? AND es.status<>'CANCELLED'
                 AND NOT EXISTS (SELECT 1 FROM observation d WHERE d.signup_id=es.signup_id
                 AND UPPER(d.status)='COMPLETED')
-                ORDER BY p.last_name, p.first_name, es.signup_id, o.observation_id
+                ORDER BY p.last_name, p.first_name, es.signup_id,
+                CASE WHEN UPPER(o.status)='SUBMITTED' THEN 1 ELSE 0 END, o.observation_id
                 """, this::missingSignup, cycle.cycleId());
-        // A signup can have one observation per observer, so it can come back more than once; the last row wins.
-        var latest = new LinkedHashMap<Integer, MissingSignup>();
+        // The last row is the newest submitted observation, or the newest observation if none were submitted.
+        var representative = new LinkedHashMap<Integer, MissingSignup>();
         for (var row : rows) {
-            latest.put(row.signupId(), row);
+            representative.put(row.signupId(), row);
         }
-        return new MissingSignups(cycle.cycleId(), cycle.label(), deadline, List.copyOf(latest.values()));
+        return new MissingSignups(cycle.cycleId(), cycle.label(), deadline, List.copyOf(representative.values()));
     }
 
     private MissingSignup missingSignup(ResultSet rs, int row) throws SQLException {

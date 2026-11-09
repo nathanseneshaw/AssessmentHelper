@@ -284,8 +284,9 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void aSignupWithSeveralObservationsIsListedOnceUnlessOneIsCompleted() {
+    void aSignupShowsTheSubmittedObservationAheadOfANewerAcceptedOne() throws Exception {
         int signup = signupOf(LEANDER);
+        setObservationStatus(LEANDER, "SUBMITTED");
         db.update("""
                 INSERT INTO observation (signup_id, observer_id, template_id, observation_date, status)
                 SELECT ?, ob.observer_id, (SELECT MIN(template_id) FROM observation_template), DATE '2026-11-05',
@@ -295,6 +296,11 @@ class MissingObservationIntegrationTests {
                 """, signup, AVERY);
         assertThat(Collections.frequency(missingObservees(), "Leander Coldwell"))
                 .isEqualTo(1);
+        mvc.perform(get(URL).with(user(COMMITTEE)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.signups[0].signupId").value(signup))
+                .andExpect(jsonPath("$.signups[0].observer").value("Keira Larkspur"))
+                .andExpect(jsonPath("$.signups[0].observationStatus").value("SUBMITTED"));
         db.update("UPDATE observation SET status='COMPLETED' WHERE signup_id=? AND status='ACCEPTED'", signup);
         assertThat(missingObservees()).doesNotContain("Leander Coldwell");
     }
