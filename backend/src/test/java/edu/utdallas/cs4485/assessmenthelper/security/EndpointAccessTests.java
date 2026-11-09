@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
 import jakarta.servlet.http.Cookie;
@@ -237,7 +238,20 @@ class EndpointAccessTests {
         assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
 
         mvc.perform(withCsrf(get(path)).with(user(keira))).andExpect(status().isOk());
-        mvc.perform(withCsrf(post(path + "/confirm")).with(user(keira)))
+        String dates = mvc.perform(get(
+                                "/api/observer-eligibility/faculty/{id}/requests/{requestId}/dates",
+                                professorId(KEIRA),
+                                requestId)
+                        .with(user(keira)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String date = JsonPath.read(dates, "$[0]");
+        mvc.perform(withCsrf(post(path + "/confirm"))
+                        .with(user(keira))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observationDate\":\"" + date + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CONFIRMED"));
     }
