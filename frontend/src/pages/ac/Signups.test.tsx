@@ -104,6 +104,12 @@ beforeEach(() => {
     "/api/ac-dashboard/metrics": () => answerMetrics(),
     "/api/due-evaluations": () => answerDue(),
     "/api/observer-eligibility/ac": () => answerObserver(),
+    [NOTIFY_PATH.replace("/notifications", "/email-preview")]: () =>
+      Response.json({
+        recipient: "ashgrove@test.edu",
+        subject: "Faculty Evaluation Due - Fall 2026",
+        body: "Please complete your evaluation signup.",
+      }),
     [NOTIFY_PATH]: (init) => {
       sentEmail = JSON.parse(String(init?.body));
       return Response.json({ sentAt: "2026-10-26T09:30:00" });
@@ -258,10 +264,11 @@ test("notifying someone who has not signed up sends the signup reminder and mark
     within(dialog).getByRole("button", { name: "Notify Juniper Ashgrove" }),
   );
   expect(
-    (within(dialog).getByLabelText("Message") as HTMLTextAreaElement).value,
+    ((await within(dialog).findByLabelText("Message")) as HTMLTextAreaElement)
+      .value,
   ).toContain("complete your evaluation signup");
   fireEvent.click(within(dialog).getByRole("button", { name: "Send Email" }));
-  await within(dialog).findByRole("heading", { name: "Email Sent" });
+  await within(dialog).findByRole("heading", { name: "Email Recorded" });
   expect(sentEmail?.recipient).toBe("ashgrove@test.edu");
   fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
 

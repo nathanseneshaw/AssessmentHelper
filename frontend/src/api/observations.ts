@@ -7,7 +7,7 @@ export type ObservationStatus =
   | "IN_PROGRESS"
   | "SUBMITTED"
   | "COMPLETED";
-export type ViewerRole = "OBSERVER" | "OBSERVEE";
+export type ViewerRole = "OBSERVER" | "OBSERVEE" | "COMMITTEE";
 export type QuestionType = "RATING" | "TEXT";
 
 export interface Criterion {
@@ -79,6 +79,10 @@ export interface ObservationDetail {
   submittedAt: string | null;
   canStart: boolean;
   canEdit: boolean;
+  locked: boolean;
+  canSign: boolean;
+  observeeComments: string | null;
+  observeeSignedAt: string | null;
 }
 
 export const STATUS_LABELS: Record<ObservationStatus, string> = {
@@ -187,6 +191,16 @@ export const submitObservation = (
   send<ObservationDetail>(`${observationPath(observationId)}/submit`, "POST", {
     responses,
   });
+
+export const signObservation = (
+  observationId: number,
+  comments: string | null,
+) =>
+  send<ObservationDetail>(
+    `${observationPath(observationId)}/observee-sign`,
+    "POST",
+    { comments },
+  );
 
 /** True when a write was refused because the observation changed elsewhere, for example in another tab. */
 export const isConflict = (cause: unknown) =>

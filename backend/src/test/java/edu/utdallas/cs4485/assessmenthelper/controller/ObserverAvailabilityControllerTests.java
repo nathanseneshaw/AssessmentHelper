@@ -1,5 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -23,7 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(ObserverAvailabilityController.class)
 @Import(SecurityConfig.class)
-@WithMockUser
+@WithMockUser(roles = "AC")
 class ObserverAvailabilityControllerTests {
 
     private static final CourseSection CLASH =
@@ -43,6 +44,15 @@ class ObserverAvailabilityControllerTests {
     void signedOutRequestReturns401() throws Exception {
         mockMvc.perform(get("/api/observer-availability").param("signupId", "2").param("observerId", "3"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "PROFESSOR")
+    void professorsCannotCheckAvailability() throws Exception {
+        mockMvc.perform(get("/api/observer-availability").param("signupId", "2").param("observerId", "3"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(service);
     }
 
     @Test

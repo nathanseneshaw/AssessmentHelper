@@ -43,6 +43,7 @@ public class EvaluationEligibilityService {
     private final EvaluationNotificationRepository notifications;
     private final Clock clock;
     private final edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals;
+    private final EmailTemplateService emailTemplates;
 
     public EvaluationEligibilityService(
             ProfessorRepository professors,
@@ -55,6 +56,7 @@ public class EvaluationEligibilityService {
             EvaluationNotificationRepository notifications,
             Clock clock,
             edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals) {
+            EmailTemplateService emailTemplates) {
         this.professors = professors;
         this.policies = policies;
         this.semesters = semesters;
@@ -65,6 +67,7 @@ public class EvaluationEligibilityService {
         this.notifications = notifications;
         this.clock = clock;
         this.deferrals = deferrals;
+        this.emailTemplates = emailTemplates;
     }
 
     public record Faculty(
@@ -253,6 +256,42 @@ public class EvaluationEligibilityService {
         }
         return notifications.save(new EvaluationNotification(
                 null, professorId, cycleId, faculty.email(), email.subject(), email.body(), LocalDateTime.now(clock)));
+    }
+
+    /** Builds a draft from server-owned faculty data and the current saved template. */
+    @Transactional(readOnly = true)
+    public Email previewNotification(Integer cycleId, Integer professorId, boolean due) {
+        Queue queue = findQueue(due);
+        if (!queue.cycleId().equals(cycleId))
+            throw conflict("The evaluation cycle changed. Refresh the evaluation list.");
+        Faculty faculty = queue.faculty().stream()
+                .filter(p -> p.professorId().equals(professorId))
+                .findFirst()
+                .orElseThrow(() ->
+                        conflict("This professor is no longer " + (due ? "due" : "overdue") + ". Refresh the list."));
+        String type =
+                "EVALUATION_" + (due ? "DUE" : "OVERDUE") + (faculty.lastNotifiedAt() != null ? "_FOLLOW_UP" : "");
+        var cycle = cycles.findById(cycleId).orElseThrow(() -> new NotFoundException("Evaluation cycle not found."));
+        var context = new HashMap<String, String>();
+        context.put("professorName", faculty.name());
+        context.put("lastName", faculty.lastName());
+        context.put("cycleLabel", queue.cycleLabel());
+        context.put(
+                "rankDescription",
+                (faculty.rank().equals("FULL") ? "a " : "an ") + faculty.rank().charAt(0)
+                        + faculty.rank().substring(1).toLowerCase(java.util.Locale.ROOT) + " Professor");
+        context.put("interval", faculty.intervalYears() == 1 ? "year" : faculty.intervalYears() + " years");
+        context.put(
+                "evaluationHistory",
+                faculty.lastEvaluationCycle().equals("Never evaluated")
+                        ? "Our records do not show a completed evaluation for you."
+                        : "Your last evaluation was completed in " + faculty.lastEvaluationCycle() + ".");
+        if (cycle.signupDeadline() != null)
+            context.put("signupDeadline", cycle.signupDeadline().toString());
+        if (cycle.observationDeadline() != null)
+            context.put("observationDeadline", cycle.observationDeadline().toString());
+        var preview = emailTemplates.render(type, context);
+        return new Email(faculty.email(), preview.subject(), preview.body());
     }
 
     private static String label(Semester semester) {

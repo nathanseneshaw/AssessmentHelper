@@ -67,6 +67,10 @@ class FacultyObserverRequestIntegrationTests {
             new CurrentUser(null, 31, 1, "Avery Hazelwood", "avery.hazelwood@example.edu", List.of(Role.PROFESSOR)),
             null,
             true);
+    private static final AccountPrincipal KEIRA = new AccountPrincipal(
+            new CurrentUser(4, 41, 1, "Keira Larkspur", "keira.larkspur@example.edu", List.of(Role.PROFESSOR)),
+            null,
+            true);
 
     @Autowired
     private MockMvc mvc;
@@ -352,7 +356,7 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     private ResultActions legacySend(int observer) throws Exception {
-        return mvc.perform(as(AVERY, post("/api/observer-requests"))
+        return mvc.perform(as(KAIA, post("/api/observer-requests"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"signupId\":" + signupId + ",\"observerId\":" + observer + "}"));
     }

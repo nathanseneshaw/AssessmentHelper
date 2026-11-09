@@ -29,18 +29,21 @@ public class ObserverRequestController {
     }
 
     @GetMapping
+    @PreAuthorize("hasRole('AC')")
     public List<ObserverRequest> list(
             @RequestParam(required = false) Integer signupId, @RequestParam(required = false) Integer observerId) {
         return service.find(signupId, observerId);
     }
 
     @GetMapping("/{requestId}")
+    @PreAuthorize("hasRole('AC') or @professorAccess.isRequestedObserver(principal, #requestId)")
     public ObserverRequest get(@PathVariable Integer requestId) {
         return service.findById(requestId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('AC')")
     public ObserverRequest create(@RequestBody CreateObserverRequest body) {
         return service.create(body.signupId(), body.observerId(), body.expirationDate());
     }

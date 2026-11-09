@@ -25,7 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(ProfessorController.class)
 @Import(SecurityConfig.class)
-@WithMockUser
+@WithMockUser(roles = "AC")
 class ProfessorControllerTests {
 
     @Autowired
@@ -60,6 +60,14 @@ class ProfessorControllerTests {
                 .andExpect(jsonPath("$[1].firstName").value("Blake"))
                 .andExpect(jsonPath("$[1].email").value("blake.stub@test.edu"))
                 .andExpect(jsonPath("$[1].activeStatus").value(false));
+    }
+
+    @Test
+    @WithMockUser(roles = "PROFESSOR")
+    void professorsCannotListADepartmentsProfessors() throws Exception {
+        mockMvc.perform(get("/api/professors").param("school", "CS")).andExpect(status().isForbidden());
+
+        verifyNoInteractions(service);
     }
 
     @Test

@@ -25,6 +25,12 @@ public class DueEvaluationController {
         return service.findDue();
     }
 
+    @GetMapping("/{cycleId}/professors/{professorId}/email-preview")
+    public EvaluationEligibilityService.Email preview(
+            @PathVariable Integer cycleId, @PathVariable Integer professorId) {
+        return service.previewNotification(cycleId, professorId, true);
+    }
+
     @PostMapping("/{cycleId}/professors/{professorId}/notifications")
     public EvaluationNotification notifyProfessor(
             @PathVariable Integer cycleId,

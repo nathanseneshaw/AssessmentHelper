@@ -2233,3 +2233,38 @@ JOIN demo_history h ON h.email = p.email
 JOIN professor op ON op.email = h.observer_email
 JOIN observer ob ON ob.professor_id = op.professor_id AND ob.cycle_id = o.cycle_id;
 DROP TABLE demo_history;
+
+-- Shared email templates; delivery is simulated.
+INSERT INTO message_template (template_type,name,subject,body) VALUES
+('EVALUATION_DUE','Evaluation due','Faculty Evaluation Due - {{cycleLabel}}','Dear Professor {{lastName}},
+
+You are due for a faculty evaluation during the {{cycleLabel}} evaluation cycle. Please sign in to the Assessment Helper and complete your evaluation signup by the stated deadline.
+
+If you have already completed the required signup, no further action is needed at this time.
+
+Thank you,
+Assessment Committee'),
+('EVALUATION_DUE_FOLLOW_UP','Evaluation due follow-up','Follow Up: Faculty Evaluation Due - {{cycleLabel}}','Dear Professor {{lastName}},
+
+This is a follow-up reminder. You are due for a faculty evaluation during the {{cycleLabel}} evaluation cycle. Please sign in to the Assessment Helper and complete your evaluation signup by the stated deadline.
+
+If you have already completed the required signup, no further action is needed at this time.
+
+Thank you,
+Assessment Committee'),
+('EVALUATION_OVERDUE','Evaluation overdue','Faculty Evaluation Overdue - {{cycleLabel}} Evaluation Required','Dear Professor {{lastName}},
+
+You are overdue for a faculty evaluation. {{evaluationHistory}} As {{rankDescription}}, you are required to participate in an evaluation once every {{interval}}. Please complete the {{cycleLabel}} evaluation cycle for your outstanding evaluation. Please sign in to the Assessment Helper and complete your evaluation sign-up by the stated deadline.
+
+If you have already completed the required sign-up, no further action is needed at this time.
+
+Thank you,
+Assessment Committee'),
+('EVALUATION_OVERDUE_FOLLOW_UP','Evaluation overdue follow-up','Follow Up: Faculty Evaluation Overdue - {{cycleLabel}} Evaluation Required','Dear Professor {{lastName}},
+
+This is a follow-up reminder about your overdue faculty evaluation. {{evaluationHistory}} As {{rankDescription}}, you are required to participate in an evaluation once every {{interval}}. Please complete the {{cycleLabel}} evaluation cycle for your outstanding evaluation. Please sign in to the Assessment Helper and complete your evaluation sign-up by the stated deadline.
+
+If you have already completed the required sign-up, no further action is needed at this time.
+
+Thank you,
+Assessment Committee');

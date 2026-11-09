@@ -105,7 +105,7 @@ function FieldError({ id, children }: { id: string; children: string }) {
   );
 }
 
-function CommentsBox({
+export function CommentsBox({
   id,
   value,
   rows,
