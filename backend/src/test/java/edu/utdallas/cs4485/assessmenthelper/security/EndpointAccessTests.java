@@ -256,6 +256,23 @@ class EndpointAccessTests {
                 .andExpect(jsonPath("$.status").value("CONFIRMED"));
     }
 
+    @Test
+    void confirmingWithoutAnAvailableClassDateLeavesTheInvitationPending() throws Exception {
+        int requestId = averyAsksKeira();
+        String path = "/api/observer-requests/" + requestId + "/confirm";
+        AccountPrincipal keira = accounts.loadUserByUsername(KEIRA);
+
+        mvc.perform(withCsrf(post(path)).with(user(keira))).andExpect(status().isBadRequest());
+        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
+
+        mvc.perform(withCsrf(post(path))
+                        .with(user(keira))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"observationDate\":\"2026-10-01\"}"))
+                .andExpect(status().isBadRequest());
+        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
+    }
+
     private int averyAsksKeira() {
         int avery = professorId(AVERY);
         var signup = requests.options(avery).getFirst();

@@ -331,6 +331,8 @@ class WorkflowEndToEndTests {
         // A declined request cannot be answered a second time.
         respond(ARLO, 26, requestId, true).andExpect(status().isConflict());
 
+        assign(41).andExpect(status().isConflict());
+
         // Let the other recommendations expire before the committee assigns Keira.
         var remainingMatches = db.queryForList(
                 "SELECT match_id FROM observer_match WHERE signup_id=? AND observer_id<>? ORDER BY match_id",
