@@ -14,6 +14,7 @@ import {
   useApiResource,
 } from "../../api/observations";
 import { useAuth } from "../../auth/AuthContext";
+import { DeferralDetails } from "../../components/DeferralDetails";
 import { Modal } from "../../components/Modal";
 
 const cell = "border-line border-t px-3 py-3 align-top";
@@ -118,6 +119,7 @@ function CycleDetail({ record }: { record: EvaluationRecord }) {
       <h3 id="cycle-detail-title" className="font-semibold text-lg">
         {termOf(record)} observations
       </h3>
+      {record.deferral && <DeferralDetails details={record.deferral} />}
       {error ? (
         <p role="alert" className="mt-2 text-brand-red text-sm">
           {error}{" "}

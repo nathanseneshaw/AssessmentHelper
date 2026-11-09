@@ -61,7 +61,26 @@ function queueOf(rows: typeof faculty) {
 
 beforeEach(async () => {
   eligibility = () => queueOf(faculty);
-  fakeBackend({ "/api/evaluation-eligibility": () => eligibility() });
+  fakeBackend({
+    "/api/evaluation-eligibility": () => eligibility(),
+    "/api/professors/1/evaluations": () =>
+      Response.json([
+        {
+          cycleId: 9,
+          term: "Spring",
+          academicYear: 2026,
+          status: "DEFERRED",
+          observationCount: 0,
+          lastObservationCompletedAt: null,
+          deferral: {
+            reason: "No matching observers",
+            deferredBy: "Kaia Clearbrook",
+            deferredAt: "2026-04-01T09:30:00",
+            targetSemester: "Fall 2026",
+          },
+        },
+      ]),
+  });
   signInAs("ac");
   window.history.pushState({}, "", "/ac/evaluations");
   render(<App />);
@@ -209,4 +228,21 @@ describe("evaluation queue", () => {
     expect(facultyShown()).toHaveLength(4);
     expect(screen.queryByText("No faculty match this filter.")).toBeNull();
   });
+});
+
+test("AC can open past deferral details from the faculty evaluation queue", async () => {
+  fireEvent.click(
+    screen.getByRole("button", { name: "View Evaluation for Professor 1" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Evaluation History",
+  });
+  await within(dialog).findByText("Spring 2026");
+  expect(within(dialog).getByText("No matching observers")).toBeTruthy();
+  expect(within(dialog).getByText("Deferred to Fall 2026")).toBeTruthy();
+  expect(within(dialog).getByText("Kaia Clearbrook")).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(
+    screen.queryByRole("dialog", { name: "Evaluation History" }),
+  ).toBeNull();
 });

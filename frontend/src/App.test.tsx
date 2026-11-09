@@ -160,14 +160,14 @@ describe("assessment committee", () => {
     }
   });
 
-  test.each([["Resolve Matches", "/ac/matching"]])(
-    "the overview's %s link opens %s",
-    async (name, path) => {
-      renderAt("/ac", "ac");
-      fireEvent.click(await screen.findByRole("link", { name }));
-      expect(currentPath()).toBe(path);
-    },
-  );
+  test("the overview's Resolve Matches button opens the unmatched faculty overlay", async () => {
+    renderAt("/ac", "ac");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Resolve Matches" }),
+    );
+    await screen.findByRole("dialog", { name: "Unmatched Faculty" });
+    expect(currentPath()).toBe("/ac");
+  });
 
   test("faculty pages are off limits", async () => {
     renderAt("/faculty", "ac");

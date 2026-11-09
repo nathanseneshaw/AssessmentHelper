@@ -74,6 +74,19 @@ class ObserverEligibilityControllerTests {
     private JdbcTemplate db;
 
     @Test
+    void regenerationIsCommitteeOnlyAndRequiresAnExhaustedList() throws Exception {
+        int signupId = db.queryForObject(
+                "SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=31 AND oe.cycle_id=1",
+                Integer.class);
+        mvc.perform(as(DARIO, post("/api/observer-eligibility/signups/" + signupId + "/regenerate")))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/regenerate")))
+                .andExpect(status().isConflict());
+        mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/-1/regenerate")))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void committeeEndpointsRejectFaculty() throws Exception {
         mvc.perform(as(DARIO, get("/api/observer-eligibility/ac"))).andExpect(status().isForbidden());
         mvc.perform(as(DARIO, post("/api/observer-eligibility/generate"))).andExpect(status().isForbidden());
@@ -88,7 +101,7 @@ class ObserverEligibilityControllerTests {
         mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cycle.label").value("Fall 2026"))
-                .andExpect(jsonPath("$.signups.length()").value(6));
+                .andExpect(jsonPath("$.signups.length()").value(8));
         mvc.perform(as(KAIA, post("/api/observer-eligibility/generate"))).andExpect(status().isOk());
     }
 
@@ -180,7 +193,7 @@ class ObserverEligibilityControllerTests {
         int requestId = JsonPath.read(arloState.getResponse().getContentAsString(), "$.incoming[0].requestId");
         mvc.perform(as(ARLO, post("/api/observer-eligibility/faculty/26/requests/" + requestId + "/respond"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"accept\":true}"))
+                        .content("{\"accept\":true,\"observationDate\":\"2026-11-03\"}"))
                 .andExpect(status().isNoContent());
 
         mvc.perform(as(DARIO, get("/api/observer-eligibility/faculty/34")))
@@ -204,7 +217,12 @@ class ObserverEligibilityControllerTests {
                 .andExpect(jsonPath("$.signups[?(@.name == 'Leander Coldwell')].observerName")
                         .value(contains("Keira Larkspur")));
 
-        // Kaia assigns Arlo before sending Dario's list; no request or response is needed.
+        // Manual assignment is available only once every generated observer has declined.
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        db.update("UPDATE observer_list_state SET released_at='2026-10-21T10:00:00' WHERE signup_id=?", signupId);
+        db.update(
+                "INSERT INTO observer_request(signup_id,observer_id,request_date,expiration_date,response_date,status) SELECT signup_id,observer_id,'2026-10-21T09:00:00','2026-10-23T09:00:00','2026-10-21T10:00:00','DECLINED' FROM observer_match WHERE signup_id=?",
+                signupId);
         mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/assign"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"observerId\":" + observerId("arlo.glimmerton@example.edu") + "}"))
@@ -212,7 +230,11 @@ class ObserverEligibilityControllerTests {
 
         mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
                 .andExpect(jsonPath("$.signups[?(@.signupId == " + signupId + ")].observerName")
-                        .value(contains("Arlo Glimmerton")));
+                        .value(contains("Arlo Glimmerton")))
+                .andExpect(jsonPath("$.matchingCases[?(@.signupId == " + signupId + ")].invitations[*].status")
+                        .value(org.hamcrest.Matchers.hasItem("ASSIGNED")))
+                .andExpect(jsonPath("$.matchingCases[?(@.signupId == " + signupId + ")].status")
+                        .value(contains("MATCHED")));
         mvc.perform(as(DARIO, get("/api/observer-eligibility/faculty/34")))
                 .andExpect(jsonPath("$.outgoing[0].observerName").value("Arlo Glimmerton"))
                 .andExpect(jsonPath("$.outgoing[0].status").value("CONFIRMED"))
@@ -237,7 +259,7 @@ class ObserverEligibilityControllerTests {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("An observer is already assigned to this signup."));
         mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/release")))
-                .andExpect(status().isConflict());
+                .andExpect(status().isNoContent());
     }
 
     @Test
@@ -326,5 +348,33 @@ class ObserverEligibilityControllerTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void onlyCommitteeCanDeferAndTheActorComesFromTheSession() throws Exception {
+        int signupId = signUpDario();
+        String path = "/api/observer-eligibility/signups/" + signupId + "/defer";
+        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        mvc.perform(as(DARIO, post(path))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"No matching observers\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(as(KAIA, post(path))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"No matching observers\"}"))
+                .andExpect(status().isConflict());
+        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        mvc.perform(as(KAIA, post(path)).contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\" \"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(as(KAIA, post(path))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"No matching observers\",\"deferredBy\":34}"))
+                .andExpect(status().isNoContent());
+        assertThat(db.queryForObject(
+                        "SELECT deferred_by FROM evaluation_deferral WHERE signup_id=?", Integer.class, signupId))
+                .isEqualTo(12);
+        mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
+                .andExpect(jsonPath("$.matchingCases[?(@.signupId == " + signupId + ")].status")
+                        .value(contains("DEFERRED")));
     }
 }

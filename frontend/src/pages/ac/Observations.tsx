@@ -7,6 +7,7 @@ import {
   type TrackedObservation,
 } from "../../api/acDashboard";
 import { ActionButton } from "../../components/ActionButton";
+import { DeferralDetails } from "../../components/DeferralDetails";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
 import { clockTime, shortDate } from "../../format";
@@ -14,6 +15,7 @@ import { clockTime, shortDate } from "../../format";
 type Reading = Pick<Kpi, "value" | "note">;
 
 const STATUS: Record<ObservationStatus, { label: string; color: string }> = {
+  DEFERRED: { label: "Deferred", color: "text-brand-green" },
   AWAITING_OBSERVER: { label: "Awaiting Observer", color: "text-muted" },
   SCHEDULED: { label: "Scheduled", color: "text-brand-orange" },
   COMPLETED: { label: "Completed", color: "text-brand-green" },
@@ -125,7 +127,9 @@ function ObservationDetails({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 id={titleId} className="font-bold text-xl">
-            Observation Details
+            {observation.status === "DEFERRED"
+              ? "Deferral Details"
+              : "Observation Details"}
           </h2>
           <p className="mt-1 text-sm text-muted">
             {observation.observee} • {observation.course}
@@ -139,14 +143,19 @@ function ObservationDetails({
           Close
         </button>
       </div>
-      <dl className="mt-6 grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
-        {details.map(([term, detail]) => (
-          <Fragment key={term}>
-            <dt className="text-muted">{term}</dt>
-            <dd>{detail}</dd>
-          </Fragment>
-        ))}
-      </dl>
+      {observation.deferral && (
+        <DeferralDetails details={observation.deferral} />
+      )}
+      {observation.status !== "DEFERRED" && (
+        <dl className="mt-6 grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
+          {details.map(([term, detail]) => (
+            <Fragment key={term}>
+              <dt className="text-muted">{term}</dt>
+              <dd>{detail}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
     </dialog>
   );
 }
@@ -211,7 +220,10 @@ export function AcObservations() {
             tone="orange"
             className="min-w-52.5"
             disabled={
-              reminding || !observations.some((o) => o.status !== "COMPLETED")
+              reminding ||
+              !observations.some(
+                (o) => o.status !== "COMPLETED" && o.status !== "DEFERRED",
+              )
             }
             onClick={() => void remind()}
           >
@@ -301,10 +313,11 @@ export function AcObservations() {
                   {STATUS[row.status].label}
                 </td>
                 <td>
-                  {row.status === "COMPLETED" && (
+                  {(row.status === "COMPLETED" ||
+                    row.status === "DEFERRED") && (
                     <button
                       type="button"
-                      aria-label={`View ${row.observee}'s observation`}
+                      aria-label={`View ${row.observee}'s ${row.status === "DEFERRED" ? "deferral" : "observation"}`}
                       onClick={() => setViewing(row)}
                       className="h-9 w-17.5 rounded-lg bg-brand-green text-white hover:opacity-90"
                     >

@@ -1,11 +1,12 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { getEvaluationQueue } from "../../api/evaluationEligibility";
 import { ActionButton } from "../../components/ActionButton";
+import { FacultyEvaluationHistory } from "../../components/FacultyEvaluationHistory";
 import { PageHeader } from "../../components/PageHeader";
 
 type Rank = "Assistant" | "Associate" | "Full";
 // Shown in capitals; stored in sentence case so screen readers say the word.
-type Status = "Due" | "Upcoming" | "Overdue";
+type Status = "Due" | "Upcoming" | "Overdue" | "Due next semester";
 
 interface QueueRow {
   professorId: number;
@@ -36,6 +37,7 @@ const filters: Filter[] = [
 const STATUS_COLORS: Record<Status, string> = {
   Due: "text-brand-orange",
   Upcoming: "text-brand-green",
+  "Due next semester": "text-brand-green",
   Overdue: "text-brand-red",
 };
 
@@ -111,6 +113,10 @@ export function AcFacultyEvaluations() {
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   const [viewAll, setViewAll] = useState(false);
+  const [viewing, setViewing] = useState<{
+    professorId: number;
+    name: string;
+  } | null>(null);
   const overlayHeadingId = useId();
   // biome-ignore lint/correctness/useExhaustiveDependencies: reload explicitly triggers retry.
   useEffect(() => {
@@ -197,6 +203,9 @@ export function AcFacultyEvaluations() {
             <td className="pr-5.5">
               <ActionButton
                 tone="green"
+                onClick={() =>
+                  setViewing({ professorId: row.professorId, name: row.name })
+                }
                 ariaLabel={`${row.action} for ${row.name}`}
                 className="min-w-56.25"
               >
@@ -222,6 +231,13 @@ export function AcFacultyEvaluations() {
 
   return (
     <div>
+      {viewing && (
+        <FacultyEvaluationHistory
+          key={viewing.professorId}
+          {...viewing}
+          onClose={() => setViewing(null)}
+        />
+      )}
       <PageHeader
         title="Faculty Evaluations"
         subtitle="Review who is due or overdue and initiate the evaluation cycle."

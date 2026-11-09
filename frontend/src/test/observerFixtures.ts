@@ -44,6 +44,28 @@ export const signup: Signup = {
 };
 export const ac: AcState = {
   cycle,
+  matchingCases: [
+    {
+      signupId: 1,
+      status: "AWAITING_INVITATION",
+      reason: null,
+      eligibleObserverCount: 6,
+      remainingObserverCount: 6,
+      unusedEligibleObserverCount: 1,
+      previousRecommendations: [],
+      invitations: [],
+    },
+    {
+      signupId: 2,
+      status: "UNMATCHED",
+      reason: "NO_ELIGIBLE_OBSERVERS",
+      eligibleObserverCount: 0,
+      remainingObserverCount: 0,
+      unusedEligibleObserverCount: 0,
+      previousRecommendations: [],
+      invitations: [],
+    },
+  ],
   signups: [
     signup,
     {

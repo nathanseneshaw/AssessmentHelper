@@ -46,6 +46,7 @@ public class FacultyDashboardService {
      * SUBMITTED: the observer submitted the form. COMPLETED: the observation record is complete.
      */
     public enum EvaluationStatus {
+        DEFERRED,
         NOT_DUE,
         NOT_SIGNED_UP,
         AWAITING_OBSERVER,
@@ -192,9 +193,11 @@ public class FacultyDashboardService {
             String signedUp = signupCourse(professorId, cycle.cycleId());
             boolean needed = due.map(f -> !"Upcoming".equals(f.status())).orElse(false);
             evaluation = new Evaluation(
-                    signedUp != null
-                            ? EvaluationStatus.AWAITING_OBSERVER
-                            : needed ? EvaluationStatus.NOT_SIGNED_UP : EvaluationStatus.NOT_DUE,
+                    due.map(f -> "Due next semester".equals(f.status())).orElse(false)
+                            ? EvaluationStatus.DEFERRED
+                            : signedUp != null
+                                    ? EvaluationStatus.AWAITING_OBSERVER
+                                    : needed ? EvaluationStatus.NOT_SIGNED_UP : EvaluationStatus.NOT_DUE,
                     cycle.signupDeadline(),
                     signedUp,
                     null,

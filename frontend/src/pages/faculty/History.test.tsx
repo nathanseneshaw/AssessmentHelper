@@ -162,6 +162,30 @@ test("a cycle the professor was not part of is reported", async () => {
   expect(within(dialog).queryByRole("region")).toBeNull();
 });
 
+test("past deferred cycles show their saved decision details after semester rollover", async () => {
+  const past = records[1];
+  if (!past) throw Error("Missing past record");
+  past.status = "DEFERRED";
+  past.observationCount = 0;
+  past.lastObservationCompletedAt = null;
+  past.deferral = {
+    reason: "No eligible observers for this course",
+    deferredBy: "Kaia Clearbrook",
+    deferredAt: "2026-03-01T09:15:12.123",
+    targetSemester: "Fall 2026",
+  };
+  const dialog = await openHistory("?cycle=1");
+  const details = await within(dialog).findByRole("region", {
+    name: "Deferral details",
+  });
+  expect(
+    within(details).getByText("No eligible observers for this course"),
+  ).toBeTruthy();
+  expect(within(details).getByText("Kaia Clearbrook")).toBeTruthy();
+  expect(within(details).getByText("2026-03-01 09:15:12")).toBeTruthy();
+  expect(within(details).getByText("Deferred to Fall 2026")).toBeTruthy();
+});
+
 test("a cycle's details say why they could not load, and Retry loads them", async () => {
   observationsDown = true;
   const dialog = await openHistory("?cycle=2");

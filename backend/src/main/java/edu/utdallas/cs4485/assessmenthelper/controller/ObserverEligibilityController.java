@@ -19,7 +19,7 @@ public class ObserverEligibilityController {
         this.service = service;
     }
 
-    public record ResponseBody(Boolean accept) {}
+    public record ResponseBody(Boolean accept, java.time.LocalDate observationDate) {}
 
     public record AssignBody(Integer observerId) {}
 
@@ -55,6 +55,12 @@ public class ObserverEligibilityController {
         service.release(id);
     }
 
+    @PostMapping("/signups/{id}/regenerate")
+    @PreAuthorize("hasRole('AC')")
+    public ObserverEligibilityService.AcState regenerate(@PathVariable int id) {
+        return service.regenerate(id);
+    }
+
     @GetMapping("/signups/{id}/eligible")
     @PreAuthorize("hasRole('AC')")
     public List<ObserverEligibilityService.Candidate> eligible(@PathVariable int id) {
@@ -69,11 +75,41 @@ public class ObserverEligibilityController {
         service.assign(id, body.observerId());
     }
 
+    public record DeferBody(String reason) {}
+
+    @PostMapping("/signups/{id}/defer")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('AC')")
+    public void defer(
+            @PathVariable int id,
+            @RequestBody DeferBody body,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal
+                    edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal principal) {
+        if (principal.user().professorId() == null)
+            throw new IllegalArgumentException("An AC faculty profile is required.");
+        service.defer(id, principal.user().professorId(), body.reason());
+    }
+
     @PostMapping("/faculty/{id}/requests/{requestId}/respond")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("@professorAccess.isSelf(principal, #id)")
     public void respond(@PathVariable int id, @PathVariable int requestId, @RequestBody ResponseBody body) {
         if (body.accept() == null) throw new IllegalArgumentException("Choose accept or decline.");
-        service.respond(id, requestId, body.accept());
+        service.respond(id, requestId, body.accept(), body.observationDate());
+    }
+
+    @GetMapping("/faculty/{id}/requests/{requestId}/dates")
+    @PreAuthorize("@professorAccess.isSelf(principal, #id)")
+    public List<java.time.LocalDate> dates(@PathVariable int id, @PathVariable int requestId) {
+        return service.availableDates(id, requestId);
+    }
+
+    public record ScheduleBody(java.time.LocalDate observationDate) {}
+
+    @PostMapping("/faculty/{id}/requests/{requestId}/schedule")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("@professorAccess.isSelf(principal, #id)")
+    public void schedule(@PathVariable int id, @PathVariable int requestId, @RequestBody ScheduleBody body) {
+        service.scheduleObservation(id, requestId, body.observationDate());
     }
 }

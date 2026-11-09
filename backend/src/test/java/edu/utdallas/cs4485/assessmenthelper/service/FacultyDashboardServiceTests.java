@@ -38,6 +38,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Import({
     FacultyDashboardService.class,
     EvaluationEligibilityService.class,
+    EvaluationDeadlineService.class,
+    EvaluationPolicyService.class,
     EmailTemplateService.class,
     EvaluationRecordService.class,
     ObserverEligibilityService.class,
@@ -94,6 +96,15 @@ class FacultyDashboardServiceTests {
 
     @Autowired
     JdbcTemplate db;
+
+    @Autowired
+    ObserverEligibilityService matching;
+
+    @Autowired
+    EvaluationEligibilityService eligibility;
+
+    @Autowired
+    EvaluationDeadlineService deadlines;
 
     @BeforeEach
     void resetClock() {
@@ -314,5 +325,45 @@ class FacultyDashboardServiceTests {
                 "SELECT observation_id FROM observation WHERE signup_id = ?",
                 Integer.class,
                 signupOf(observeeProfessorId));
+    }
+
+    @Test
+    void deferredFacultyAreDueNextSemesterWithoutPretendingTheyCompletedAnEvaluation() {
+        int signup = signups.save(DARIO, FALL_2026, 298, null).signupId();
+        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        clock.set("2026-11-16");
+        matching.defer(signup, KAIA, "No matching observers");
+        var current = service.dashboard(DARIO);
+        assertThat(current.evaluation().status()).isEqualTo(EvaluationStatus.DEFERRED);
+        assertThat(current.schedule().dueStatus()).isEqualTo("Due next semester");
+        assertThat(current.schedule().nextDueSemester()).isEqualTo("Spring 2027");
+        assertThat(eligibility.findDue().faculty()).noneMatch(f -> f.professorId() == DARIO);
+        assertThat(eligibility.findOverdue().faculty()).noneMatch(f -> f.professorId() == DARIO);
+        assertThat(deadlines.findByProfessor(DARIO).nextDueDate()).isEqualTo(LocalDate.of(2027, 1, 19));
+        assertThat(deadlines.findByProfessor(DARIO).overdue()).isFalse();
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, signup))
+                .isZero();
+        assertThat(records.findByProfessor(DARIO).getFirst().status()).isEqualTo("DEFERRED");
+        db.update(
+                "INSERT INTO evaluation_cycle(semester_id,signup_deadline,observation_deadline,feedback_deadline,status) VALUES(14,'2027-02-01','2027-04-15','2027-05-01','OPEN')");
+        clock.set("2027-01-20");
+        assertThat(eligibility.findDue().faculty()).anyMatch(f -> f.professorId() == DARIO);
+        assertThat(eligibility.findOverdue().faculty()).noneMatch(f -> f.professorId() == DARIO);
+        assertThat(deadlines.findByProfessor(DARIO).overdue()).isFalse();
+        assertThat(service.dashboard(DARIO).evaluation().status()).isEqualTo(EvaluationStatus.NOT_SIGNED_UP);
+    }
+
+    @Test
+    void anElapsedWindowDoesNotTurnAnEligibleCaseIntoAZeroEligibleDeferral() {
+        int signup = signups.save(DARIO, FALL_2026, 298, null).signupId();
+        clock.set("2026-11-16");
+        var state = matching.acState().matchingCases().stream()
+                .filter(row -> row.signupId() == signup)
+                .findFirst()
+                .orElseThrow();
+        assertThat(state.eligibleObserverCount()).isZero();
+        assertThat(state.canDefer()).isFalse();
+        assertThat(state.canAssign()).isFalse();
+        assertThatThrownBy(() -> matching.defer(signup, KAIA, "Window ended")).isInstanceOf(ConflictException.class);
     }
 }

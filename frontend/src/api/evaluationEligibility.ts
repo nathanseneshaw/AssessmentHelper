@@ -28,7 +28,11 @@ export interface NotificationEmail {
 
 export type EvaluationKind = "due" | "overdue";
 
-export type EligibilityStatus = "Due" | "Overdue" | "Upcoming";
+export type EligibilityStatus =
+  | "Due"
+  | "Overdue"
+  | "Upcoming"
+  | "Due next semester";
 export interface EvaluationFaculty extends OverdueFaculty {
   status: EligibilityStatus;
 }

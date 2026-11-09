@@ -205,14 +205,14 @@ class WorkflowEndToEndTests {
                         "SELECT o.status, ob.professor_id FROM observation o"
                                 + " JOIN observer ob ON ob.observer_id = o.observer_id WHERE o.signup_id = ?",
                         signupId))
-                .containsEntry("STATUS", "ACCEPTED")
+                .containsEntry("STATUS", "SCHEDULED")
                 .containsEntry("PROFESSOR_ID", 26);
         mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
                 .andExpect(jsonPath(DARIOS_ROW + ".observer").value("Arlo Glimmerton"))
                 .andExpect(jsonPath(DARIOS_ROW + ".status").value("SCHEDULED"));
 
         // ---- Observation (on the day of the class) ----
-        clock.set("2026-11-04T10:15:42");
+        clock.set("2026-11-03T13:00:42");
         int observation = observationOf(DARIO, 34);
         mvc.perform(as(ARLO, get("/api/professors/26/observations")))
                 .andExpect(jsonPath("$[?(@.observationId == " + observation + ")].role")
@@ -222,8 +222,8 @@ class WorkflowEndToEndTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.viewerRole").value("OBSERVER"))
-                .andExpect(jsonPath("$.observationDate").value("2026-11-04"))
-                .andExpect(jsonPath("$.startTime").value("10:15:00"));
+                .andExpect(jsonPath("$.observationDate").value("2026-11-03"))
+                .andExpect(jsonPath("$.startTime").value("13:00:00"));
         // Nobody else reads the form while it is being filled in.
         mvc.perform(as(DARIO, get("/api/observations/" + observation))).andExpect(status().isForbidden());
         mvc.perform(as(KAIA, get("/api/observations/" + observation))).andExpect(status().isForbidden());
@@ -236,7 +236,7 @@ class WorkflowEndToEndTests {
         submit(ARLO, observation, form(observation))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
-                .andExpect(jsonPath("$.submittedAt").value("2026-11-04T10:15:42"));
+                .andExpect(jsonPath("$.submittedAt").value("2026-11-03T13:00:42"));
 
         // The observer's answers are frozen. The observee reads them and signs off, completing and locking the record.
         saveDraft(ARLO, observation, form(observation).subList(0, 1)).andExpect(status().isConflict());
@@ -246,7 +246,7 @@ class WorkflowEndToEndTests {
                 .andExpect(jsonPath("$.locked").value(false));
         mvc.perform(as(KAIA, get("/api/observations/" + observation))).andExpect(status().isForbidden());
         act(ARLO, "/api/observations/" + observation + "/observee-sign").andExpect(status().isForbidden());
-        clock.set("2026-11-04T16:40:00");
+        clock.set("2026-11-03T16:40:00");
         mvc.perform(as(DARIO, post("/api/observations/" + observation + "/observee-sign"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"comments\":\"Fair and helpful, thank you.\"}"))
@@ -263,10 +263,10 @@ class WorkflowEndToEndTests {
         // ---- Reporting ----
         mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
                 .andExpect(jsonPath(DARIOS_ROW + ".status").value("COMPLETED"))
-                .andExpect(jsonPath(DARIOS_ROW + ".date").value("2026-11-04"))
+                .andExpect(jsonPath(DARIOS_ROW + ".date").value("2026-11-03"))
                 .andExpect(jsonPath(DARIOS_ROW + ".observeeSigned").value(true))
                 .andExpect(jsonPath(DARIOS_ROW + ".observerSigned").value(true))
-                .andExpect(jsonPath(DARIOS_ROW + ".completedAt").value("2026-11-04T16:40:00"));
+                .andExpect(jsonPath(DARIOS_ROW + ".completedAt").value("2026-11-03T16:40:00"));
         mvc.perform(as(KAIA, get("/api/ac-dashboard/metrics")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cycleLabel").value("Fall 2026"));
@@ -276,7 +276,7 @@ class WorkflowEndToEndTests {
                 .andExpect(jsonPath("$[0].academicYear").value(2026))
                 .andExpect(jsonPath("$[0].status").value("COMPLETED"))
                 .andExpect(jsonPath("$[0].observationCount").value(1))
-                .andExpect(jsonPath("$[0].lastObservationCompletedAt").value("2026-11-04T16:40:00"));
+                .andExpect(jsonPath("$[0].lastObservationCompletedAt").value("2026-11-03T16:40:00"));
         mvc.perform(as(DARIO, get("/api/professors/34/dashboard"))).andExpect(status().isOk());
         mvc.perform(as(ARLO, get("/api/professors/34/evaluations"))).andExpect(status().isForbidden());
         mvc.perform(as(KAIA, get("/api/observations/" + observation + "/audit-log")))
@@ -331,7 +331,26 @@ class WorkflowEndToEndTests {
         // A declined request cannot be answered a second time.
         respond(ARLO, 26, requestId, true).andExpect(status().isConflict());
 
-        // The committee assigns Keira instead, and she carries the observation through to submission.
+        assign(41).andExpect(status().isConflict());
+
+        // Let the other recommendations expire before the committee assigns Keira.
+        var remainingMatches = db.queryForList(
+                "SELECT match_id FROM observer_match WHERE signup_id=? AND observer_id<>? ORDER BY match_id",
+                Integer.class,
+                signupId,
+                observerId(26));
+        for (int match : remainingMatches) {
+            LocalDateTime expires = LocalDateTime.now(clock).plusMinutes(1);
+            act(
+                            DARIO,
+                            "/api/professors/34/observer-requests",
+                            "{\"signupId\":" + signupId + ",\"matchId\":" + match + ",\"expirationDate\":\"" + expires
+                                    + "\"}")
+                    .andExpect(status().isCreated());
+            clock.set(expires.plusMinutes(1).toString());
+        }
+
+        // Keira carries the assigned observation through to submission.
         assign(41).andExpect(status().isNoContent());
         mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
                 .andExpect(jsonPath(DARIOS_ROW + ".observer").value("Keira Larkspur"))
@@ -361,9 +380,14 @@ class WorkflowEndToEndTests {
         signupId = signupOf(34);
         clock.set("2026-11-02T09:00:00");
         act(KAIA, "/api/observer-eligibility/signups/" + signupId + "/release").andExpect(status().isNoContent());
-        assign(26).andExpect(status().isNoContent());
+        String invitation = sendRequest(DARIO, 34, signupId, matchOf(signupId, 26))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        respond(ARLO, 26, JsonPath.read(invitation, "$.requestId"), true).andExpect(status().isNoContent());
         int observation = observationOf(DARIO, 34);
-        clock.set("2026-11-03T09:00:00");
+        clock.set("2026-11-03T13:00:00");
         act(ARLO, "/api/observations/" + observation + "/start").andExpect(status().isOk());
 
         // The form was opened on 11-03 and never submitted. It is on schedule that day and missing from the next. The
@@ -414,7 +438,7 @@ class WorkflowEndToEndTests {
         return act(
                 observer,
                 "/api/observer-eligibility/faculty/" + professorId + "/requests/" + requestId + "/respond",
-                "{\"accept\":" + accept + "}");
+                accept ? "{\"accept\":true,\"observationDate\":\"2026-11-03\"}" : "{\"accept\":false}");
     }
 
     // The committee assigns the professor as observer of Dario's signup.

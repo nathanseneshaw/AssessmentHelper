@@ -97,7 +97,12 @@ public class ObserverRequestService {
             throw new IllegalArgumentException("expirationDate must be in the future");
         }
         // The professor/signup locks serialize retries and requests to different candidates.
-        var active = find(signupId, null).stream()
+        var history = find(signupId, null);
+        if (history.stream()
+                .anyMatch(request -> request.observerId().equals(observerId) && DECLINED.equals(request.status()))) {
+            throw new ConflictException("This observer has declined this evaluation and cannot be invited again.");
+        }
+        var active = history.stream()
                 .filter(request -> PENDING.equals(request.status()) || CONFIRMED.equals(request.status()))
                 .toList();
         var existing = active.stream()
@@ -222,10 +227,15 @@ public class ObserverRequestService {
      */
     @Transactional
     public ObserverRequest confirm(Integer requestId) {
+        return confirm(requestId, null);
+    }
+
+    @Transactional
+    public ObserverRequest confirm(Integer requestId, java.time.LocalDate observationDate) {
         Integer signupId = load(requestId).signupId();
         if (eligibility.manages(signupId)) {
             // Accepting a generated-list request also records the observation and notifies the observee.
-            eligibility.confirmExistingRequest(requestId);
+            eligibility.confirmExistingRequest(requestId, observationDate);
             return load(requestId);
         }
         lockSignup(signupId);

@@ -185,7 +185,9 @@ class AcceptanceTests {
         releaseAfterDeadline(signup);
         var request = requests.create(signup, observer.observerId(), null);
 
-        service.respond(observer.professorId(), request.requestId(), true);
+        var date = service.availableDates(observer.professorId(), request.requestId())
+                .getFirst();
+        service.respond(observer.professorId(), request.requestId(), true, date);
 
         assertThat(requestStatus(request.requestId())).isEqualTo("CONFIRMED");
         assertThat(observationCount(signup)).isEqualTo(1);

@@ -89,6 +89,10 @@ function summary({
 }: Dashboard): SummaryCard[] {
   const rank = rankTitle(schedule.rank);
   const status = {
+    DEFERRED: {
+      value: "Due next semester",
+      note: `Deferred by the Assessment Committee${schedule.nextDueSemester ? ` to ${schedule.nextDueSemester}` : ""}`,
+    },
     NOT_DUE: {
       value: "Not Due",
       note: schedule.nextDueSemester
@@ -486,7 +490,11 @@ export function FacultyDashboard() {
           to="/faculty/requests"
         >
           Observer Requests (
-          {data?.incoming?.filter((r) => r.status === "PENDING").length ?? 0}{" "}
+          {data?.incoming?.filter(
+            (r) =>
+              r.status === "PENDING" ||
+              (r.status === "CONFIRMED" && !r.observationDate),
+          ).length ?? 0}{" "}
           pending)
         </Link>
       </div>

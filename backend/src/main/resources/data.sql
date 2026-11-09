@@ -1835,8 +1835,7 @@ UPDATE professor p SET
 WHERE p.email IN (SELECT email FROM demo_faculty);
 DROP TABLE demo_faculty;
 
--- Kaia is on the Assessment Committee. Passwords: Committee123! for Kaia and Faculty123! for Dario, Arlo, Keira
--- and Leander.
+-- Kaia is on the Assessment Committee. Passwords: Committee123! for Kaia and Faculty123! for all other professors.
 INSERT INTO committee_member (professor_id, start_date, end_date, active_status)
 SELECT professor_id, DATE '2026-01-01', NULL, TRUE FROM professor WHERE email = 'kaia.clearbrook@example.edu';
 
@@ -1857,6 +1856,15 @@ FROM professor WHERE email = 'keira.larkspur@example.edu';
 INSERT INTO user_account (professor_id, username, email, password_hash, is_active)
 SELECT professor_id, 'lcoldwell', email, '{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW', TRUE
 FROM professor WHERE email = 'leander.coldwell@example.edu';
+
+-- Give every remaining professor a demo login while preserving the original accounts and user ids.
+-- Usernames follow the same first-initial + last-name format as the accounts above.
+INSERT INTO user_account (professor_id, username, email, password_hash, is_active)
+SELECT p.professor_id, LOWER(SUBSTRING(p.first_name, 1, 1) || p.last_name), p.email,
+    '{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW', TRUE
+FROM professor p
+WHERE NOT EXISTS (SELECT 1 FROM user_account u WHERE u.professor_id = p.professor_id)
+ORDER BY p.professor_id;
 
 INSERT INTO observation_template (created_by, template_name, version, created_date, active_status)
 SELECT user_id, 'Standard Classroom Observation', 1, DATE '2024-08-01', TRUE
@@ -2066,9 +2074,79 @@ FROM demo_story d JOIN professor p ON p.email = 'avery.hazelwood@example.edu';
 DROP TABLE demo_story;
 DROP TABLE demo_cycle;
 
+-- A seventh signed-up professor for testing Keira's replacement recommendation workflow.
+-- TR 13:00 does not overlap Keira's CS 3345.HON (TR 10:00-11:15).
+INSERT INTO professor(department_id,professor_rank,first_name,last_name,email,hire_date,active_status)
+SELECT department_id,'FULL','Rowan','Cedarvale','rowan.cedarvale@example.edu',DATE '2026-02-01',TRUE
+FROM department WHERE department_code='CS';
+
+INSERT INTO course_section(course_id,semester_id,section_number,meeting_days,start_time,end_time,location)
+SELECT co.course_id,s.semester_id,'901','TR',TIME '13:00:00',TIME '14:15:00','Demo classroom'
+FROM course co CROSS JOIN semester s
+WHERE co.course_code='CS' AND co.course_number='3345' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO teaching_history(professor_id,section_id)
+SELECT p.professor_id,cs.section_id FROM professor p CROSS JOIN course_section cs
+JOIN course co ON co.course_id=cs.course_id JOIN semester s ON s.semester_id=cs.semester_id
+WHERE p.email='rowan.cedarvale@example.edu' AND co.course_code='CS' AND co.course_number='3345'
+    AND cs.section_number='901' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO observee(professor_id,cycle_id,status)
+SELECT p.professor_id,c.cycle_id,'ACTIVE' FROM professor p CROSS JOIN evaluation_cycle c
+JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='rowan.cedarvale@example.edu' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO observer(professor_id,cycle_id,active_status)
+SELECT professor_id,cycle_id,TRUE FROM observee
+WHERE professor_id=(SELECT professor_id FROM professor WHERE email='rowan.cedarvale@example.edu');
+
+INSERT INTO evaluation_signup(observee_id,section_id,signup_date,status)
+SELECT oe.observee_id,t.section_id,DATE '2026-10-12','PENDING'
+FROM observee oe JOIN professor p ON p.professor_id=oe.professor_id
+JOIN teaching_history t ON t.professor_id=p.professor_id
+WHERE p.email='rowan.cedarvale@example.edu';
+
+INSERT INTO observer_list_state(signup_id,window_start,window_end)
+SELECT es.signup_id,DATEADD('DAY',1,c.signup_deadline),c.observation_deadline
+FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
+JOIN evaluation_cycle c ON c.cycle_id=oe.cycle_id
+WHERE oe.professor_id=(SELECT professor_id FROM professor WHERE email='rowan.cedarvale@example.edu');
+
+INSERT INTO user_account(professor_id,username,email,password_hash,is_active)
+SELECT professor_id,'rcedarvale',email,'{bcrypt}$2a$10$RseEb1wE5zGshVN6rxKn3.vIn6X9E8zFPbcQHpQgqusGsctp2rydW',TRUE
+FROM professor WHERE email='rowan.cedarvale@example.edu';
+
+-- A pre-deadline signup with no eligible observer, so AC deferral can be tested without reopening registration.
+-- Bianca teaches only the graduate course level; the other seeded observers teach undergraduate levels.
+INSERT INTO observee(professor_id,cycle_id,status)
+SELECT p.professor_id,c.cycle_id,'ACTIVE' FROM professor p CROSS JOIN evaluation_cycle c
+JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='bianca.goldmere@example.edu' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO observer(professor_id,cycle_id,active_status)
+SELECT oe.professor_id,oe.cycle_id,TRUE FROM observee oe JOIN professor p ON p.professor_id=oe.professor_id
+JOIN evaluation_cycle c ON c.cycle_id=oe.cycle_id JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='bianca.goldmere@example.edu' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO evaluation_signup(observee_id,section_id,signup_date,status)
+SELECT oe.observee_id,cs.section_id,DATE '2026-10-12','PENDING'
+FROM observee oe JOIN professor p ON p.professor_id=oe.professor_id
+JOIN evaluation_cycle c ON c.cycle_id=oe.cycle_id
+JOIN course_section cs ON cs.semester_id=c.semester_id JOIN course co ON co.course_id=cs.course_id
+JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='bianca.goldmere@example.edu' AND co.course_code='CS' AND co.course_number='6363'
+    AND cs.section_number='003' AND s.term='Fall' AND s.academic_year=2026;
+
+INSERT INTO observer_list_state(signup_id,window_start,window_end)
+SELECT es.signup_id,DATEADD('DAY',1,c.signup_deadline),c.observation_deadline
+FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
+JOIN professor p ON p.professor_id=oe.professor_id JOIN evaluation_cycle c ON c.cycle_id=oe.cycle_id
+JOIN semester s ON s.semester_id=c.semester_id
+WHERE p.email='bianca.goldmere@example.edu' AND s.term='Fall' AND s.academic_year=2026;
+
 -- Completed evaluations for professors in the departments added from Nebula, made up like the ones above and in
 -- semesters that already have a closed cycle. They come last so the ids of every row above stay the same. With the
--- ranks and hire dates above, 13 active professors are due in Fall 2026, 15 are overdue and 72 are upcoming.
+-- ranks and hire dates above, 13 active professors are due in Fall 2026, 15 are overdue and 73 are upcoming.
 CREATE LOCAL TEMPORARY TABLE demo_history (
     email VARCHAR(255) PRIMARY KEY, term VARCHAR(10), academic_year INT, completed_on DATE, observer_email VARCHAR(255));
 INSERT INTO demo_history VALUES

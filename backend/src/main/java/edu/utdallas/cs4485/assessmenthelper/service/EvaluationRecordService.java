@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class EvaluationRecordService {
 
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
     private final ProfessorRepository professorRepository;
     private final ObserveeRepository observeeRepository;
     private final EvaluationCycleRepository cycleRepository;
@@ -41,7 +42,9 @@ public class EvaluationRecordService {
             EvaluationCycleRepository cycleRepository,
             SemesterRepository semesterRepository,
             EvaluationSignupRepository signupRepository,
-            ObservationRepository observationRepository) {
+            ObservationRepository observationRepository,
+            org.springframework.jdbc.core.JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
         this.professorRepository = professorRepository;
         this.observeeRepository = observeeRepository;
         this.cycleRepository = cycleRepository;
@@ -96,6 +99,29 @@ public class EvaluationRecordService {
                 observationRepository.findBySignupIdIn(observeeIdBySignupId.keySet()).stream()
                         .collect(groupingBy(observation -> observeeIdBySignupId.get(observation.signupId())));
 
+        Map<Integer, EvaluationRecord.Deferral> deferrals = jdbc
+                .query(
+                        """
+                SELECT oe.cycle_id,d.reason,d.deferred_at,p.first_name || ' ' || p.last_name AS actor,
+                s.term || ' ' || s.academic_year AS target
+                FROM evaluation_deferral d JOIN evaluation_signup es ON es.signup_id=d.signup_id
+                JOIN observee oe ON oe.observee_id=es.observee_id JOIN professor p ON p.professor_id=d.deferred_by
+                JOIN semester s ON s.semester_id=d.target_semester_id WHERE d.professor_id=?
+                """,
+                        (r, n) -> Map.entry(
+                                r.getInt("cycle_id"),
+                                new EvaluationRecord.Deferral(
+                                        r.getString("reason"),
+                                        r.getString("actor"),
+                                        r.getObject("deferred_at", java.time.LocalDateTime.class),
+                                        r.getString("target"))),
+                        professorId)
+                .stream()
+                .collect(toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (a, b) -> a.deferredAt().isAfter(b.deferredAt()) ? a : b));
+
         Comparator<Observee> newestFirst = comparing(
                         (Observee observee) ->
                                 semesterByCycleId.get(observee.cycleId()).startDate(),
@@ -107,11 +133,13 @@ public class EvaluationRecordService {
                 .map(observee -> toRecord(
                         observee,
                         semesterByCycleId.get(observee.cycleId()),
-                        observationsByObserveeId.getOrDefault(observee.observeeId(), List.of())))
+                        observationsByObserveeId.getOrDefault(observee.observeeId(), List.of()),
+                        deferrals.get(observee.cycleId())))
                 .toList();
     }
 
-    private static EvaluationRecord toRecord(Observee observee, Semester semester, List<Observation> observations) {
+    private static EvaluationRecord toRecord(
+            Observee observee, Semester semester, List<Observation> observations, EvaluationRecord.Deferral deferral) {
         return new EvaluationRecord(
                 observee.cycleId(),
                 semester.term(),
@@ -122,6 +150,7 @@ public class EvaluationRecordService {
                         .map(Observation::completedAt)
                         .filter(Objects::nonNull)
                         .max(naturalOrder())
-                        .orElse(null));
+                        .orElse(null),
+                deferral);
     }
 }
