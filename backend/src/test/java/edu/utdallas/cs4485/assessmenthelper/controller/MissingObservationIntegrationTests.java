@@ -191,8 +191,8 @@ class MissingObservationIntegrationTests {
                 .andExpect(status().isUnauthorized());
     }
 
-    // GET /api/missing-observations. data.sql's Fall 2026 cycle has six signups (Leander, Arlo, Avery, Keira,
-    // Xiomara and Perrin) and only Leander's has an observation: Keira's, SCHEDULED. The clock is a day past the
+    // GET /api/missing-observations. data.sql's Fall 2026 cycle has eight signups and only Leander's has an
+    // observation: Keira's, SCHEDULED. The clock is a day past the
     // 2026-11-15 observation deadline.
 
     private static final String URL = "/api/missing-observations";
@@ -244,7 +244,7 @@ class MissingObservationIntegrationTests {
         assertThat(result.cycleId()).isEqualTo(1);
         assertThat(result.cycleLabel()).isEqualTo("Fall 2026");
         assertThat(result.observationDeadline()).isEqualTo(LocalDate.of(2026, 11, 15));
-        assertThat(missingObservees()).hasSize(6);
+        assertThat(missingObservees()).hasSize(8);
         assertThat(missingObservees()).contains("Leander Coldwell", "Avery Hazelwood");
     }
 
@@ -266,7 +266,7 @@ class MissingObservationIntegrationTests {
     @Test
     void aCompletedObservationTakesTheSignupOffTheList() {
         setObservationStatus(LEANDER, "COMPLETED");
-        assertThat(missingObservees()).hasSize(5);
+        assertThat(missingObservees()).hasSize(7);
         assertThat(missingObservees()).doesNotContain("Leander Coldwell");
     }
 
@@ -279,7 +279,7 @@ class MissingObservationIntegrationTests {
     @Test
     void aCancelledSignupIsNotListed() {
         db.update("UPDATE evaluation_signup SET status='CANCELLED' WHERE signup_id=?", signupOf(AVERY));
-        assertThat(missingObservees()).hasSize(5);
+        assertThat(missingObservees()).hasSize(7);
         assertThat(missingObservees()).doesNotContain("Avery Hazelwood");
     }
 
@@ -296,11 +296,12 @@ class MissingObservationIntegrationTests {
                 """, signup, AVERY);
         assertThat(Collections.frequency(missingObservees(), "Leander Coldwell"))
                 .isEqualTo(1);
+        String signupPath = "$.signups[?(@.signupId == " + signup + ")]";
         mvc.perform(get(URL).with(user(COMMITTEE)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.signups[0].signupId").value(signup))
-                .andExpect(jsonPath("$.signups[0].observer").value("Keira Larkspur"))
-                .andExpect(jsonPath("$.signups[0].observationStatus").value("SUBMITTED"));
+                .andExpect(jsonPath(signupPath).value(hasSize(1)))
+                .andExpect(jsonPath(signupPath + ".observer").value("Keira Larkspur"))
+                .andExpect(jsonPath(signupPath + ".observationStatus").value("SUBMITTED"));
         db.update("UPDATE observation SET status='COMPLETED' WHERE signup_id=? AND status='ACCEPTED'", signup);
         assertThat(missingObservees()).doesNotContain("Leander Coldwell");
     }
@@ -324,7 +325,7 @@ class MissingObservationIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cycleId").value(1))
                 .andExpect(jsonPath("$.observationDeadline").value("2026-11-15"))
-                .andExpect(jsonPath("$.signups", hasSize(6)));
+                .andExpect(jsonPath("$.signups", hasSize(8)));
     }
 
     @Test
