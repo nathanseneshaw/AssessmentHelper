@@ -24,17 +24,17 @@ class EvaluationEligibilityServiceTests {
     private final EvaluationDeferralRepository deferrals = mock(EvaluationDeferralRepository.class);
     private final Clock clock = Clock.fixed(Instant.parse("2026-10-20T15:00:00Z"), ZoneId.of("America/Chicago"));
     private final EvaluationEligibilityService service = new EvaluationEligibilityService(
-        professors,
-        policies,
-        semesters,
-        cycles,
-        observees,
-        signups,
-        observations,
-        notifications,
-        clock,
-        deferrals,
-        mock(EmailTemplateService.class));
+            professors,
+            policies,
+            semesters,
+            cycles,
+            observees,
+            signups,
+            observations,
+            notifications,
+            clock,
+            deferrals,
+            mock(EmailTemplateService.class));
 
     @BeforeEach
     void setup() {
