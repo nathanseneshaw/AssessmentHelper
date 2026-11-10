@@ -245,6 +245,39 @@ test("signup counts and row statuses distinguish due, overdue and not yet due fa
   }
 });
 
+test("deferred signups show the target term even when eligibility is unavailable", async () => {
+  answerEligibility = unavailable("Eligibility unavailable");
+  answerObserver = () =>
+    Response.json({
+      ...state,
+      matchingCases: [
+        {
+          signupId: state.signups[0]?.signupId,
+          status: "DEFERRED",
+          deferral: { targetSemester: "Spring 2027" },
+        },
+      ],
+    });
+  await renderSignups();
+  await screen.findByText("Deferred to Spring 2027");
+});
+
+test("eligibility deferred to next semester shows the target term", async () => {
+  answerEligibility = () =>
+    Response.json({
+      ...dueQueue,
+      faculty: dueQueue.faculty.map((p) => ({
+        ...p,
+        status: "Due next semester",
+        nextDueSemester: "Spring 2027",
+      })),
+    });
+  await renderSignups();
+  await waitFor(() =>
+    expect(screen.getAllByText("Deferred to Spring 2027")).toHaveLength(3),
+  );
+});
+
 test("failed eligibility lookup does not label signups as not yet due", async () => {
   answerOverdue = unavailable("Overdue list unavailable");
   await renderSignups();

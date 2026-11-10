@@ -219,9 +219,13 @@ export function AcSignups() {
     section: s.section.label,
     meetingTime: schedule(s.section),
     status: s.released ? "List sent" : "Awaiting review",
-    eligibility: signupEligibility(s.professorId),
+    eligibility: signupEligibility(s.professorId, s.signupId),
   }));
-  function signupEligibility(professorId: number): string {
+  function signupEligibility(professorId: number, signupId: number): string {
+    const matching = data?.matchingCases.find((c) => c.signupId === signupId);
+    if (matching?.status === "DEFERRED" && matching.deferral) {
+      return `Deferred to ${matching.deferral.targetSemester}`;
+    }
     if (dueFailed || overdueFailed || eligibilityFailed)
       return "Eligibility unavailable";
     if (!dueQueue || !overdueQueue || !eligibilityQueue)
@@ -231,6 +235,7 @@ export function AcSignups() {
     );
     if (!person) return "Eligibility unavailable";
     const term = person.nextDueSemester || person.nextDueDate;
+    if (person.status === "Due next semester") return `Deferred to ${term}`;
     if (person.status === "Due")
       return `Due this term (${eligibilityQueue.cycleLabel})`;
     if (person.status === "Overdue") return `Overdue from ${term}`;
