@@ -11,6 +11,7 @@ import { App } from "../../App";
 import type { ObservationTracking } from "../../api/acDashboard";
 import { observationTracking } from "../../test/acDashboardFixtures";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
+import { completedObservation } from "../../test/observationFixtures";
 
 type Answer = () => Response | Promise<Response>;
 
@@ -30,6 +31,8 @@ beforeEach(() => {
   reminderRequests = [];
   fakeBackend({
     "/api/ac-dashboard/observations": () => answerObservations(),
+    "/api/observations/11": () =>
+      Response.json({ ...completedObservation, viewerRole: "COMMITTEE" }),
     [REMINDERS]: (init) => {
       reminderRequests.push(init ?? {});
       return answerReminders();
@@ -67,11 +70,73 @@ function rows() {
   const table = screen.getByRole("table", { name: "Observations" });
   return within(table)
     .getAllByRole("row")
-    .slice(1)
+    .filter((row) => row.hasAttribute("data-observation-row"))
     .map((row) =>
       Array.from(row.querySelectorAll("th, td"), (cell) => cell.textContent),
     );
 }
+
+async function expandFaculty() {
+  const buttons = await screen.findAllByRole("button", {
+    name: /^Observations for /,
+  });
+  for (const button of buttons) {
+    if (button.getAttribute("aria-expanded") === "false")
+      fireEvent.click(button);
+  }
+}
+
+test("faculty dropdown groups multiple observers and toggles their rows", async () => {
+  const first = observationTracking.observations[0];
+  if (!first) throw new Error("Missing observation");
+  answerObservations = () =>
+    Response.json({
+      ...observationTracking,
+      observations: [
+        first,
+        { ...first, observerId: 999, observer: "Second Observer" },
+      ],
+    });
+  await renderObservations();
+  const button = await screen.findByRole("button", {
+    name: `Observations for ${first.observee}`,
+  });
+  expect(screen.queryByText("Second Observer")).toBeNull();
+  expect(within(button).getByText("2 observations scheduled")).toBeDefined();
+  expect(
+    screen.getAllByRole("button", { name: /^Observations for / }),
+  ).toHaveLength(1);
+  fireEvent.click(button);
+  expect(screen.getByText("Second Observer")).toBeDefined();
+  expect(rows()).toHaveLength(2);
+  fireEvent.click(button);
+  expect(rows()).toHaveLength(0);
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+});
+
+test("collapsed faculty header summarizes mixed observation statuses", async () => {
+  const first = observationTracking.observations[0];
+  if (!first) throw new Error("Missing observation");
+  answerObservations = () =>
+    Response.json({
+      ...observationTracking,
+      observations: [
+        first,
+        {
+          ...first,
+          observerId: 999,
+          observer: "Second Observer",
+          status: "COMPLETED",
+        },
+      ],
+    });
+  await renderObservations();
+  const button = await screen.findByRole("button", {
+    name: `Observations for ${first.observee}`,
+  });
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  expect(within(button).getByText("1 scheduled, 1 completed")).toBeDefined();
+});
 
 function remindButton() {
   return screen.getByRole("button", {
@@ -81,6 +146,7 @@ function remindButton() {
 
 test("each signup shows its observer, course, time and status", async () => {
   await renderObservations();
+  await expandFaculty();
   await screen.findByRole("rowheader", { name: "Marlow Fenwick" });
   expect(rows()).toEqual([
     [
@@ -147,8 +213,35 @@ test("the deadline says Not set when the cycle has none", async () => {
   );
 });
 
+test("AC can view the submitted form from completed observation details", async () => {
+  answerObservations = () =>
+    Response.json({
+      ...observationTracking,
+      observations: observationTracking.observations.map((row) => ({
+        ...row,
+        observationId: row.status === "COMPLETED" ? 11 : null,
+      })),
+    });
+  await renderObservations();
+  await expandFaculty();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "View Orrin Bramblecote's observation",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "View submitted form" }));
+  await screen.findByRole("dialog", { name: "Submitted Observation Form" });
+  await screen.findByText("Student Engagement");
+  expect(
+    screen.queryByRole("button", { name: "Submit observation" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Hide submitted form" }));
+  expect(screen.queryByText("Student Engagement")).toBeNull();
+});
+
 test("View opens the completed observation's details", async () => {
   await renderObservations();
+  await expandFaculty();
   fireEvent.click(
     await screen.findByRole("button", {
       name: "View Orrin Bramblecote's observation",
@@ -176,6 +269,7 @@ test("View opens the completed observation's details", async () => {
 
 test("only completed observations can be viewed", async () => {
   await renderObservations();
+  await expandFaculty();
   await screen.findByRole("rowheader", { name: "Marlow Fenwick" });
   expect(
     screen
@@ -255,6 +349,7 @@ test("Send Reminders is disabled when every observation is completed", async () 
       ),
     });
   await renderObservations();
+  await expandFaculty();
   await screen.findByRole("rowheader", { name: "Orrin Bramblecote" });
   expect(remindButton().disabled).toBe(true);
 });
@@ -272,6 +367,7 @@ test("when the observations fail to load, the cards are unavailable and Retry lo
 
   answerObservations = () => Response.json(observationTracking);
   fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+  await expandFaculty();
   await screen.findByRole("rowheader", { name: "Marlow Fenwick" });
   expect(screen.queryByRole("alert")).toBeNull();
   expect(kpi("Scheduled").value).toBe("1");
@@ -296,6 +392,7 @@ test("deferred cases show their decision details instead of Awaiting Observer", 
   answerObservations = () => Response.json(data);
   window.history.pushState({}, "", "/ac/observations");
   render(<App />);
+  await expandFaculty();
   await screen.findByText("Deferred", { selector: "td" });
   expect(screen.queryByText("Awaiting Observer")).toBeNull();
   expect(
