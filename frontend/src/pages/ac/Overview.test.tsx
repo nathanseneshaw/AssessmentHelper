@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -19,6 +20,7 @@ const METRIC_LABELS = [
   "Participation Rate",
   "Observer Utilization",
   "List Sufficiency Rate",
+  "Survey Completion Rate",
   "Missing Observations",
 ];
 
@@ -43,14 +45,20 @@ const queue: OverdueQueue = {
 
 let answerMetrics: () => Response | Promise<Response>;
 let matchingState: AcState;
+let dueQueue: OverdueQueue;
+let overdueQueue: OverdueQueue;
 
 beforeEach(() => {
   answerMetrics = () => Response.json(metrics);
   matchingState = structuredClone(ac);
+  dueQueue = queue;
+  overdueQueue = queue;
   fakeBackend({
-    "/api/due-evaluations": () => Response.json(queue),
-    "/api/overdue-evaluations": () => Response.json(queue),
+    "/api/due-evaluations": () => Response.json(dueQueue),
+    "/api/overdue-evaluations": () => Response.json(overdueQueue),
     "/api/observer-eligibility/ac": () => Response.json(matchingState),
+    "/api/observer-eligibility/cycles/1/deadlines": () =>
+      Response.json(matchingState.cycle),
     "/api/ac-dashboard/metrics": () => answerMetrics(),
   });
   signInAs("ac");
@@ -174,10 +182,84 @@ test("metric cards show live values, with rates rounded to whole percents", asyn
     value: "33%",
     note: "2 of 6 signups have a full list of 5",
   });
+  expect(kpi("Survey Completion Rate")).toEqual({
+    value: "44%",
+    note: "4 of 9 observees submitted feedback",
+  });
   expect(kpi("Missing Observations")).toEqual({
     value: "3",
     note: "Approved observations past their date and not completed",
   });
+});
+
+test("survey completion explains an empty rate before the survey opens", async () => {
+  answerMetrics = () =>
+    Response.json({
+      ...metrics,
+      surveyCompletion: { count: 0, total: 8 },
+      surveyStatus: "NOT_OPEN",
+    });
+  await openOverview();
+  await waitFor(() =>
+    expect(kpi("Survey Completion Rate")).toEqual({
+      value: "—",
+      note: "Survey opens after the observation deadline",
+    }),
+  );
+});
+
+test("saving new deadlines refreshes the metrics and overdue evaluations", async () => {
+  matchingState.cycle.feedbackDeadline = "2026-12-01";
+  await openOverview();
+  await waitFor(() => expect(kpi("Participation Rate").value).toBe("15%"));
+  await waitFor(() => expect(kpi("Overdue Evaluations").value).toBe("1"));
+
+  answerMetrics = () =>
+    Response.json({ ...metrics, participation: { count: 3, total: 13 } });
+  overdueQueue = { ...queue, count: 0, faculty: [] };
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Edit Deadlines" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save Deadlines" }));
+  await screen.findByText("Cycle deadlines updated.");
+  await waitFor(() =>
+    expect(kpi("Participation Rate")).toEqual({
+      value: "23%",
+      note: "3 of 13 due faculty signed up",
+    }),
+  );
+  await waitFor(() => expect(kpi("Overdue Evaluations").value).toBe("0"));
+});
+
+test("coming back to the window refreshes the metrics and due list, keeping the old figures until then", async () => {
+  await openOverview();
+  await waitFor(() => expect(kpi("Faculty Due This Cycle").value).toBe("13"));
+  await screen.findByText("Ollie Overdue");
+
+  const held: ((response: Response) => void)[] = [];
+  answerMetrics = () =>
+    new Promise<Response>((resolve) => {
+      held.push(resolve);
+    });
+  const [ollie] = queue.faculty;
+  if (!ollie) throw new Error("Missing due faculty fixture");
+  dueQueue = {
+    ...queue,
+    count: 2,
+    faculty: [
+      ollie,
+      { ...ollie, professorId: 4, name: "Nora Newlydue", lastName: "Newlydue" },
+    ],
+  };
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  await screen.findByText("Nora Newlydue");
+  await waitFor(() => expect(held).toHaveLength(1));
+  expect(kpi("Faculty Due This Cycle").value).toBe("13");
+
+  held[0]?.(Response.json({ ...metrics, facultyDue: 14 }));
+  await waitFor(() => expect(kpi("Faculty Due This Cycle").value).toBe("14"));
 });
 
 test("Faculty Due This Cycle takes the place of Eligibility Accuracy", async () => {
@@ -196,10 +278,6 @@ test("cards outside the metrics keep their own data", async () => {
   await waitFor(() => expect(kpi("Overdue Evaluations").value).toBe("1"));
   expect(kpi("Overdue Evaluations").note).toBe("Requires committee attention");
   await waitFor(() => expect(kpi("Unmatched Faculty").value).toBe("1"));
-  expect(kpi("Survey Completion Rate")).toEqual({
-    value: "78%",
-    note: "Process feedback received",
-  });
 });
 
 test("a rate with nothing to count shows a dash", async () => {
@@ -212,6 +290,7 @@ test("a rate with nothing to count shows a dash", async () => {
       observerUtilization: none,
       listSufficiency: none,
       missingObservations: 0,
+      surveyCompletion: none,
     });
   await openOverview();
   await waitFor(() => expect(kpi("Faculty Due This Cycle").value).toBe("0"));
@@ -226,6 +305,10 @@ test("a rate with nothing to count shows a dash", async () => {
   expect(kpi("List Sufficiency Rate")).toEqual({
     value: "—",
     note: "No signups this cycle",
+  });
+  expect(kpi("Survey Completion Rate")).toEqual({
+    value: "—",
+    note: "No observees to survey this cycle",
   });
   expect(kpi("Missing Observations").value).toBe("0");
   expect(document.body.textContent).not.toMatch(/NaN|Infinity/);

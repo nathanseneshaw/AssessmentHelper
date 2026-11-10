@@ -47,7 +47,9 @@ public class AcDashboardService {
             Ratio participation,
             Ratio observerUtilization,
             Ratio listSufficiency,
-            int missingObservations) {}
+            int missingObservations,
+            Ratio surveyCompletion,
+            String surveyStatus) {}
 
     /**
      * AWAITING_OBSERVER: no observer has accepted yet. MISSING: the observation's date has passed and it is not
@@ -64,6 +66,7 @@ public class AcDashboardService {
     /** One generated signup in the cycle and its observation, if an observer has accepted. */
     public record TrackedObservation(
             int signupId,
+            Integer observationId,
             int observeeId,
             String observee,
             Integer observerId,
@@ -113,6 +116,13 @@ public class AcDashboardService {
                 .filter(s -> s.candidates().size() >= ObserverEligibilityService.LIST_SIZE)
                 .count();
         int signups = activeSignups.size();
+        var survey =
+                db.queryForObject("""
+                SELECT COUNT(DISTINCT oe.professor_id) AS offered, COUNT(DISTINCT f.professor_id) AS submitted
+                FROM observee oe
+                LEFT JOIN process_feedback f ON f.cycle_id=oe.cycle_id AND f.professor_id=oe.professor_id
+                WHERE oe.cycle_id=? AND oe.status IN ('ACTIVE', 'COMPLETED')
+                """, (r, n) -> new Ratio(r.getInt("submitted"), r.getInt("offered")), due.cycleId());
         return new Metrics(
                 due.cycleId(),
                 due.cycleLabel(),
@@ -121,7 +131,10 @@ public class AcDashboardService {
                 new Ratio(participating, due.count()),
                 new Ratio(observed, signups),
                 new Ratio(fullLists, signups),
-                missing);
+                missing,
+                survey,
+                ProcessFeedbackService.window(
+                        ac.cycle().observationDeadline(), ac.cycle().feedbackDeadline(), LocalDate.now(clock)));
     }
 
     @Transactional(readOnly = true)
@@ -225,6 +238,7 @@ public class AcDashboardService {
                                             : date != null && date.isBefore(today) ? Status.MISSING : Status.SCHEDULED;
                     return new TrackedObservation(
                             r.getInt("signup_id"),
+                            r.getObject("observation_id", Integer.class),
                             r.getInt("observee_id"),
                             r.getString("observee"),
                             r.getObject("observer_id", Integer.class),

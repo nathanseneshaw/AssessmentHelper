@@ -6,9 +6,15 @@ import {
   sendObservationReminders,
   type TrackedObservation,
 } from "../../api/acDashboard";
+import {
+  type ObservationDetail,
+  observationPath,
+  useApiResource,
+} from "../../api/observations";
 import { ActionButton } from "../../components/ActionButton";
 import { DeferralDetails } from "../../components/DeferralDetails";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
+import { ObservationRecord } from "../../components/ObservationRecord";
 import { PageHeader } from "../../components/PageHeader";
 import { clockTime, shortDate } from "../../format";
 
@@ -21,6 +27,34 @@ const STATUS: Record<ObservationStatus, { label: string; color: string }> = {
   COMPLETED: { label: "Completed", color: "text-brand-green" },
   MISSING: { label: "Missing", color: "text-brand-red" },
 };
+
+function observationSummary(rows: TrackedObservation[]): string {
+  const statuses: ObservationStatus[] = [
+    "SCHEDULED",
+    "COMPLETED",
+    "MISSING",
+    "AWAITING_OBSERVER",
+    "DEFERRED",
+  ];
+  const counts = statuses
+    .map((status) => ({
+      status,
+      count: rows.filter((row) => row.status === status).length,
+    }))
+    .filter(({ count }) => count > 0);
+  if (counts.length === 1) {
+    const only = counts[0];
+    if (only?.status === "AWAITING_OBSERVER") return "No observers yet";
+    if (only?.status === "DEFERRED") return "Evaluation Cycle Deferred";
+    if (only)
+      return `${only.count} observation${only.count === 1 ? "" : "s"} ${STATUS[only.status].label.toLowerCase()}`;
+  }
+  return counts
+    .map(
+      ({ status, count }) => `${count} ${STATUS[status].label.toLowerCase()}`,
+    )
+    .join(", ");
+}
 
 function observationKpis(
   data: ObservationTracking | null,
@@ -96,6 +130,16 @@ function ObservationDetails({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const [showForm, setShowForm] = useState(false);
+  const {
+    data: submittedForm,
+    error: formError,
+    reload: reloadForm,
+  } = useApiResource<ObservationDetail>(
+    showForm && observation.observationId
+      ? observationPath(observation.observationId)
+      : null,
+  );
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.showModal();
@@ -122,14 +166,16 @@ function ObservationDetails({
         event.preventDefault();
         onClose();
       }}
-      className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-line bg-white p-6 text-ink shadow-xl backdrop:bg-ink/40"
+      className={`fixed inset-0 m-auto max-h-[90vh] overflow-y-auto w-[calc(100%-2rem)] ${showForm ? "max-w-4xl" : "max-w-md"} rounded-xl border border-line bg-white p-6 text-ink shadow-xl backdrop:bg-ink/40`}
     >
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 id={titleId} className="font-bold text-xl">
-            {observation.status === "DEFERRED"
-              ? "Deferral Details"
-              : "Observation Details"}
+            {showForm
+              ? "Submitted Observation Form"
+              : observation.status === "DEFERRED"
+                ? "Deferral Details"
+                : "Observation Details"}
           </h2>
           <p className="mt-1 text-sm text-muted">
             {observation.observee} • {observation.course}
@@ -156,6 +202,37 @@ function ObservationDetails({
           ))}
         </dl>
       )}
+      {observation.status === "COMPLETED" && observation.observationId && (
+        <div className="mt-6">
+          <button
+            type="button"
+            onClick={() => setShowForm((shown) => !shown)}
+            className="rounded-lg bg-brand-green px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+          >
+            {showForm ? "Hide submitted form" : "View submitted form"}
+          </button>
+          {showForm && (
+            <div className="mt-5">
+              {formError ? (
+                <p role="alert">
+                  {formError}{" "}
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={reloadForm}
+                  >
+                    Retry
+                  </button>
+                </p>
+              ) : submittedForm ? (
+                <ObservationRecord observation={submittedForm} />
+              ) : (
+                <p role="status">Loading submitted form…</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </dialog>
   );
 }
@@ -165,6 +242,9 @@ export function AcObservations() {
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   const [viewing, setViewing] = useState<TrackedObservation | null>(null);
+  const [expandedFaculty, setExpandedFaculty] = useState<Set<number>>(
+    new Set(),
+  );
   const [reminding, setReminding] = useState(false);
   const [reminderResult, setReminderResult] = useState("");
   const [reminderError, setReminderError] = useState("");
@@ -209,6 +289,12 @@ export function AcObservations() {
   }
 
   const observations = data?.observations ?? [];
+  const facultyGroups = new Map<number, TrackedObservation[]>();
+  for (const observation of observations) {
+    const group = facultyGroups.get(observation.observeeId) ?? [];
+    group.push(observation);
+    facultyGroups.set(observation.observeeId, group);
+  }
   const kpis = observationKpis(data, Boolean(error) && !data);
   return (
     <div>
@@ -264,12 +350,16 @@ export function AcObservations() {
         ))}
       </div>
 
-      {/* The mockup leaves room below the rows, so the card keeps a minimum height.
-          `relative` keeps the sr-only text inside the card when the table scrolls. */}
-      <section className="relative mt-9.5 min-h-140 overflow-x-auto rounded-lg border border-line bg-white px-5.5">
+      {/* `relative` keeps the sr-only text inside the scroll container. */}
+      <section
+        aria-label="Observation list"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: Focus allows keyboard scrolling.
+        tabIndex={0}
+        className="relative mt-9.5 max-h-120 overflow-auto rounded-lg border border-line bg-white px-5.5 focus-visible:outline-2 focus-visible:outline-brand-green"
+      >
         <table className="w-full min-w-4xl table-fixed text-left">
           <caption className="sr-only">Observations</caption>
-          <thead className="text-muted text-sm">
+          <thead className="sticky top-0 z-10 bg-white text-muted text-sm">
             <tr>
               {columns.map((column) => (
                 <th
@@ -301,31 +391,68 @@ export function AcObservations() {
                 </td>
               </tr>
             )}
-            {observations.map((row) => (
-              <tr key={row.signupId} className="h-32.75 *:pr-4">
-                <th scope="row" className="font-semibold">
-                  {row.observee}
-                </th>
-                <td>{row.observer ?? <Blank label="Not assigned" />}</td>
-                <td>{row.course}</td>
-                <td>{dateTime(row) ?? <Blank label="Not scheduled" />}</td>
-                <td className={STATUS[row.status].color}>
-                  {STATUS[row.status].label}
-                </td>
-                <td>
-                  {(row.status === "COMPLETED" ||
-                    row.status === "DEFERRED") && (
+            {Array.from(facultyGroups, ([facultyId, facultyRows]) => (
+              <Fragment key={facultyId}>
+                <tr className="border-b border-line">
+                  <td colSpan={6}>
                     <button
                       type="button"
-                      aria-label={`View ${row.observee}'s ${row.status === "DEFERRED" ? "deferral" : "observation"}`}
-                      onClick={() => setViewing(row)}
-                      className="h-9 w-17.5 rounded-lg bg-brand-green text-white hover:opacity-90"
+                      aria-label={`Observations for ${facultyRows[0]?.observee}`}
+                      aria-expanded={expandedFaculty.has(facultyId)}
+                      onClick={() =>
+                        setExpandedFaculty((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(facultyId)) next.delete(facultyId);
+                          else next.add(facultyId);
+                          return next;
+                        })
+                      }
+                      className="flex w-full items-center gap-3 py-5 text-left font-semibold hover:bg-mist"
                     >
-                      View
+                      <span aria-hidden="true">
+                        {expandedFaculty.has(facultyId) ? "▾" : "▸"}
+                      </span>
+                      <span>{facultyRows[0]?.observee}</span>
+                      <span className="text-sm font-normal text-muted">
+                        {observationSummary(facultyRows)}
+                      </span>
                     </button>
-                  )}
-                </td>
-              </tr>
+                  </td>
+                </tr>
+                {expandedFaculty.has(facultyId) &&
+                  facultyRows.map((row) => (
+                    <tr
+                      key={`${row.signupId}-${row.observerId}`}
+                      data-observation-row
+                      className="h-32.75 *:pr-4"
+                    >
+                      <th scope="row" className="font-semibold">
+                        {row.observee}
+                      </th>
+                      <td>{row.observer ?? <Blank label="Not assigned" />}</td>
+                      <td>{row.course}</td>
+                      <td>
+                        {dateTime(row) ?? <Blank label="Not scheduled" />}
+                      </td>
+                      <td className={STATUS[row.status].color}>
+                        {STATUS[row.status].label}
+                      </td>
+                      <td>
+                        {(row.status === "COMPLETED" ||
+                          row.status === "DEFERRED") && (
+                          <button
+                            type="button"
+                            aria-label={`View ${row.observee}'s ${row.status === "DEFERRED" ? "deferral" : "observation"}`}
+                            onClick={() => setViewing(row)}
+                            className="h-9 w-17.5 rounded-lg bg-brand-green text-white hover:opacity-90"
+                          >
+                            View
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </Fragment>
             ))}
           </tbody>
         </table>

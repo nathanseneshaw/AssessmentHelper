@@ -120,8 +120,50 @@ class AcDashboardIntegrationTests {
         metrics().andExpect(status().isOk()).andExpect(content().json("""
                         {"cycleId":1,"cycleLabel":"Fall 2026","facultyDue":13,"listSize":5,
                         "participation":{"count":5,"total":13},"observerUtilization":{"count":1,"total":8},
-                        "listSufficiency":{"count":0,"total":8},"missingObservations":0}
+                        "listSufficiency":{"count":0,"total":8},"missingObservations":0,
+                        "surveyCompletion":{"count":0,"total":8},"surveyStatus":"NOT_OPEN"}
                         """, JsonCompareMode.STRICT));
+    }
+
+    @Test
+    void surveyCompletionCountsFeedbackFromTheObserveesItIsOfferedTo() throws Exception {
+        // The survey opens the day after the 2026-11-15 observation deadline and closes after 2026-12-01.
+        clock.set("2026-11-15T15:00:00Z");
+        metrics().andExpect(jsonPath("$.surveyStatus").value("NOT_OPEN"));
+        clock.set("2026-11-16T15:00:00Z");
+        metrics()
+                .andExpect(jsonPath("$.surveyStatus").value("AVAILABLE"))
+                .andExpect(jsonPath("$.surveyCompletion.count").value(0))
+                .andExpect(jsonPath("$.surveyCompletion.total").value(8));
+
+        submitFeedback(LEANDER);
+        submitFeedback(ARLO);
+        metrics()
+                .andExpect(jsonPath("$.surveyCompletion.count").value(2))
+                .andExpect(jsonPath("$.surveyCompletion.total").value(8));
+
+        // A deferred observee is not offered the survey, so neither their answer nor their place counts.
+        db.update("UPDATE observee SET status = 'DEFERRED' WHERE professor_id = ? AND cycle_id = 1", ARLO);
+        // Feedback from someone who is not an observee this cycle is not counted either.
+        submitFeedback(HOLLIS);
+        metrics()
+                .andExpect(jsonPath("$.surveyCompletion.count").value(1))
+                .andExpect(jsonPath("$.surveyCompletion.total").value(7));
+
+        clock.set("2026-12-02T15:00:00Z");
+        metrics()
+                .andExpect(jsonPath("$.surveyStatus").value("CLOSED"))
+                .andExpect(jsonPath("$.surveyCompletion.count").value(1));
+
+        db.update("UPDATE evaluation_cycle SET feedback_deadline = NULL WHERE cycle_id = 1");
+        metrics().andExpect(jsonPath("$.surveyStatus").value("UNCONFIGURED"));
+    }
+
+    private void submitFeedback(int professorId) {
+        db.update("""
+                INSERT INTO process_feedback (cycle_id, professor_id, overall_rating, submitted_date)
+                VALUES (1, ?, 4, DATE '2026-11-16')
+                """, professorId);
     }
 
     @Test
@@ -203,6 +245,11 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath(leander + ".observee").value("Leander Coldwell"))
                 .andExpect(jsonPath(leander + ".observer").value("Keira Larkspur"))
                 .andExpect(jsonPath(leander + ".observerId").value(KEIRA))
+                .andExpect(jsonPath(leander + ".observationId")
+                        .value(db.queryForObject(
+                                "SELECT o.observation_id FROM observation o JOIN evaluation_signup es ON es.signup_id=o.signup_id JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=? AND oe.cycle_id=1",
+                                Integer.class,
+                                LEANDER)))
                 .andExpect(jsonPath(leander + ".course").value("CS 3345.001"))
                 .andExpect(jsonPath(leander + ".date").value("2026-11-04"))
                 .andExpect(jsonPath(leander + ".startTime").value("08:30:00"))
