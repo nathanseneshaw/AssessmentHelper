@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { App } from "../../App";
 import type {
   DashboardMetrics,
@@ -7,7 +13,7 @@ import type {
   ObservationTracking,
 } from "../../api/acDashboard";
 import type { OverdueQueue } from "../../api/evaluationEligibility";
-import type { AcState } from "../../api/observerEligibility";
+import { type AcState, observerChanged } from "../../api/observerEligibility";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 import { ac } from "../../test/observerFixtures";
 
@@ -20,6 +26,8 @@ const metrics: DashboardMetrics = {
   observerUtilization: { count: 3, total: 6 },
   listSufficiency: { count: 1, total: 6 },
   missingObservations: 1,
+  surveyCompletion: { count: 2, total: 6 },
+  surveyStatus: "CLOSED",
 };
 
 const overdue: OverdueQueue = {
@@ -143,7 +151,11 @@ describe("Reports & KPIs", () => {
     expect(
       screen.getByText("1 of 6 signups have a full list of 5"),
     ).toBeDefined();
-    expect(screen.getByText("Not tracked yet")).toBeDefined();
+    expect(screen.getByText("33%")).toBeDefined();
+    expect(
+      screen.getByText("2 of 6 observees submitted feedback"),
+    ).toBeDefined();
+    expect(screen.queryByText("Not tracked yet")).toBeNull();
     expect(screen.queryByText("Eligibility Accuracy")).toBeNull();
     expect(screen.queryByText("78%")).toBeNull();
 
@@ -171,6 +183,20 @@ describe("Reports & KPIs", () => {
     ]);
   });
 
+  test("the report refreshes after a change is announced", async () => {
+    let current = metrics;
+    await renderReports(() => Response.json(current));
+    await screen.findByText("2 of 6 observees submitted feedback");
+
+    current = { ...metrics, surveyCompletion: { count: 3, total: 6 } };
+    act(() => observerChanged());
+    await screen.findByText("3 of 6 observees submitted feedback");
+    const file = await download("Export Report");
+    expect(file.text).toContain(
+      '"KPI","Survey Completion","50%","3 of 6 observees submitted feedback"',
+    );
+  });
+
   test("Export Report downloads the loaded figures as CSV", async () => {
     await renderLoadedReports();
     const file = await download("Export Report");
@@ -184,7 +210,7 @@ describe("Reports & KPIs", () => {
       '"KPI","Assessment Participation Rate","38%","5 of 13 due faculty signed up"',
       '"KPI","Observer Utilization Rate","50%","3 of 6 signups have an observer"',
       '"KPI","List Sufficiency","17%","1 of 6 signups have a full list of 5"',
-      '"KPI","Survey Completion","—","Not tracked yet"',
+      '"KPI","Survey Completion","33%","2 of 6 observees submitted feedback"',
       '"Executive dashboard","Faculty due for evaluation","13",""',
       '"Executive dashboard","Missing observation count","1",""',
       '"Executive dashboard","Unmatched faculty report","1",""',
@@ -216,7 +242,7 @@ describe("Reports & KPIs", () => {
   test("shows placeholders and blocks exports until everything loads", async () => {
     await renderReports(() => new Promise<Response>(() => {}));
 
-    expect(screen.getAllByText("Loading…")).toHaveLength(3);
+    expect(screen.getAllByText("Loading…")).toHaveLength(4);
     expect(screen.getByText("Loading cycle summary…")).toBeDefined();
     expect(
       screen.getAllByRole("definition").map((el) => el.textContent),
@@ -230,7 +256,7 @@ describe("Reports & KPIs", () => {
       Response.json({ detail: "Backend unavailable" }, { status: 503 }),
     );
 
-    expect(await screen.findAllByText("Unavailable")).toHaveLength(3);
+    expect(await screen.findAllByText("Unavailable")).toHaveLength(4);
     expect(
       screen.getByText("The cycle summary could not be loaded."),
     ).toBeDefined();

@@ -13,6 +13,8 @@ export const metrics: DashboardMetrics = {
   observerUtilization: { count: 1, total: 6 },
   listSufficiency: { count: 2, total: 6 },
   missingObservations: 3,
+  surveyCompletion: { count: 4, total: 9 },
+  surveyStatus: "AVAILABLE",
 };
 
 const tracked = (

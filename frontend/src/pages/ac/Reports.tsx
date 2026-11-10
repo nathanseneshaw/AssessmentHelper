@@ -4,7 +4,9 @@ import {
   getDashboardMetrics,
   getObservations,
   type ObservationTracking,
-  type Ratio,
+  rate,
+  surveyCompletionRate,
+  useDashboardRefresh,
 } from "../../api/acDashboard";
 import {
   getOverdueQueue,
@@ -19,13 +21,6 @@ import { ActionButton } from "../../components/ActionButton";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
 
-// Process feedback is not saved anywhere yet, so there is nothing to measure.
-const surveyCompletion: Kpi = {
-  label: "Survey Completion",
-  value: "—",
-  note: "Not tracked yet",
-};
-
 interface ReportData {
   metrics: DashboardMetrics;
   overdue: OverdueQueue;
@@ -38,19 +33,6 @@ interface Report {
   kpis: Kpi[];
   executiveMetrics: { label: string; value: number }[];
   cycleSummary: string[];
-}
-
-function rate(
-  { count, total }: Ratio,
-  counted: string,
-  empty: string,
-): Pick<Kpi, "value" | "note"> {
-  return total === 0
-    ? { value: "—", note: empty }
-    : {
-        value: `${Math.round((count / total) * 100)}%`,
-        note: `${count} of ${total} ${counted}`,
-      };
 }
 
 const plural = (n: number, one: string, many: string) =>
@@ -100,7 +82,7 @@ function buildReport({
           "No signups this cycle",
         ),
       },
-      surveyCompletion,
+      { label: "Survey Completion", ...surveyCompletionRate(metrics) },
     ],
     executiveMetrics: [
       { label: "Faculty due for evaluation", value: metrics.facultyDue },
@@ -174,16 +156,19 @@ export function AcReports() {
   const [overdue, setOverdue] = useState<OverdueQueue | null>(null);
   const [tracking, setTracking] = useState<ObservationTracking | null>(null);
   const [failed, setFailed] = useState(false);
+  const { version } = useDashboardRefresh(matching);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is the refresh trigger.
   useEffect(() => {
     const controller = new AbortController();
     const fail = () => {
       if (!controller.signal.aborted) setFailed(true);
     };
+    setFailed(false);
     getDashboardMetrics(controller.signal).then(setMetrics).catch(fail);
     getOverdueQueue(controller.signal).then(setOverdue).catch(fail);
     getObservations(controller.signal).then(setTracking).catch(fail);
     return () => controller.abort();
-  }, []);
+  }, [version]);
   // The report is one snapshot: it shows only once every source has loaded, so an export is never half filled.
   const unavailable = failed || Boolean(matchingError);
   const report =
@@ -199,9 +184,8 @@ export function AcReports() {
       "Assessment Participation Rate",
       "Observer Utilization Rate",
       "List Sufficiency",
-    ]
-      .map((label): Kpi => ({ label, ...placeholder }))
-      .concat(surveyCompletion);
+      "Survey Completion",
+    ].map((label): Kpi => ({ label, ...placeholder }));
 
   return (
     <div>
