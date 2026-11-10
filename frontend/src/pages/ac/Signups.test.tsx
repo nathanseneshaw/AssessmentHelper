@@ -92,6 +92,8 @@ const unavailable = (detail: string) => () =>
 let answerMetrics: Answer;
 let answerDue: Answer;
 let answerObserver: Answer;
+let answerOverdue: Answer;
+let answerEligibility: Answer;
 let sentEmail: NotificationEmail | undefined;
 const originalTimeZone = process.env.TZ;
 
@@ -99,10 +101,18 @@ beforeEach(() => {
   answerMetrics = () => Response.json(signupMetrics);
   answerDue = () => Response.json(dueQueue);
   answerObserver = () => Response.json(state);
+  answerOverdue = () => Response.json(dueQueueOf([]));
+  answerEligibility = () =>
+    Response.json({
+      ...dueQueue,
+      faculty: dueQueue.faculty.map((p) => ({ ...p, status: "Due" })),
+    });
   sentEmail = undefined;
   fakeBackend({
     "/api/ac-dashboard/metrics": () => answerMetrics(),
     "/api/due-evaluations": () => answerDue(),
+    "/api/overdue-evaluations": () => answerOverdue(),
+    "/api/evaluation-eligibility": () => answerEligibility(),
     "/api/observer-eligibility/ac": () => answerObserver(),
     [NOTIFY_PATH.replace("/notifications", "/email-preview")]: () =>
       Response.json({
@@ -176,11 +186,72 @@ test("count cards show live values, with participation rounded to a whole percen
   await renderSignups();
   await waitFor(() => expect(kpi("Due Faculty").value).toBe("8"));
   expect(kpi("Due Faculty").note).toBe("Current cycle");
-  expect(kpi("Signed Up")).toEqual({ value: "3", note: "38% participation" });
+  expect(kpi("Signed Up Due This Term")).toEqual({
+    value: "3",
+    note: "38% participation",
+  });
   expect(kpi("Not Yet Signed Up")).toEqual({
     value: "5",
     note: "Reminder recommended",
   });
+});
+
+test("signup counts and row statuses distinguish due, overdue and not yet due faculty", async () => {
+  const overdue = dueFaculty(31, "Alex", "Overdue");
+  const upcoming = dueFaculty(32, "Sam", "Upcoming");
+  answerEligibility = () =>
+    Response.json({
+      ...dueQueue,
+      faculty: [
+        ...dueQueue.faculty.map((p) => ({ ...p, status: "Due" })),
+        { ...overdue, status: "Overdue", nextDueSemester: "Fall 2025" },
+        { ...upcoming, status: "Upcoming", nextDueSemester: "Spring 2028" },
+      ],
+    });
+  answerOverdue = () => Response.json(dueQueueOf([overdue]));
+  answerObserver = () =>
+    Response.json({
+      ...state,
+      signups: [
+        ...state.signups,
+        ...[overdue, upcoming].map((person, i) => ({
+          ...signup,
+          signupId: i + 4,
+          professorId: person.professorId,
+          name: person.name,
+        })),
+      ],
+    });
+  await renderSignups();
+  await waitFor(() => {
+    const card = screen.getByText("Other Signups").parentElement;
+    if (!card) throw new Error("Missing Other Signups card");
+    for (const label of ["Overdue", "Not Yet Due"]) {
+      expect(
+        within(card).getByText(label).previousElementSibling?.textContent,
+      ).toBe("1");
+    }
+  });
+  expect(kpi("Signed Up Due This Term").value).toBe("3");
+  for (const [name, status] of [
+    ["Marlow Fenwick", "Due this term (Fall 2026)"],
+    [overdue.name, "Overdue from Fall 2025"],
+    [upcoming.name, "Not yet due (Spring 2028)"],
+  ] as const) {
+    const row = screen.getByRole("rowheader", { name }).closest("tr");
+    if (!row) throw new Error(`Missing signup row for ${name}`);
+    await within(row).findByText(status);
+    expect(within(row).getByText("Awaiting review")).toBeDefined();
+  }
+});
+
+test("failed eligibility lookup does not label signups as not yet due", async () => {
+  answerOverdue = unavailable("Overdue list unavailable");
+  await renderSignups();
+  await waitFor(() =>
+    expect(screen.getAllByText("Eligibility unavailable")).toHaveLength(3),
+  );
+  expect(screen.queryByText("Not yet due")).toBeNull();
 });
 
 test("with no faculty due, the counts are zero and say so", async () => {
@@ -192,7 +263,7 @@ test("with no faculty due, the counts are zero and say so", async () => {
     });
   await renderSignups();
   await waitFor(() => expect(kpi("Due Faculty").value).toBe("0"));
-  expect(kpi("Signed Up")).toEqual({
+  expect(kpi("Signed Up Due This Term")).toEqual({
     value: "0",
     note: "No faculty are due this cycle",
   });
@@ -226,7 +297,7 @@ test("cards show a dash and View All waits while the data loads", async () => {
   await renderSignups();
   for (const label of [
     "Due Faculty",
-    "Signed Up",
+    "Signed Up Due This Term",
     "Not Yet Signed Up",
     "Signup Deadline",
   ]) {
@@ -298,7 +369,7 @@ test("when every due faculty member has signed up, View All says so", async () =
       note: "All due faculty have signed up",
     }),
   );
-  expect(kpi("Signed Up").note).toBe("100% participation");
+  expect(kpi("Signed Up Due This Term").note).toBe("100% participation");
   const dialog = await openNotSignedUp();
 
   expect(
@@ -318,7 +389,11 @@ test("a failed metrics request marks its cards unavailable without an error mess
   answerMetrics = unavailable("Metrics unavailable");
   await renderSignups();
   await waitFor(() => expect(kpi("Due Faculty").value).toBe("Unavailable"));
-  for (const label of ["Due Faculty", "Signed Up", "Not Yet Signed Up"]) {
+  for (const label of [
+    "Due Faculty",
+    "Signed Up Due This Term",
+    "Not Yet Signed Up",
+  ]) {
     expect(kpi(label)).toEqual({
       value: "Unavailable",
       note: "Metrics could not be loaded",

@@ -4,7 +4,10 @@ import {
   getDashboardMetrics,
 } from "../../api/acDashboard";
 import {
+  type EvaluationQueue,
   getDueQueue,
+  getEvaluationQueue,
+  getOverdueQueue,
   type OverdueQueue,
 } from "../../api/evaluationEligibility";
 import {
@@ -28,6 +31,9 @@ interface SignupData {
   /** Null until the observer matching data loads. */
   observer: AcState | null;
   observerError: string;
+  dueQueue: OverdueQueue | null;
+  overdueQueue: OverdueQueue | null;
+  eligibilityFailed: boolean;
   notSignedUpDisabled: boolean;
   onViewNotSignedUp: () => void;
 }
@@ -37,6 +43,9 @@ function signupKpis({
   metricsFailed,
   observer,
   observerError,
+  dueQueue,
+  overdueQueue,
+  eligibilityFailed,
   notSignedUpDisabled,
   onViewNotSignedUp,
 }: SignupData): Kpi[] {
@@ -69,13 +78,65 @@ function signupKpis({
       value: String(loaded.facultyDue),
       note: "Current cycle",
     })),
-    metric("Signed Up", ({ participation: { count, total } }) => ({
-      value: String(count),
-      note:
-        total === 0
-          ? "No faculty are due this cycle"
-          : `${Math.round((count / total) * 100)}% participation`,
-    })),
+    metric(
+      "Signed Up Due This Term",
+      ({ participation: { count, total } }) => ({
+        value: String(count),
+        note:
+          total === 0
+            ? "No faculty are due this cycle"
+            : `${Math.round((count / total) * 100)}% participation`,
+      }),
+    ),
+    {
+      label: "Other Signups",
+      ...(eligibilityFailed || observerError
+        ? { value: "Unavailable", note: "Signup counts could not be loaded" }
+        : dueQueue && overdueQueue && observer
+          ? {
+              value: "",
+              note: "",
+              columns: [
+                {
+                  label: "Overdue",
+                  value: String(
+                    new Set(
+                      observer.signups
+                        .filter(
+                          (s) =>
+                            !dueQueue.faculty.some(
+                              (p) => p.professorId === s.professorId,
+                            ) &&
+                            overdueQueue.faculty.some(
+                              (p) => p.professorId === s.professorId,
+                            ),
+                        )
+                        .map((s) => s.professorId),
+                    ).size,
+                  ),
+                },
+                {
+                  label: "Not Yet Due",
+                  value: String(
+                    new Set(
+                      observer.signups
+                        .filter(
+                          (s) =>
+                            !dueQueue.faculty.some(
+                              (p) => p.professorId === s.professorId,
+                            ) &&
+                            !overdueQueue.faculty.some(
+                              (p) => p.professorId === s.professorId,
+                            ),
+                        )
+                        .map((s) => s.professorId),
+                    ).size,
+                  ),
+                },
+              ],
+            }
+          : loading),
+    },
     metric(
       "Not Yet Signed Up",
       ({ participation: { count, total } }) => ({
@@ -107,6 +168,11 @@ export function AcSignups() {
   const [metricsFailed, setMetricsFailed] = useState(false);
   const [dueQueue, setDueQueue] = useState<OverdueQueue | null>(null);
   const [dueFailed, setDueFailed] = useState(false);
+  const [overdueQueue, setOverdueQueue] = useState<OverdueQueue | null>(null);
+  const [overdueFailed, setOverdueFailed] = useState(false);
+  const [eligibilityQueue, setEligibilityQueue] =
+    useState<EvaluationQueue | null>(null);
+  const [eligibilityFailed, setEligibilityFailed] = useState(false);
   const [notSignedUpOpen, setNotSignedUpOpen] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -120,6 +186,16 @@ export function AcSignups() {
       .catch(() => {
         if (!controller.signal.aborted) setDueFailed(true);
       });
+    getOverdueQueue(controller.signal)
+      .then(setOverdueQueue)
+      .catch(() => {
+        if (!controller.signal.aborted) setOverdueFailed(true);
+      });
+    getEvaluationQueue(controller.signal)
+      .then(setEligibilityQueue)
+      .catch(() => {
+        if (!controller.signal.aborted) setEligibilityFailed(true);
+      });
     return () => controller.abort();
   }, []);
   const signedUp = new Set((data?.signups ?? []).map((s) => s.professorId));
@@ -131,6 +207,9 @@ export function AcSignups() {
     metricsFailed,
     observer: data,
     observerError: error,
+    dueQueue,
+    overdueQueue,
+    eligibilityFailed: dueFailed || overdueFailed,
     notSignedUpDisabled: !dueQueue || dueFailed || !data || Boolean(error),
     onViewNotSignedUp: () => setNotSignedUpOpen(true),
   });
@@ -140,7 +219,23 @@ export function AcSignups() {
     section: s.section.label,
     meetingTime: schedule(s.section),
     status: s.released ? "List sent" : "Awaiting review",
+    eligibility: signupEligibility(s.professorId),
   }));
+  function signupEligibility(professorId: number): string {
+    if (dueFailed || overdueFailed || eligibilityFailed)
+      return "Eligibility unavailable";
+    if (!dueQueue || !overdueQueue || !eligibilityQueue)
+      return "Loading eligibility…";
+    const person = eligibilityQueue.faculty.find(
+      (p) => p.professorId === professorId,
+    );
+    if (!person) return "Eligibility unavailable";
+    const term = person.nextDueSemester || person.nextDueDate;
+    if (person.status === "Due")
+      return `Due this term (${eligibilityQueue.cycleLabel})`;
+    if (person.status === "Overdue") return `Overdue from ${term}`;
+    return `Not yet due (${term})`;
+  }
   return (
     <div>
       <PageHeader
@@ -181,7 +276,7 @@ export function AcSignups() {
           {error}
         </p>
       )}
-      <div className="mt-10.25 grid gap-4 sm:grid-cols-2 xl:max-w-324 xl:grid-cols-4">
+      <div className="mt-10.25 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {kpis.map((kpi) => (
           <KpiCard key={kpi.label} kpi={kpi} />
         ))}
@@ -193,9 +288,14 @@ export function AcSignups() {
         {data && signupRequests.length === 0 && <p>No signups yet.</p>}
         {/* On narrow screens the table scrolls inside the card. `relative` keeps
             the sr-only header inside the scroller so the page does not widen. */}
-        <div className="relative mt-6.75 overflow-x-auto">
+        <section
+          aria-label="Signup requests"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: Focus allows keyboard scrolling.
+          tabIndex={0}
+          className="relative mt-6.75 max-h-120 overflow-auto rounded-sm focus-visible:outline-2 focus-visible:outline-brand-green"
+        >
           <table className="w-full min-w-200">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-white">
               <tr className="text-muted text-sm">
                 {columns.map((column) => (
                   <th
@@ -220,7 +320,10 @@ export function AcSignups() {
                   </th>
                   <td>{request.section}</td>
                   <td>{request.meetingTime}</td>
-                  <td>{request.status}</td>
+                  <td>
+                    <p>{request.eligibility}</p>
+                    <p className="mt-1 text-sm text-muted">{request.status}</p>
+                  </td>
                   <td>
                     <ActionButton
                       tone="green"
@@ -235,7 +338,7 @@ export function AcSignups() {
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       </section>
     </div>
   );
