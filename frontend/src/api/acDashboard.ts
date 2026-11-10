@@ -39,6 +39,7 @@ export type ObservationStatus =
 /** A generated signup in the cycle and its observation, once an observer accepts. */
 export interface TrackedObservation {
   signupId: number;
+  observationId?: number | null;
   observeeId: number;
   observee: string;
   observerId: number | null;

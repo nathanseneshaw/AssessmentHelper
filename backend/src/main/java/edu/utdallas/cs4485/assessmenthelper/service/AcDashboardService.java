@@ -64,6 +64,7 @@ public class AcDashboardService {
     /** One generated signup in the cycle and its observation, if an observer has accepted. */
     public record TrackedObservation(
             int signupId,
+            Integer observationId,
             int observeeId,
             String observee,
             Integer observerId,
@@ -225,6 +226,7 @@ public class AcDashboardService {
                                             : date != null && date.isBefore(today) ? Status.MISSING : Status.SCHEDULED;
                     return new TrackedObservation(
                             r.getInt("signup_id"),
+                            r.getObject("observation_id", Integer.class),
                             r.getInt("observee_id"),
                             r.getString("observee"),
                             r.getObject("observer_id", Integer.class),
