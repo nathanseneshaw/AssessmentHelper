@@ -203,9 +203,11 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath(leander + ".observee").value("Leander Coldwell"))
                 .andExpect(jsonPath(leander + ".observer").value("Keira Larkspur"))
                 .andExpect(jsonPath(leander + ".observerId").value(KEIRA))
-                .andExpect(jsonPath(leander + ".observationId").value(db.queryForObject(
-                        "SELECT o.observation_id FROM observation o JOIN evaluation_signup es ON es.signup_id=o.signup_id JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=? AND oe.cycle_id=1",
-                        Integer.class, LEANDER)))
+                .andExpect(jsonPath(leander + ".observationId")
+                        .value(db.queryForObject(
+                                "SELECT o.observation_id FROM observation o JOIN evaluation_signup es ON es.signup_id=o.signup_id JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=? AND oe.cycle_id=1",
+                                Integer.class,
+                                LEANDER)))
                 .andExpect(jsonPath(leander + ".course").value("CS 3345.001"))
                 .andExpect(jsonPath(leander + ".date").value("2026-11-04"))
                 .andExpect(jsonPath(leander + ".startTime").value("08:30:00"))
