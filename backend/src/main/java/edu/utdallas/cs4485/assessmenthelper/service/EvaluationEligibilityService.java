@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -59,19 +60,18 @@ public class EvaluationEligibilityService {
             Clock clock,
             edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals,
             EmailTemplateService emailTemplates) {
-        this(
-                professors,
-                policies,
-                semesters,
-                cycles,
-                observees,
-                signups,
-                observations,
-                notifications,
-                (recipient, subject, body) -> {},
-                clock,
-                deferrals,
-                emailTemplates);
+        this.professors = professors;
+        this.policies = policies;
+        this.semesters = semesters;
+        this.cycles = cycles;
+        this.observees = observees;
+        this.signups = signups;
+        this.observations = observations;
+        this.notifications = notifications;
+        this.emailSender = (recipient, subject, body) -> {};
+        this.clock = clock;
+        this.deferrals = deferrals;
+        this.emailTemplates = emailTemplates;
     }
 
     @Autowired
@@ -84,7 +84,7 @@ public class EvaluationEligibilityService {
             EvaluationSignupRepository signups,
             ObservationRepository observations,
             EvaluationNotificationRepository notifications,
-            NotificationEmailSender emailSender,
+            ObjectProvider<NotificationEmailSender> emailSenders,
             Clock clock,
             edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository deferrals,
             EmailTemplateService emailTemplates) {
@@ -96,7 +96,7 @@ public class EvaluationEligibilityService {
         this.signups = signups;
         this.observations = observations;
         this.notifications = notifications;
-        this.emailSender = emailSender;
+        this.emailSender = emailSenders.getIfAvailable(() -> (recipient, subject, body) -> {});
         this.clock = clock;
         this.deferrals = deferrals;
         this.emailTemplates = emailTemplates;
