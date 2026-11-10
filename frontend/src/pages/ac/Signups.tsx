@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   type DashboardMetrics,
   getDashboardMetrics,
+  useDashboardRefresh,
 } from "../../api/acDashboard";
 import {
   type EvaluationQueue,
@@ -174,8 +175,12 @@ export function AcSignups() {
     useState<EvaluationQueue | null>(null);
   const [eligibilityFailed, setEligibilityFailed] = useState(false);
   const [notSignedUpOpen, setNotSignedUpOpen] = useState(false);
+  const { version } = useDashboardRefresh(data);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is the refresh trigger.
   useEffect(() => {
     const controller = new AbortController();
+    setMetricsFailed(false);
+    setDueFailed(false);
     getDashboardMetrics(controller.signal)
       .then(setMetrics)
       .catch(() => {
@@ -197,7 +202,7 @@ export function AcSignups() {
         if (!controller.signal.aborted) setEligibilityFailed(true);
       });
     return () => controller.abort();
-  }, []);
+  }, [version]);
   const signedUp = new Set((data?.signups ?? []).map((s) => s.professorId));
   const notSignedUp = (dueQueue?.faculty ?? []).filter(
     (person) => !signedUp.has(person.professorId),

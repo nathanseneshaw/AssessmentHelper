@@ -305,6 +305,9 @@ class WorkflowEndToEndTests {
                         .content("{\"ratings\":[4,5,3,4,2,4],\"comments\":\"The process was clear.\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"));
+        mvc.perform(as(KAIA, get("/api/ac-dashboard/metrics")))
+                .andExpect(jsonPath("$.surveyStatus").value("AVAILABLE"))
+                .andExpect(jsonPath("$.surveyCompletion.count").value(1));
     }
 
     @Test

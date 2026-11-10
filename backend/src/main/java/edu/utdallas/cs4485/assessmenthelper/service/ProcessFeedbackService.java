@@ -32,6 +32,14 @@ public class ProcessFeedbackService {
         this.clock = clock;
     }
 
+    public static String window(LocalDate observationDeadline, LocalDate feedbackDeadline, LocalDate today) {
+        if (observationDeadline == null || feedbackDeadline == null || !feedbackDeadline.isAfter(observationDeadline))
+            return "UNCONFIGURED";
+        if (!today.isAfter(observationDeadline)) return "NOT_OPEN";
+        if (today.isAfter(feedbackDeadline)) return "CLOSED";
+        return "AVAILABLE";
+    }
+
     private int professorId(AccountPrincipal principal) {
         if (principal == null || principal.user().professorId() == null)
             throw new AccessDeniedException("A faculty profile is required.");
@@ -57,13 +65,8 @@ public class ProcessFeedbackService {
                 (r, row) -> {
                     LocalDate observation = r.getObject("observation_deadline", LocalDate.class);
                     LocalDate feedback = r.getObject("feedback_deadline", LocalDate.class);
-                    String status;
-                    if (r.getObject("feedback_id") != null) status = "SUBMITTED";
-                    else if (observation == null || feedback == null || !feedback.isAfter(observation))
-                        status = "UNCONFIGURED";
-                    else if (!today.isAfter(observation)) status = "NOT_OPEN";
-                    else if (today.isAfter(feedback)) status = "CLOSED";
-                    else status = "AVAILABLE";
+                    String status =
+                            r.getObject("feedback_id") != null ? "SUBMITTED" : window(observation, feedback, today);
                     return new Survey(
                             r.getInt("cycle_id"),
                             r.getString("term") + " " + r.getInt("academic_year"),

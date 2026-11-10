@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import {
   type DashboardMetrics,
   getDashboardMetrics,
-  type Ratio,
+  rate,
+  surveyCompletionRate,
+  useDashboardRefresh,
 } from "../../api/acDashboard";
 import {
   getDueQueue,
@@ -30,19 +32,6 @@ interface KpiGroup {
 }
 
 type Reading = Pick<Kpi, "value" | "note">;
-
-function rate(
-  { count, total }: Ratio,
-  counted: string,
-  empty: string,
-): Reading {
-  return total === 0
-    ? { value: "—", note: empty }
-    : {
-        value: `${Math.round((count / total) * 100)}%`,
-        note: `${count} of ${total} ${counted}`,
-      };
-}
 
 interface DashboardData {
   metrics: DashboardMetrics | null;
@@ -151,11 +140,7 @@ function kpiGroups({
       title: "Survey & observation completion",
       grid: "sm:grid-cols-[6fr_7fr]",
       kpis: [
-        {
-          label: "Survey Completion Rate",
-          value: "78%",
-          note: "Process feedback received",
-        },
+        metric("Survey Completion Rate", surveyCompletionRate),
         metric(
           "Missing Observations",
           (loaded) => ({
@@ -214,14 +199,14 @@ export function AcOverview() {
   const [queue, setQueue] = useState<OverdueQueue | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
-  const [reload, setReload] = useState(0);
+  const { version, refresh } = useDashboardRefresh(matching);
   const [dueQueue, setDueQueue] = useState<OverdueQueue | null>(null);
   const [dueError, setDueError] = useState("");
   const [dueOpen, setDueOpen] = useState(false);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [metricsFailed, setMetricsFailed] = useState(false);
-  // Retry deliberately reruns the request even though the request URL is unchanged.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is an explicit retry trigger.
+  // The figures already shown stay until the new ones arrive.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is the refresh trigger.
   useEffect(() => {
     const controller = new AbortController();
     setError("");
@@ -253,7 +238,7 @@ export function AcOverview() {
         if (!controller.signal.aborted) setMetricsFailed(true);
       });
     return () => controller.abort();
-  }, [reload]);
+  }, [version]);
   const groups = kpiGroups({
     metrics,
     metricsFailed,
@@ -272,11 +257,7 @@ export function AcOverview() {
       {error && (
         <p role="alert" className="mt-4 text-sm text-brand-red">
           {error}{" "}
-          <button
-            type="button"
-            className="underline"
-            onClick={() => setReload((value) => value + 1)}
-          >
+          <button type="button" className="underline" onClick={refresh}>
             Retry
           </button>
         </p>
@@ -355,11 +336,7 @@ export function AcOverview() {
           {dueError ? (
             <li role="alert" className="text-sm text-brand-red">
               {dueError}{" "}
-              <button
-                type="button"
-                className="underline"
-                onClick={() => setReload((value) => value + 1)}
-              >
+              <button type="button" className="underline" onClick={refresh}>
                 Retry due evaluations
               </button>
             </li>
