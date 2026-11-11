@@ -1,11 +1,163 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   type EvaluationRecord,
   evaluationRecordsPath,
   evaluationStatusLabel,
 } from "../api/evaluations";
-import { useApiResource } from "../api/observations";
+import {
+  formatWhen,
+  type ObservationDetail,
+  type ObservationSummary,
+  observationPath,
+  professorObservationsPath,
+  STATUS_LABELS,
+  useApiResource,
+} from "../api/observations";
 import { DeferralDetails } from "./DeferralDetails";
+import { ObservationRecord } from "./ObservationRecord";
+
+function CycleObservations({
+  professorId,
+  cycleId,
+}: {
+  professorId: number;
+  cycleId: number;
+}) {
+  const { data, error, reload } = useApiResource<ObservationSummary[]>(
+    professorObservationsPath(professorId),
+  );
+  const [selected, setSelected] = useState<number | null>(null);
+  const {
+    data: form,
+    error: formError,
+    reload: reloadForm,
+  } = useApiResource<ObservationDetail>(
+    selected === null ? null : observationPath(selected),
+  );
+  const observations = data?.filter(
+    (observation) =>
+      observation.cycleId === cycleId && observation.role === "OBSERVEE",
+  );
+  return (
+    <div className="mt-4 border-t border-line pt-4">
+      {error ? (
+        <p role="alert">
+          {error}{" "}
+          <button type="button" className="underline" onClick={reload}>
+            Retry
+          </button>
+        </p>
+      ) : !observations ? (
+        <p role="status">Loading observations...</p>
+      ) : observations.length === 0 ? (
+        <p>No observations are recorded for this cycle.</p>
+      ) : (
+        <ul className="space-y-4">
+          {observations.map((observation) => (
+            <li
+              key={observation.observationId}
+              className="rounded-lg bg-mist p-4"
+            >
+              <h4 className="font-semibold">{observation.courseLabel}</h4>
+              <p className="mt-1 text-sm">
+                Observer: {observation.observerName}
+              </p>
+              <p className="text-sm">
+                {formatWhen(
+                  observation.observationDate,
+                  observation.startTime,
+                ) ?? "Not scheduled"}
+              </p>
+              <p className="text-sm">{STATUS_LABELS[observation.status]}</p>
+              {observation.status === "COMPLETED" && (
+                <button
+                  type="button"
+                  className="mt-3 rounded bg-brand-green px-4 py-2 text-sm text-white"
+                  onClick={() => setSelected(observation.observationId)}
+                >
+                  View Observation
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {selected !== null && (
+        <section aria-label="Completed observation form" className="mt-5">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <h4 className="font-semibold">Observation Form</h4>
+            <button
+              type="button"
+              className="underline"
+              onClick={() => setSelected(null)}
+            >
+              Close form
+            </button>
+          </div>
+          {formError ? (
+            <p role="alert">
+              {formError}{" "}
+              <button type="button" className="underline" onClick={reloadForm}>
+                Retry
+              </button>
+            </p>
+          ) : !form ? (
+            <p role="status">Loading observation form...</p>
+          ) : form.status === "COMPLETED" ? (
+            <ObservationRecord observation={form} />
+          ) : (
+            <p>This observation is not completed yet.</p>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function EvaluationHistoryItem({
+  record,
+  professorId,
+}: {
+  record: EvaluationRecord;
+  professorId: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const overviewId = useId();
+  return (
+    <li className="rounded-lg border border-line p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-semibold">
+            {record.term} {record.academicYear}
+          </h3>
+          <p className="mt-1 text-sm">
+            {evaluationStatusLabel(record.status)}
+            {evaluationStatusLabel(record.status) !== "In progress" &&
+              `: ${record.observationCount} observation(s)`}
+          </p>
+        </div>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={overviewId}
+          className="rounded bg-brand-green px-4 py-2 text-sm text-white"
+          onClick={() => setExpanded(!expanded)}
+        >
+          View Observation(s)
+        </button>
+      </div>
+      {record.deferral && <DeferralDetails details={record.deferral} />}
+      <div id={overviewId}>
+        {expanded && (
+          <CycleObservations
+            professorId={professorId}
+            cycleId={record.cycleId}
+          />
+        )}
+      </div>
+    </li>
+  );
+}
 
 export function FacultyEvaluationHistory({
   professorId,
@@ -67,19 +219,11 @@ export function FacultyEvaluationHistory({
       ) : (
         <ul className="mt-4 space-y-4">
           {data.map((record) => (
-            <li
+            <EvaluationHistoryItem
               key={record.cycleId}
-              className="rounded-lg border border-line p-4"
-            >
-              <h3 className="font-semibold">
-                {record.term} {record.academicYear}
-              </h3>
-              <p className="mt-1 text-sm">
-                {evaluationStatusLabel(record.status)} ?{" "}
-                {record.observationCount} observation(s)
-              </p>
-              {record.deferral && <DeferralDetails details={record.deferral} />}
-            </li>
+              record={record}
+              professorId={professorId}
+            />
           ))}
         </ul>
       )}
