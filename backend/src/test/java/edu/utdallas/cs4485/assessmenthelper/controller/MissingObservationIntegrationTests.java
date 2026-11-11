@@ -131,21 +131,22 @@ class MissingObservationIntegrationTests {
                 WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
                 """, observer);
         assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        assertThat(has(observee, "MISSING_SIGN_OFF")).isTrue();
     }
 
     @Test
-    void futureAndSameDayObservationsAreNotLate() {
+    void futureAndSameDayObservationsAreMissingAfterTheCycleDeadline() {
         int observer = id("keira.larkspur@example.edu");
         db.update("""
                 UPDATE observation SET observation_date=DATE '2026-11-16'
                 WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
                 """, observer);
-        assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
         db.update("""
                 UPDATE observation SET observation_date=DATE '2026-11-17'
                 WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
                 """, observer);
-        assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
     }
 
     @Test
@@ -159,13 +160,31 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void anUndatedObservationIsNotLate() {
+    void incompleteAlertsUseTheDeadlineAndExcludeCancelledAndCompletedRecords() {
+        int observer = id("keira.larkspur@example.edu");
+        int observee = id("leander.coldwell@example.edu");
+        db.update("UPDATE evaluation_cycle SET observation_deadline=DATE '2026-11-16' WHERE cycle_id=1");
+        assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        db.update("UPDATE evaluation_cycle SET observation_deadline=DATE '2026-11-15' WHERE cycle_id=1");
+        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
+        db.update("UPDATE observation SET status='SUBMITTED' WHERE signup_id=?", signupOf(LEANDER));
+        assertThat(has(observee, "MISSING_SIGN_OFF")).isTrue();
+        db.update("UPDATE observation SET status='COMPLETED' WHERE signup_id=?", signupOf(LEANDER));
+        assertThat(has(observee, "MISSING_SIGN_OFF")).isFalse();
+        db.update("UPDATE observation SET status='IN_PROGRESS' WHERE signup_id=?", signupOf(LEANDER));
+        db.update("UPDATE evaluation_signup SET status='CANCELLED' WHERE signup_id=?", signupOf(LEANDER));
+        assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        assertThat(has(observee, "MISSING_SUBMISSION")).isFalse();
+    }
+
+    @Test
+    void anUndatedObservationIsMissingAfterTheDeadline() {
         int observer = id("keira.larkspur@example.edu");
         db.update("""
                 UPDATE observation SET observation_date=NULL, start_time=NULL
                 WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
                 """, observer);
-        assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
     }
 
     AccountPrincipal principal() {

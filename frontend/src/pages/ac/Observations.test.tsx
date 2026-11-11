@@ -86,6 +86,32 @@ async function expandFaculty() {
   }
 }
 
+test("pending sign-off is distinct from completed and missing includes its unfinished step", async () => {
+  const first = observationTracking.observations[0];
+  if (!first) throw new Error("Missing observation fixture");
+  answerObservations = () =>
+    Response.json({
+      ...observationTracking,
+      observations: [
+        { ...first, status: "PENDING_SIGN_OFF" },
+        {
+          ...first,
+          signupId: 999,
+          observerId: 999,
+          status: "MISSING",
+          missingReason: "Not signed",
+        },
+      ],
+    });
+  await renderObservations();
+  await expandFaculty();
+  expect(kpi("Pending sign-off").value).toBe("1");
+  expect(kpi("Completed").value).toBe("0");
+  expect(kpi("Missing").value).toBe("1");
+  expect(screen.getByText("Not signed")).toBeDefined();
+  expect(rows().some((row) => row.includes("Pending sign-off"))).toBe(true);
+});
+
 test("faculty dropdown groups multiple observers and toggles their rows", async () => {
   const first = observationTracking.observations[0];
   if (!first) throw new Error("Missing observation");
@@ -196,7 +222,7 @@ test("cards count the observations in each status and show the deadline on the s
   });
   expect(kpi("Missing")).toEqual({
     value: "1",
-    note: "Past their date and not completed",
+    note: "Past the observation deadline; not fully signed",
   });
   expect(kpi("Observation Deadline")).toEqual({
     value: "Nov 15",
@@ -256,6 +282,7 @@ test("View opens the completed observation's details", async () => {
     term.nextElementSibling?.textContent,
   ]);
   expect(details).toEqual([
+    ["Status", "Completed"],
     ["Observer", "Juniper Ashgrove"],
     ["Date / Time", "Oct 20, 1:00 PM"],
     ["Signed by observee", "Yes"],

@@ -372,13 +372,13 @@ class WorkflowEndToEndTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"));
         mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
-                .andExpect(jsonPath(DARIOS_ROW + ".status").value("SCHEDULED"))
+                .andExpect(jsonPath(DARIOS_ROW + ".status").value("PENDING_SIGN_OFF"))
                 .andExpect(jsonPath(DARIOS_ROW + ".observerSigned").value(true))
                 .andExpect(jsonPath(DARIOS_ROW + ".observeeSigned").value(false));
     }
 
     @Test
-    void anObservationNobodyCompletesIsReportedMissingOnceItsDatePasses() throws Exception {
+    void anUnsubmittedObservationIsMissingAfterTheCycleDeadlineAndRemindsOnlyItsObserver() throws Exception {
         signUp(DARIO, 34, 298);
         signupId = signupOf(34);
         clock.set("2026-11-02T09:00:00");
@@ -393,27 +393,36 @@ class WorkflowEndToEndTests {
         clock.set("2026-11-03T13:00:00");
         act(ARLO, "/api/observations/" + observation + "/start").andExpect(status().isOk());
 
-        // The form was opened on 11-03 and never submitted. It is on schedule that day and missing from the next. The
-        // seeded observations are compared before and after, so only Dario's changes the count.
-        mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
-                .andExpect(jsonPath(DARIOS_ROW + ".status").value("SCHEDULED"));
-        int missingBefore = missingObservations();
+        // Passing the scheduled date does not make an unsubmitted form missing.
         clock.set("2026-11-04T09:00:00");
         mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
-                .andExpect(jsonPath(DARIOS_ROW + ".status").value("MISSING"));
-        assertThat(missingObservations()).isEqualTo(missingBefore + 1);
+                .andExpect(jsonPath(DARIOS_ROW + ".status").value("SCHEDULED"));
+        assertThat(missingObservations()).isZero();
+        // The deadline day remains on time; every incomplete observation is missing the following day.
+        clock.set("2026-11-15T23:59:59");
+        assertThat(missingObservations()).isZero();
+        clock.set("2026-11-16T09:00:00");
+        String tracking = mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
+                .andExpect(jsonPath(DARIOS_ROW + ".status").value("MISSING"))
+                .andExpect(jsonPath(DARIOS_ROW + ".missingReason").value("Not submitted"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        List<?> missing = JsonPath.read(tracking, "$.observations[?(@.status == 'MISSING')]");
+        assertThat(missingObservations()).isEqualTo(missing.size()).isPositive();
         mvc.perform(as(KAIA, post("/api/ac-dashboard/observations/reminders"))).andExpect(status().isOk());
-        // Both people involved are reminded that the observation has not been completed.
-        for (int professorId : List.of(34, 26)) {
-            assertThat(db.queryForList(
-                            "SELECT message FROM observer_notification WHERE professor_id = ? AND created_at = ?"
-                                    + " AND message LIKE '%has not been completed.%'",
-                            String.class, professorId, LocalDateTime.parse("2026-11-04T09:00:00")))
-                    .singleElement()
-                    .asString()
-                    .startsWith("Reminder from the Assessment Committee: your observation of")
-                    .endsWith("has not been completed. Complete it as soon as possible.");
-        }
+        assertThat(db.queryForList(
+                        "SELECT message FROM observer_notification WHERE professor_id = ? AND created_at = ?"
+                                + " AND message LIKE 'Reminder from the Assessment Committee:%'",
+                        String.class, 26, LocalDateTime.parse("2026-11-16T09:00:00")))
+                .singleElement()
+                .asString()
+                .contains("complete and submit your observation of Dario Hollowell's CS 3345.005");
+        assertThat(db.queryForList(
+                        "SELECT message FROM observer_notification WHERE professor_id = ? AND created_at = ?"
+                                + " AND message LIKE 'Reminder from the Assessment Committee:%'",
+                        String.class, 34, LocalDateTime.parse("2026-11-16T09:00:00")))
+                .isEmpty();
         mvc.perform(as(DARIO, get("/api/professors/34/evaluations")))
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$[0].lastObservationCompletedAt").value(nullValue()));

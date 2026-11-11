@@ -293,7 +293,7 @@ test("the list shows only the observations I do, with the right action for each"
   expect(resume.getAttribute("href")).toBe("/faculty/observations/6");
 
   expect(sam.getByText("Fall 2026 · Oct 23, 2026")).toBeDefined();
-  expect(sam.getByText("Submitted")).toBeDefined();
+  expect(sam.getByText("Pending sign-off")).toBeDefined();
   expect(
     sam
       .getByRole("link", {
@@ -662,7 +662,7 @@ test("a complete form is submitted only after the observer confirms", async () =
   expect(view.queryByRole("button", { name: "Save draft" })).toBeNull();
   expect(
     within(view.getByRole("region", { name: "Summary" })).getByText(
-      "Submitted",
+      "Pending sign-off",
     ),
   ).toBeDefined();
 });
@@ -792,7 +792,7 @@ test("reopening a submitted observation shows the answers read-only, and when th
 
   expect(
     within(view.getByRole("region", { name: "Summary" })).getByText(
-      "Submitted",
+      "Pending sign-off",
     ),
   ).toBeDefined();
   const responses = within(view.getByRole("region", { name: "Responses" }));

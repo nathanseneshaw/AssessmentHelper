@@ -89,7 +89,7 @@ export const STATUS_LABELS: Record<ObservationStatus, string> = {
   ACCEPTED: "Not started",
   SCHEDULED: "Not started",
   IN_PROGRESS: "In progress",
-  SUBMITTED: "Submitted",
+  SUBMITTED: "Pending sign-off",
   COMPLETED: "Completed",
 };
 

@@ -123,7 +123,7 @@ test("the summary cards show the professor's evaluation from the database", asyn
   expect(card("Cycle")).toBe("CycleEvery 2 YearsAssociate Professor schedule");
   expect(card("Next Due")).toBe("Next DueSep 2026Fall 2026 semester");
   expect(card("Observations This Term")).toBe(
-    "Observations This Term31 completed • 2 scheduled",
+    "Observations This Term30 completed • 1 pending sign-off • 2 not yet submitted",
   );
 });
 
@@ -131,7 +131,7 @@ test("a submitted evaluation says so", async () => {
   current.evaluation.status = "SUBMITTED";
   await open();
   expect(card("Evaluation Status")).toBe(
-    "Evaluation StatusSubmittedSilas Brightwater • Nov 4, 2026",
+    "Evaluation StatusPending sign-offSilas Brightwater • Nov 4, 2026",
   );
 });
 
@@ -207,7 +207,11 @@ test("history and observation cards show the newest two records", async () => {
   ]);
   expect(entries("Observations for Others")).toEqual([
     ["CS 3345.002", "Observee: Ivo Pembrook", "In progress • Nov 6, 2026"],
-    ["CS 2336.001", "Observee: Mira Castellane", "Submitted • Oct 20, 2026"],
+    [
+      "CS 2336.001",
+      "Observee: Mira Castellane",
+      "Pending sign-off • Oct 20, 2026",
+    ],
   ]);
   for (const [title, href] of [
     ["Observations for Me", "/faculty/observations/me"],
@@ -316,8 +320,8 @@ test("a submitted observation of the professor's class asks them to review and s
   const signOff = upcoming("Sign Off — CS 4348.501");
   expect(signOff.textContent).toContain("OCT20");
   expect(signOff.textContent).toContain("Observer: Silas Brightwater");
-  expect(signOff.textContent).toContain("Action needed");
-  expect(signOff.textContent).toContain("Observed Oct 20, 2026, 8:30 AM");
+  expect(signOff.textContent).toContain("Pending sign-off");
+  expect(signOff.textContent).toContain("Due Oct 20");
   expect(signOff.innerHTML).toContain("bg-peach");
   expect(within(section("Upcoming")).getByText("1 item due")).toBeDefined();
 });
@@ -368,7 +372,7 @@ test("a due professor who has not signed up is asked to sign up", async () => {
   ]);
 });
 
-test("an observation past its date without a submitted form is flagged Overdue", async () => {
+test("an observation past the cycle deadline shows its missing state", async () => {
   current.upcoming = current.upcoming
     .slice(0, 1)
     .map((item) => ({ ...item, overdue: true }));
@@ -378,10 +382,14 @@ test("an observation past its date without a submitted form is flagged Overdue",
   await open();
 
   const late = upcoming("Observation — CS 4348.501");
-  expect(late.textContent).toContain("Overdue");
+  expect(late.textContent).toContain("Missing: Not submitted");
   expect(late.innerHTML).toContain("bg-peach");
   expect(entries("Observations for Me")).toEqual([
-    ["CS 4348.501", "Observer: Silas Brightwater", "Overdue • Nov 4, 2026"],
+    [
+      "CS 4348.501",
+      "Observer: Silas Brightwater",
+      "Missing: Not submitted • Nov 4, 2026",
+    ],
   ]);
 });
 
@@ -397,7 +405,12 @@ test("a professor with nothing on record sees empty states", async () => {
       nextDueSemester: null,
       dueStatus: null,
     },
-    termObservations: { total: 0, completed: 0, scheduled: 0 },
+    termObservations: {
+      total: 0,
+      completed: 0,
+      scheduled: 0,
+      pendingSignOff: 0,
+    },
     upcoming: [],
     history: [],
     observationsForMe: [],
@@ -484,8 +497,8 @@ test("a new notification reloads the dashboard", async () => {
     expect(entries("Observations for Me")[0]).toEqual([
       "CS 4348.501",
       "Observer: Silas Brightwater",
-      "Submitted • Nov 4, 2026",
+      "Pending sign-off • Nov 4, 2026",
     ]),
   );
-  expect(card("Evaluation Status")).toContain("Submitted");
+  expect(card("Evaluation Status")).toContain("Pending sign-off");
 });

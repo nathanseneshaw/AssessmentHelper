@@ -14,7 +14,7 @@ export const STATUS_COLORS: Record<ObservationStatus, string> = {
   ACCEPTED: "text-muted",
   SCHEDULED: "text-muted",
   IN_PROGRESS: "text-brand-orange",
-  SUBMITTED: "text-brand-green",
+  SUBMITTED: "text-brand-orange",
   COMPLETED: "text-brand-green",
 };
 

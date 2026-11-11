@@ -194,25 +194,41 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void missingObservationsArePastDatedAndNotCompleted() throws Exception {
-        // Leander's observation on 2026-11-04 is missing only once that day has passed.
-        expectMissing(0);
-        clock.set("2026-11-04T15:00:00Z");
+    void missingObservationsFollowTheCycleDeadlineAndFinalCompletion() throws Exception {
         expectMissing(0);
         clock.set("2026-11-05T15:00:00Z");
-        expectMissing(1);
+        expectMissing(0); // The scheduled date alone does not make anything missing.
+        clock.set("2026-11-15T15:00:00Z");
+        expectMissing(0);
+        db.update("UPDATE observation SET status='SUBMITTED' WHERE signup_id=?", signupOf(LEANDER));
+        String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
+        observations().andExpect(jsonPath(leander + ".status").value("PENDING_SIGN_OFF"));
+        clock.set("2026-11-16T15:00:00Z");
+        expectMissing(8).andExpect(jsonPath("$.observerUtilization.count").value(1));
+        observations()
+                .andExpect(jsonPath(leander + ".status").value("MISSING"))
+                .andExpect(jsonPath(leander + ".missingReason").value("Not signed"))
+                .andExpect(jsonPath("$.observations[?(@.observeeId == " + AVERY + ")].missingReason")
+                        .value("Not scheduled - awaiting observer"));
+        db.update("UPDATE observation SET status='Completed' WHERE signup_id=?", signupOf(LEANDER));
+        expectMissing(7);
+        db.update("UPDATE evaluation_cycle SET observation_deadline=NULL WHERE cycle_id=1");
+        expectMissing(0);
+    }
 
-        // Accepting a request records an ACCEPTED observation, which counts once its date has passed.
-        db.update("""
-                INSERT INTO observation (signup_id, observer_id, template_id, observation_date, status)
-                VALUES (?, ?, (SELECT MIN(template_id) FROM observation_template), DATE '2026-11-02', 'ACCEPTED')
-                """, signupOf(AVERY), observerOf(KEIRA));
-        expectMissing(2).andExpect(jsonPath("$.observerUtilization.count").value(2));
-        db.update("UPDATE observation SET observation_date = NULL WHERE signup_id = ?", signupOf(AVERY));
-        expectMissing(1);
-
-        db.update("UPDATE observation SET status = 'Completed' WHERE signup_id = ?", signupOf(LEANDER));
-        expectMissing(0).andExpect(jsonPath("$.observerUtilization.count").value(2));
+    @Test
+    void submittedFormsRemindOnlyTheObserveeBeforeAndAfterTheDeadline() throws Exception {
+        db.update("UPDATE observation SET status='SUBMITTED' WHERE signup_id=?", signupOf(LEANDER));
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(2));
+        assertThat(remindersFor(KEIRA)).isEmpty();
+        assertThat(remindersFor(LEANDER)).singleElement().asString().contains("review and sign");
+        clock.set("2026-11-16T15:00:00Z");
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(2));
+        assertThat(remindersFor(LEANDER)).hasSize(2);
+        assertThat(remindersFor(KEIRA)).isEmpty();
+        db.update("UPDATE observation SET status='COMPLETED' WHERE signup_id=?", signupOf(LEANDER));
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(1));
+        assertThat(remindersFor(LEANDER)).hasSize(2);
     }
 
     @Test
@@ -266,7 +282,7 @@ class AcDashboardIntegrationTests {
         String leander = "$.observations[?(@.observeeId == " + LEANDER + ")].status";
         clock.set("2026-11-04T15:00:00Z");
         observations().andExpect(jsonPath(leander).value("SCHEDULED"));
-        clock.set("2026-11-05T15:00:00Z");
+        clock.set("2026-11-16T15:00:00Z");
         observations().andExpect(jsonPath(leander).value("MISSING"));
 
         db.update(
@@ -292,14 +308,12 @@ class AcDashboardIntegrationTests {
         // anyone. The other four lists are not released, so their observees cannot request anyone yet.
         mvc.perform(as(KAIA, post(REMINDERS)))
                 .andExpect(status().isOk())
-                .andExpect(content().json("{\"sent\":3}", JsonCompareMode.STRICT));
+                .andExpect(content().json("{\"sent\":2}", JsonCompareMode.STRICT));
 
-        assertThat(remindersFor(LEANDER))
-                .containsExactly(
-                        "Reminder from the Assessment Committee: your observation of CS 3345.001 by Keira Larkspur is scheduled for Nov 4 at 08:30.");
+        assertThat(remindersFor(LEANDER)).isEmpty();
         assertThat(remindersFor(KEIRA))
                 .containsExactly(
-                        "Reminder from the Assessment Committee: your observation of Leander Coldwell's CS 3345.001 is scheduled for Nov 4 at 08:30.");
+                        "Reminder from the Assessment Committee: complete and submit your observation of Leander Coldwell's CS 3345.001 by the observation deadline, Nov 15.");
         assertThat(remindersFor(AVERY))
                 .singleElement()
                 .asString()
@@ -310,11 +324,11 @@ class AcDashboardIntegrationTests {
 
     @Test
     void missingAndCompletedObservationsGetTheRightReminders() throws Exception {
-        clock.set("2026-11-05T15:00:00Z");
-        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(3));
+        clock.set("2026-11-16T15:00:00Z");
+        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(2));
         assertThat(remindersFor(KEIRA))
                 .containsExactly(
-                        "Reminder from the Assessment Committee: your observation of Leander Coldwell's CS 3345.001 was scheduled for Nov 4 at 08:30 and has not been completed. Complete it as soon as possible.");
+                        "Reminder from the Assessment Committee: complete and submit your observation of Leander Coldwell's CS 3345.001 by the observation deadline, Nov 15.");
 
         db.update("UPDATE observation SET status = 'COMPLETED' WHERE signup_id = ?", signupOf(LEANDER));
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(1));
@@ -327,9 +341,7 @@ class AcDashboardIntegrationTests {
                 "UPDATE observation SET observation_date = NULL, start_time = NULL WHERE signup_id = ?",
                 signupOf(LEANDER));
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
-        assertThat(remindersFor(LEANDER))
-                .containsExactly(
-                        "Reminder from the Assessment Committee: your observation of CS 3345.001 by Keira Larkspur does not have a date yet. Schedule it by the observation deadline, Nov 15.");
+        assertThat(remindersFor(KEIRA)).singleElement().asString().contains("schedule the observation and submit");
     }
 
     @Test
@@ -337,9 +349,9 @@ class AcDashboardIntegrationTests {
         db.update("UPDATE observation SET start_time = NULL WHERE signup_id = ?", signupOf(LEANDER));
         db.update("UPDATE evaluation_cycle SET observation_deadline = NULL WHERE cycle_id = 1");
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
-        assertThat(remindersFor(LEANDER))
+        assertThat(remindersFor(KEIRA))
                 .containsExactly(
-                        "Reminder from the Assessment Committee: your observation of CS 3345.001 by Keira Larkspur is scheduled for Nov 4.");
+                        "Reminder from the Assessment Committee: complete and submit your observation of Leander Coldwell's CS 3345.001.");
         assertThat(remindersFor(AVERY))
                 .singleElement()
                 .asString()

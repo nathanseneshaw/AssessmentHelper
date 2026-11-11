@@ -145,7 +145,7 @@ function kpiGroups({
           "Missing Observations",
           (loaded) => ({
             value: String(loaded.missingObservations),
-            note: "Approved observations past their date and not completed",
+            note: "Past the observation deadline without final sign-off",
           }),
           true,
         ),

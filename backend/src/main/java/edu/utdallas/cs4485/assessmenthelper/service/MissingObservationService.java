@@ -68,7 +68,7 @@ public class MissingObservationService {
                 LEFT JOIN observation o ON o.signup_id=es.signup_id
                 LEFT JOIN observer ob ON ob.observer_id=o.observer_id
                 LEFT JOIN professor op ON op.professor_id=ob.professor_id
-                WHERE oe.cycle_id=? AND es.status<>'CANCELLED'
+                WHERE oe.cycle_id=? AND es.status NOT IN ('CANCELLED', 'DEFERRED')
                 AND NOT EXISTS (SELECT 1 FROM observation d WHERE d.signup_id=es.signup_id
                 AND UPPER(d.status)='COMPLETED')
                 ORDER BY p.last_name, p.first_name, es.signup_id,
@@ -97,24 +97,55 @@ public class MissingObservationService {
     public List<Alert> findByProfessor(int professorId) {
         var alerts = new ArrayList<Alert>();
         LocalDate today = LocalDate.now(clock);
-        // Observer obligations remain visible even when their own evaluation is not due.
+        var cycle = eligibility.cycle();
+        // Use each observation's cycle deadline, including obligations from earlier cycles.
+        var observationDeadlines = db.query(
+                """
+                SELECT o.observation_id, ec.observation_deadline FROM observation o
+                JOIN evaluation_signup es ON es.signup_id=o.signup_id
+                JOIN observee oe ON oe.observee_id=es.observee_id
+                JOIN observer ob ON ob.observer_id=o.observer_id
+                JOIN evaluation_cycle ec ON ec.cycle_id=oe.cycle_id
+                WHERE es.status NOT IN ('CANCELLED', 'DEFERRED')
+                AND (oe.professor_id=? OR ob.professor_id=?)
+                """,
+                rs -> {
+                    var result = new java.util.HashMap<Integer, LocalDate>();
+                    while (rs.next())
+                        result.put(rs.getInt("observation_id"), rs.getObject("observation_deadline", LocalDate.class));
+                    return result;
+                },
+                professorId,
+                professorId);
         for (var observation : observations.professorObservations(professorId)) {
-            if (observation.role() == ObservationService.ViewerRole.OBSERVER
-                    && observation.submittedAt() == null
-                    && (observation.status() == ObservationService.Status.SCHEDULED
-                            || observation.status() == ObservationService.Status.ACCEPTED
-                            || observation.status() == ObservationService.Status.IN_PROGRESS)
-                    && observation.observationDate() != null
-                    && today.isAfter(observation.observationDate())) {
+            LocalDate due = observationDeadlines.get(observation.observationId());
+            if (due == null || !today.isAfter(due) || observation.status() == ObservationService.Status.COMPLETED)
+                continue;
+            boolean pendingSignOff = observation.status() == ObservationService.Status.SUBMITTED;
+            boolean observer = observation.role() == ObservationService.ViewerRole.OBSERVER;
+            if (observer && !pendingSignOff) {
                 alerts.add(new Alert(
                         "LATE_SUBMISSION",
                         observation.observationId(),
-                        observation.observationDate(),
-                        "Observation for " + observation.observeeName() + " (" + observation.courseLabel()
-                                + ") is late. Complete and submit your observation."));
+                        due,
+                        "Missing: " + (observation.observationDate() == null ? "Not scheduled" : "Not submitted")
+                                + ". Observation for " + observation.observeeName() + " (" + observation.courseLabel()
+                                + "). Complete and submit your observation."));
+            } else if (!observer) {
+                alerts.add(new Alert(
+                        pendingSignOff ? "MISSING_SIGN_OFF" : "MISSING_SUBMISSION",
+                        observation.observationId(),
+                        due,
+                        "Missing: "
+                                + (pendingSignOff
+                                        ? "Not signed"
+                                        : observation.observationDate() == null ? "Not scheduled" : "Not submitted")
+                                + ". Observation of " + observation.courseLabel() + ". "
+                                + (pendingSignOff
+                                        ? "Review and sign your observation."
+                                        : "Contact your observer to complete the observation.")));
             }
         }
-        var cycle = eligibility.cycle();
         // Missing policy/hire data is not proof of a missed evaluation.
         int applicable = db.queryForObject("""
                 SELECT COUNT(*) FROM professor p JOIN evaluation_policy ep ON ep.professor_rank=p.professor_rank
@@ -129,7 +160,7 @@ public class MissingObservationService {
         if (!required) return alerts;
         int signups = db.queryForObject("""
                 SELECT COUNT(*) FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
-                WHERE oe.professor_id=? AND oe.cycle_id=? AND es.status<>'CANCELLED'
+                WHERE oe.professor_id=? AND oe.cycle_id=? AND es.status NOT IN ('CANCELLED', 'DEFERRED')
                 """, Integer.class, professorId, cycle.cycleId());
         if (signups == 0 && cycle.signupDeadline() != null && today.isAfter(cycle.signupDeadline())) {
             alerts.add(
@@ -143,15 +174,15 @@ public class MissingObservationService {
             int scheduled = db.queryForObject("""
                     SELECT COUNT(*) FROM observation o JOIN evaluation_signup es ON es.signup_id=o.signup_id
                     JOIN observee oe ON oe.observee_id=es.observee_id
-                    WHERE oe.professor_id=? AND oe.cycle_id=? AND es.status<>'CANCELLED'
+                    WHERE oe.professor_id=? AND oe.cycle_id=? AND es.status NOT IN ('CANCELLED', 'DEFERRED')
                     """, Integer.class, professorId, cycle.cycleId());
             if (scheduled == 0)
                 alerts.add(new Alert(
                         "MISSING_SCHEDULE",
                         null,
                         cycle.observationDeadline(),
-                        "Your required evaluation has no confirmed observation for " + cycle.label()
-                                + ". Contact the Assessment Committee to arrange an observation."));
+                        "Missing: Not scheduled. Your required evaluation has no confirmed observation for "
+                                + cycle.label() + ". Contact the Assessment Committee to arrange an observation."));
         }
         return alerts;
     }

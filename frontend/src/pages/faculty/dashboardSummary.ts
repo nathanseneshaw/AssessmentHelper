@@ -115,7 +115,7 @@ function nextDueCard({ deadline, deadlineError }: SummaryInputs): SummaryCard {
   };
 }
 
-/** The observations of the professor's own classes in the current cycle, and how many the observers submitted. */
+/** The observations of the professor's own classes in the current cycle, split by completion and pending sign-off. */
 function observationsCard({ observations, cycle }: SummaryInputs): SummaryCard {
   const label = "Observations This Term";
   if (!observations || !cycle)
@@ -125,13 +125,12 @@ function observationsCard({ observations, cycle }: SummaryInputs): SummaryCard {
   );
   if (!mine.length)
     return { label, value: "0", note: "None of your classes observed yet" };
-  const submitted = mine.filter(
-    (o) => o.status === "SUBMITTED" || o.status === "COMPLETED",
-  ).length;
+  const completed = mine.filter((o) => o.status === "COMPLETED").length;
+  const pending = mine.filter((o) => o.status === "SUBMITTED").length;
   return {
     label,
     value: String(mine.length),
-    note: `${submitted} submitted • ${mine.length - submitted} not yet submitted`,
+    note: `${completed} completed • ${pending} pending sign-off • ${mine.length - completed - pending} not yet submitted`,
   };
 }
 

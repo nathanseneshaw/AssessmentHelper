@@ -134,10 +134,15 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void us35_4_anObservationPastItsDateWithoutAnAcceptedFormIsMissing() {
+    void us35_4_anIncompleteObservationIsMissingOnlyAfterTheCycleDeadline() {
         clock.set(AFTER_THE_OBSERVATION_DATE);
-
+        assertThat(leandersEvaluation().status()).isEqualTo(Status.SCHEDULED);
+        assertThat(dashboard.metrics().missingObservations()).isZero();
+        clock.set("2026-11-15T16:00:00Z");
+        assertThat(dashboard.metrics().missingObservations()).isZero();
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         assertThat(leandersEvaluation().status()).isEqualTo(Status.MISSING);
+        assertThat(leandersEvaluation().missingReason()).isEqualTo("Not submitted");
         assertThat(dashboard.metrics().missingObservations()).isGreaterThanOrEqualTo(1);
     }
 
@@ -154,7 +159,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
 
     @Test
     void us35_5_theMissingCountDropsWhenTheObservationIsCompleted() {
-        clock.set(AFTER_THE_OBSERVATION_DATE);
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         int before = dashboard.metrics().missingObservations();
 
         complete(observationId(), null);
@@ -184,7 +189,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
         var afterObserver = leandersEvaluation();
         assertThat(afterObserver.observerSigned()).isTrue();
         assertThat(afterObserver.observeeSigned()).isFalse();
-        assertThat(afterObserver.status()).isNotEqualTo(Status.COMPLETED);
+        assertThat(afterObserver.status()).isEqualTo(Status.PENDING_SIGN_OFF);
 
         leanderSigns(obs, null);
         var afterObservee = leandersEvaluation();
@@ -203,30 +208,34 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void us14_theObserverIsToldTheirObservationIsLateOnceItsDatePasses() {
+    void us14_theObserverIsToldTheirObservationIsMissingAfterTheCycleDeadline() {
         assertThat(lateAlerts(KEIRA)).isEmpty();
 
         clock.set(AFTER_THE_OBSERVATION_DATE);
-
+        assertThat(lateAlerts(KEIRA)).isEmpty();
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         assertThat(lateAlerts(KEIRA)).hasSize(1);
         assertThat(lateAlerts(KEIRA).getFirst().observationId()).isEqualTo(observationId());
-        assertThat(lateAlerts(KEIRA).getFirst().dueDate()).isEqualTo(LocalDate.of(2026, 11, 4));
+        assertThat(lateAlerts(KEIRA).getFirst().dueDate()).isEqualTo(LocalDate.of(2026, 11, 15));
         assertThat(lateAlerts(KEIRA).getFirst().message()).contains("Leander Coldwell");
     }
 
     @Test
     void us14_theLateAlertGoesAwayOnceTheObserverSubmits() {
-        clock.set(AFTER_THE_OBSERVATION_DATE);
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         assertThat(lateAlerts(KEIRA)).hasSize(1);
 
         keiraSubmits(observationId());
 
         assertThat(lateAlerts(KEIRA)).isEmpty();
+        assertThat(leandersEvaluation().status()).isEqualTo(Status.MISSING);
+        assertThat(leandersEvaluation().missingReason()).isEqualTo("Not signed");
+        assertThat(missing.findByProfessor(LEANDER)).anyMatch(a -> "MISSING_SIGN_OFF".equals(a.kind()));
     }
 
     @Test
     void us14_theObserveeIsNotGivenALateSubmissionAlertForSomeoneElsesForm() {
-        clock.set(AFTER_THE_OBSERVATION_DATE);
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
 
         assertThat(lateAlerts(LEANDER)).isEmpty();
         assertThat(lateAlerts(DARIO)).isEmpty();

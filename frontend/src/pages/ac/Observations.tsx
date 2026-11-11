@@ -24,6 +24,7 @@ const STATUS: Record<ObservationStatus, { label: string; color: string }> = {
   DEFERRED: { label: "Deferred", color: "text-brand-green" },
   AWAITING_OBSERVER: { label: "Awaiting Observer", color: "text-muted" },
   SCHEDULED: { label: "Scheduled", color: "text-brand-orange" },
+  PENDING_SIGN_OFF: { label: "Pending sign-off", color: "text-brand-orange" },
   COMPLETED: { label: "Completed", color: "text-brand-green" },
   MISSING: { label: "Missing", color: "text-brand-red" },
 };
@@ -31,6 +32,7 @@ const STATUS: Record<ObservationStatus, { label: string; color: string }> = {
 function observationSummary(rows: TrackedObservation[]): string {
   const statuses: ObservationStatus[] = [
     "SCHEDULED",
+    "PENDING_SIGN_OFF",
     "COMPLETED",
     "MISSING",
     "AWAITING_OBSERVER",
@@ -75,11 +77,15 @@ function observationKpis(
     }));
   return [
     { label: "Scheduled", ...count("SCHEDULED", "Upcoming observations") },
+    {
+      label: "Pending sign-off",
+      ...count("PENDING_SIGN_OFF", "Submitted; awaiting observee signature"),
+    },
     { label: "Completed", ...count("COMPLETED", "Completed this cycle") },
     {
       label: "Missing",
       alert: true,
-      ...count("MISSING", "Past their date and not completed"),
+      ...count("MISSING", "Past the observation deadline; not fully signed"),
     },
     {
       label: "Observation Deadline",
@@ -146,6 +152,10 @@ function ObservationDetails({
     return () => previous?.focus();
   }, []);
   const details = [
+    ["Status", STATUS[observation.status].label],
+    ...(observation.missingReason
+      ? [["Missing reason", observation.missingReason]]
+      : []),
     ["Observer", observation.observer ?? "Not assigned"],
     ["Date / Time", dateTime(observation) ?? "Not scheduled"],
     ["Signed by observee", observation.observeeSigned ? "Yes" : "No"],
@@ -344,7 +354,7 @@ export function AcObservations() {
         {reminderResult}
       </p>
 
-      <div className="mt-10.25 grid max-w-324 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-10.25 grid max-w-324 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {kpis.map((kpi) => (
           <KpiCard key={kpi.label} kpi={kpi} />
         ))}
@@ -436,6 +446,11 @@ export function AcObservations() {
                       </td>
                       <td className={STATUS[row.status].color}>
                         {STATUS[row.status].label}
+                        {row.missingReason && (
+                          <p className="text-sm font-normal">
+                            {row.missingReason}
+                          </p>
+                        )}
                       </td>
                       <td>
                         {(row.status === "COMPLETED" ||

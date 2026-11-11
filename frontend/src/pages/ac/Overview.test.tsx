@@ -188,7 +188,7 @@ test("metric cards show live values, with rates rounded to whole percents", asyn
   });
   expect(kpi("Missing Observations")).toEqual({
     value: "3",
-    note: "Approved observations past their date and not completed",
+    note: "Past the observation deadline without final sign-off",
   });
 });
 
