@@ -42,11 +42,12 @@ export interface Schedule {
   dueStatus: "Due" | "Overdue" | "Upcoming" | "Due next semester" | null;
 }
 
-/** completed counts submitted observations too, since submitting is the observer's last step. */
+/** Completed requires both signatures. Submitted forms are pending sign-off. */
 export interface TermObservations {
   total: number;
   completed: number;
   scheduled: number;
+  pendingSignOff: number;
 }
 
 export type ObservationRole = "OBSERVEE" | "OBSERVER";
@@ -60,7 +61,7 @@ export type ObservationStatus =
 
 /**
  * `with` is the other professor: the observer, or the observee.
- * `overdue` is true once the date has passed and the form is still not submitted.
+ * `overdue` is true after the cycle observation deadline until final completion.
  */
 export interface ObservationItem {
   observationId: number;

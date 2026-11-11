@@ -118,8 +118,8 @@ class FacultyDashboardIntegrationTests {
     }
 
     @Test
-    void anObservationPastItsDateIsOverdueUntilTheObserverSubmitsIt() throws Exception {
-        clock.set("2026-11-05T15:00:00Z");
+    void anObservationPastTheDeadlineRemainsMissingUntilSigned() throws Exception {
+        clock.set("2026-11-16T15:00:00Z");
         dashboard(LEANDER)
                 .andExpect(jsonPath("$.evaluation.status").value("SCHEDULED"))
                 .andExpect(jsonPath("$.upcoming[0].overdue").value(true))
@@ -135,11 +135,12 @@ class FacultyDashboardIntegrationTests {
         submitLeandersObservation();
         dashboard(LEANDER)
                 .andExpect(jsonPath("$.evaluation.status").value("SUBMITTED"))
-                .andExpect(jsonPath("$.termObservations.completed").value(1))
+                .andExpect(jsonPath("$.termObservations.completed").value(0))
+                .andExpect(jsonPath("$.termObservations.pendingSignOff").value(1))
                 .andExpect(jsonPath("$.termObservations.scheduled").value(0))
                 .andExpect(jsonPath("$.upcoming[?(@.type == 'OBSERVATION')]", hasSize(0)))
                 .andExpect(jsonPath("$.observationsForMe[0].status").value("SUBMITTED"))
-                .andExpect(jsonPath("$.observationsForMe[0].overdue").value(false));
+                .andExpect(jsonPath("$.observationsForMe[0].overdue").value(true));
     }
 
     @Test
@@ -156,7 +157,7 @@ class FacultyDashboardIntegrationTests {
 
     @Test
     void bothSidesOweProcessFeedbackOnASubmittedObservationUntilTheyGiveIt() throws Exception {
-        clock.set("2026-11-05T15:00:00Z");
+        clock.set("2026-11-16T15:00:00Z");
         submitLeandersObservation();
         for (int professor : List.of(LEANDER, KEIRA))
             dashboard(professor)

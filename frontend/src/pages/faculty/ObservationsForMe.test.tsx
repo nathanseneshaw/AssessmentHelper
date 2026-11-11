@@ -101,7 +101,7 @@ test("a submitted observation is reviewed and signed, a completed one viewed, an
   expect(
     submitted.getByText("Fall 2026 · Oct 20, 2026, 8:30 AM"),
   ).toBeDefined();
-  expect(submitted.getByText("Submitted")).toBeDefined();
+  expect(submitted.getByText("Pending sign-off")).toBeDefined();
   expect(
     submitted
       .getByRole("link", {
@@ -162,7 +162,7 @@ test("Review and Sign opens the submitted answers read-only, with who submitted 
   const summary = within(view.getByRole("region", { name: "Summary" }));
   expect(summary.getByText("Olivia Observee")).toBeDefined();
   expect(summary.getByText("Oscar Observer")).toBeDefined();
-  expect(summary.getByText("Submitted")).toBeDefined();
+  expect(summary.getByText("Pending sign-off")).toBeDefined();
   const responses = within(view.getByRole("region", { name: "Responses" }));
   expect(responses.getByText("Rated 4 out of 5")).toBeDefined();
   expect(responses.getByText("Students asked questions.")).toBeDefined();

@@ -193,7 +193,7 @@ test("observations this term counts only the professor's own classes in the curr
   expect(card(cards, "Observations This Term")).toEqual({
     label: "Observations This Term",
     value: "3",
-    note: "1 submitted • 2 not yet submitted",
+    note: "0 completed • 1 pending sign-off • 2 not yet submitted",
   });
   expect(card(summarize(), "Observations This Term")).toMatchObject({
     value: "0",

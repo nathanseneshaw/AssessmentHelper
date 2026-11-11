@@ -4,7 +4,12 @@ import { useApiResource } from "../api/observations";
 import { onObserverChange } from "../api/observerEligibility";
 
 export interface MissingObservationAlert {
-  kind: "MISSING_SIGNUP" | "MISSING_SCHEDULE" | "LATE_SUBMISSION";
+  kind:
+    | "MISSING_SIGNUP"
+    | "MISSING_SCHEDULE"
+    | "LATE_SUBMISSION"
+    | "MISSING_SIGN_OFF"
+    | "MISSING_SUBMISSION";
   observationId: number | null;
   dueDate: string;
   message: string;
@@ -55,11 +60,8 @@ export function MissingObservations({
         {alerts.map((a) => (
           <li key={`${a.kind}-${a.observationId ?? "evaluation"}`}>
             <p>{a.message}</p>
-            <p className="text-xs">
-              {a.kind === "LATE_SUBMISSION" ? "Scheduled date" : "Deadline"}:{" "}
-              {a.dueDate}
-            </p>
-            {a.observationId !== null && (
+            <p className="text-xs">Deadline: {a.dueDate}</p>
+            {a.observationId !== null && a.kind !== "MISSING_SUBMISSION" && (
               <Link
                 className="font-semibold text-brand-green underline"
                 to={`/faculty/observations/${a.observationId}`}

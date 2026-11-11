@@ -127,7 +127,7 @@ class FacultyDashboardServiceTests {
         assertThat(scheduled.evaluation().status()).isEqualTo(EvaluationStatus.SCHEDULED);
         assertThat(scheduled.evaluation().observer()).isEqualTo("Arlo Glimmerton");
         assertThat(scheduled.evaluation().observationDate()).isEqualTo(LocalDate.of(2026, 11, 10));
-        assertThat(scheduled.termObservations()).isEqualTo(new TermObservations(1, 0, 1));
+        assertThat(scheduled.termObservations()).isEqualTo(new TermObservations(1, 0, 1, 0));
         assertThat(scheduled.upcoming().getFirst().status()).isEqualTo(ObservationStatus.NOT_STARTED);
 
         // Arlo starts the form; for Dario it is still the observation he is waiting on.
@@ -140,7 +140,7 @@ class FacultyDashboardServiceTests {
         submit(observation);
         var submitted = service.dashboard(DARIO);
         assertThat(submitted.evaluation().status()).isEqualTo(EvaluationStatus.SUBMITTED);
-        assertThat(submitted.termObservations()).isEqualTo(new TermObservations(1, 1, 0));
+        assertThat(submitted.termObservations()).isEqualTo(new TermObservations(1, 0, 0, 1));
         assertThat(types(submitted)).containsExactly(UpcomingType.SIGN_OFF, UpcomingType.FEEDBACK);
 
         complete(observation, "2026-11-10T11:00:00");
@@ -148,7 +148,7 @@ class FacultyDashboardServiceTests {
         var completed = service.dashboard(DARIO);
         assertThat(completed.evaluation().status()).isEqualTo(EvaluationStatus.COMPLETED);
         assertThat(completed.evaluation().completedAt()).isEqualTo(LocalDateTime.of(2026, 11, 10, 11, 0));
-        assertThat(completed.termObservations()).isEqualTo(new TermObservations(1, 1, 0));
+        assertThat(completed.termObservations()).isEqualTo(new TermObservations(1, 1, 0, 0));
         assertThat(types(completed)).doesNotContain(UpcomingType.SIGN_OFF);
     }
 
@@ -162,7 +162,7 @@ class FacultyDashboardServiceTests {
                 .filteredOn(u -> u.type() == UpcomingType.SIGN_OFF)
                 .singleElement()
                 .extracting(Upcoming::observationId, Upcoming::date, Upcoming::course, Upcoming::with)
-                .containsExactly(observation, LocalDate.of(2026, 11, 4), "CS 3345.001", "Keira Larkspur");
+                .containsExactly(observation, LocalDate.of(2026, 11, 15), "CS 3345.001", "Keira Larkspur");
         assertThat(types(service.dashboard(KEIRA))).doesNotContain(UpcomingType.SIGN_OFF);
 
         complete(observation, "2026-11-05T10:00:00");
@@ -182,12 +182,12 @@ class FacultyDashboardServiceTests {
     }
 
     @Test
-    void anObservationIsOverdueFromTheDayAfterItsDateUntilItIsSubmitted() {
-        clock.set("2026-11-04");
+    void anObservationIsMissingAfterTheCycleDeadlineUntilSigned() {
+        clock.set("2026-11-15");
         assertThat(firstForMe(LEANDER).overdue()).isFalse();
         assertThat(service.dashboard(LEANDER).upcoming().getFirst().overdue()).isFalse();
 
-        clock.set("2026-11-05");
+        clock.set("2026-11-16");
         assertThat(firstForMe(LEANDER).status()).isEqualTo(ObservationStatus.NOT_STARTED);
         assertThat(firstForMe(LEANDER).overdue()).isTrue();
         assertThat(service.dashboard(LEANDER).upcoming().getFirst().overdue()).isTrue();
@@ -196,7 +196,7 @@ class FacultyDashboardServiceTests {
 
         submit(observationOf(LEANDER));
         assertThat(firstForMe(LEANDER).status()).isEqualTo(ObservationStatus.SUBMITTED);
-        assertThat(firstForMe(LEANDER).overdue()).isFalse();
+        assertThat(firstForMe(LEANDER).overdue()).isTrue();
     }
 
     @Test

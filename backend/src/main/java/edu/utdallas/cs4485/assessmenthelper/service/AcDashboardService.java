@@ -52,13 +52,14 @@ public class AcDashboardService {
             String surveyStatus) {}
 
     /**
-     * AWAITING_OBSERVER: no observer has accepted yet. MISSING: the observation's date has passed and it is not
-     * completed. SCHEDULED: any other observation that is not completed, including one with no date yet.
+     * AWAITING_OBSERVER: no observer has accepted yet. PENDING_SIGN_OFF: submitted but unsigned.
+     * MISSING: the cycle observation deadline has passed without final completion.
      */
     public enum Status {
         DEFERRED,
         AWAITING_OBSERVER,
         SCHEDULED,
+        PENDING_SIGN_OFF,
         COMPLETED,
         MISSING
     }
@@ -76,6 +77,7 @@ public class AcDashboardService {
             LocalDate date,
             LocalTime startTime,
             Status status,
+            String missingReason,
             boolean observeeSigned,
             boolean observerSigned,
             LocalDateTime completedAt,
@@ -103,7 +105,7 @@ public class AcDashboardService {
                 .count();
         var tracked = tracked(due.cycleId());
         int observed = (int) tracked.stream()
-                .filter(o -> o.status() != Status.AWAITING_OBSERVER && o.status() != Status.DEFERRED)
+                .filter(o -> o.observerId() != null && o.status() != Status.DEFERRED)
                 .count();
         int missing =
                 (int) tracked.stream().filter(o -> o.status() == Status.MISSING).count();
@@ -144,7 +146,7 @@ public class AcDashboardService {
     }
 
     /**
-     * Sends an in-app reminder to the observee and observer of every scheduled or missing observation, and to each
+     * Sends submission reminders to observers, sign-off reminders to observees, and scheduling reminders to each
      * observee whose released list still has no accepted observer. Lists the committee has not released are skipped,
      * since their observees cannot request anyone yet.
      */
@@ -157,38 +159,28 @@ public class AcDashboardService {
         LocalDateTime now = LocalDateTime.now(clock);
         int sent = 0;
         for (var o : tracked(cycle.cycleId())) {
-            switch (o.status()) {
-                case AWAITING_OBSERVER -> {
-                    if (!o.listReleased()) continue;
-                    sent += notify(
-                            o.observeeId(),
-                            o,
-                            "choose an observer for " + o.course() + " and send a request so the observation can happen"
-                                    + deadline + ".",
-                            now);
-                }
-                case SCHEDULED, MISSING -> {
-                    String when = o.date() == null
-                            ? null
-                            : DAY.format(o.date()) + (o.startTime() == null ? "" : " at " + o.startTime());
-                    String status = o.status() == Status.MISSING
-                            ? " was scheduled for " + when
-                                    + " and has not been completed. Complete it as soon as possible."
-                            : when == null
-                                    ? " does not have a date yet. Schedule it" + deadline + "."
-                                    : " is scheduled for " + when + ".";
-                    sent += notify(
-                            o.observeeId(),
-                            o,
-                            "your observation of " + o.course() + " by " + o.observer() + status,
-                            now);
-                    sent += notify(
-                            o.observerId(),
-                            o,
-                            "your observation of " + o.observee() + "'s " + o.course() + status,
-                            now);
-                }
-                case COMPLETED, DEFERRED -> {}
+            if (o.status() == Status.COMPLETED || o.status() == Status.DEFERRED) continue;
+            if (o.observerId() == null) {
+                if (!o.listReleased()) continue;
+                sent += notify(
+                        o.observeeId(),
+                        o,
+                        "choose an observer for " + o.course() + " and send a request so the observation can happen"
+                                + deadline + ".",
+                        now);
+            } else if (o.status() == Status.PENDING_SIGN_OFF || "Not signed".equals(o.missingReason())) {
+                sent += notify(
+                        o.observeeId(),
+                        o,
+                        "review and sign the submitted observation for " + o.course() + deadline + ".",
+                        now);
+            } else {
+                sent += notify(
+                        o.observerId(),
+                        o,
+                        (o.date() == null ? "schedule the observation and submit" : "complete and submit")
+                                + " your observation of " + o.observee() + "'s " + o.course() + deadline + ".",
+                        now);
             }
         }
         return new Reminders(sent);
@@ -203,7 +195,7 @@ public class AcDashboardService {
                 now);
     }
 
-    // The same signups as ObserverEligibilityService's: generated, not cancelled, in this cycle.
+    // Track all non-cancelled signups, including those awaiting a generated observer list.
     private List<TrackedObservation> tracked(int cycleId) {
         LocalDate today = LocalDate.now(clock);
         return db.query(
@@ -212,13 +204,14 @@ public class AcDashboardService {
                 ob.professor_id AS observer_id, op.first_name || ' ' || op.last_name AS observer,
                 c.course_code, c.course_number, s.section_number, ls.released_at, o.observation_id,
                 o.observation_date, o.start_time, o.status, o.observee_signed, o.observer_signed, o.completed_at,
-                es.status AS signup_status, d.reason, d.deferred_at,
+                es.status AS signup_status, ec.observation_deadline, d.reason, d.deferred_at,
                 dp.first_name || ' ' || dp.last_name AS deferred_by,
                 ds.term || ' ' || ds.academic_year AS target_semester
                 FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
+                JOIN evaluation_cycle ec ON ec.cycle_id=oe.cycle_id
                 JOIN professor p ON p.professor_id=oe.professor_id
                 JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
-                JOIN observer_list_state ls ON ls.signup_id=es.signup_id
+                LEFT JOIN observer_list_state ls ON ls.signup_id=es.signup_id
                 LEFT JOIN observation o ON o.signup_id=es.signup_id
                 LEFT JOIN observer ob ON ob.observer_id=o.observer_id
                 LEFT JOIN professor op ON op.professor_id=ob.professor_id
@@ -229,13 +222,24 @@ public class AcDashboardService {
                 """,
                 (r, n) -> {
                     LocalDate date = r.getObject("observation_date", LocalDate.class);
+                    LocalDate deadline = r.getObject("observation_deadline", LocalDate.class);
+                    String stored = r.getString("status");
+                    String reason = r.getObject("observation_id") == null
+                            ? "Not scheduled - awaiting observer"
+                            : "SUBMITTED".equalsIgnoreCase(stored)
+                                    ? "Not signed"
+                                    : date == null ? "Not scheduled" : "Not submitted";
                     Status status = "DEFERRED".equals(r.getString("signup_status"))
                             ? Status.DEFERRED
-                            : r.getObject("observation_id") == null
-                                    ? Status.AWAITING_OBSERVER
-                                    : "COMPLETED".equalsIgnoreCase(r.getString("status"))
-                                            ? Status.COMPLETED
-                                            : date != null && date.isBefore(today) ? Status.MISSING : Status.SCHEDULED;
+                            : "COMPLETED".equalsIgnoreCase(stored)
+                                    ? Status.COMPLETED
+                                    : deadline != null && today.isAfter(deadline)
+                                            ? Status.MISSING
+                                            : "SUBMITTED".equalsIgnoreCase(stored)
+                                                    ? Status.PENDING_SIGN_OFF
+                                                    : r.getObject("observation_id") == null
+                                                            ? Status.AWAITING_OBSERVER
+                                                            : Status.SCHEDULED;
                     return new TrackedObservation(
                             r.getInt("signup_id"),
                             r.getObject("observation_id", Integer.class),
@@ -249,6 +253,7 @@ public class AcDashboardService {
                             date,
                             r.getObject("start_time", LocalTime.class),
                             status,
+                            status == Status.MISSING ? reason : null,
                             r.getBoolean("observee_signed"),
                             r.getBoolean("observer_signed"),
                             r.getObject("completed_at", LocalDateTime.class),

@@ -34,7 +34,7 @@ const RANKS: Record<string, string> = {
 const OBSERVATION_STATUS: Record<ObservationStatus, string> = {
   NOT_STARTED: "Not started",
   IN_PROGRESS: "In progress",
-  SUBMITTED: "Submitted",
+  SUBMITTED: "Pending sign-off",
   COMPLETED: "Completed",
 };
 
@@ -69,9 +69,14 @@ function observedOn(observation: ObservationItem) {
   return day ? longDate(day) : "Not scheduled";
 }
 
-/** An observation's status, or Overdue once its date has passed before the form was submitted. */
-function statusLabel(status: ObservationStatus | null, overdue: boolean) {
-  if (overdue) return "Overdue";
+/** Show the unfinished step when the cycle observation deadline has passed. */
+function statusLabel(
+  status: ObservationStatus | null,
+  overdue: boolean,
+  date?: string | null,
+) {
+  if (overdue)
+    return `Missing: ${status === "SUBMITTED" ? "Not signed" : date === null ? "Not scheduled" : "Not submitted"}`;
   return status ? OBSERVATION_STATUS[status] : "";
 }
 
@@ -118,7 +123,7 @@ function summary({
       }`,
     },
     SUBMITTED: {
-      value: "Submitted",
+      value: "Pending sign-off",
       note: `${evaluation.observer} • ${
         evaluation.observationDate
           ? longDate(evaluation.observationDate)
@@ -153,7 +158,7 @@ function summary({
       value: String(termObservations.total),
       note:
         termObservations.total > 0
-          ? `${termObservations.completed} completed • ${termObservations.scheduled} scheduled`
+          ? `${termObservations.completed} completed • ${termObservations.pendingSignOff} pending sign-off • ${termObservations.scheduled} not yet submitted`
           : "None yet",
     },
   ];
@@ -248,7 +253,6 @@ function upcomingItem(item: Upcoming, cycleLabel: string): UpcomingItem {
         urgent: true,
       };
     case "SIGN_OFF": {
-      const observed = formatWhen(item.date, item.startTime);
       return {
         ...badge(item.date),
         key: `sign-off-${item.observationId}`,
@@ -257,8 +261,8 @@ function upcomingItem(item: Upcoming, cycleLabel: string): UpcomingItem {
         action: "Review and Sign",
         actionContext: ` (${item.course})`,
         to: `/faculty/observations/${item.observationId}`,
-        status: "Action needed",
-        when: observed ? `Observed ${observed}` : "Ready for your review",
+        status: item.overdue ? "Missing: Not signed" : "Pending sign-off",
+        when: due(item.date),
         urgent: true,
       };
     }
@@ -279,7 +283,7 @@ function upcomingItem(item: Upcoming, cycleLabel: string): UpcomingItem {
         to: observing
           ? `/faculty/observations/${item.observationId}`
           : "/faculty/observations/me",
-        status: statusLabel(item.status, item.overdue),
+        status: statusLabel(item.status, item.overdue, item.date),
         when: formatWhen(item.date, item.startTime) ?? "Not scheduled",
         urgent: item.overdue,
       };
@@ -333,8 +337,8 @@ function ObservationList({
         {observation.with}
       </p>
       <p className="text-ink/60 text-xs">
-        {statusLabel(observation.status, observation.overdue)} •{" "}
-        {observedOn(observation)}
+        {statusLabel(observation.status, observation.overdue, observation.date)}{" "}
+        • {observedOn(observation)}
       </p>
     </div>
   ));

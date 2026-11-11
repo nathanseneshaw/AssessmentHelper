@@ -28,7 +28,7 @@ export const dashboard: FacultyDashboard = {
     nextDueSemester: "Fall 2026",
     dueStatus: "Due",
   },
-  termObservations: { total: 3, completed: 1, scheduled: 2 },
+  termObservations: { total: 3, completed: 0, scheduled: 2, pendingSignOff: 1 },
   upcoming: [
     {
       type: "OBSERVATION",

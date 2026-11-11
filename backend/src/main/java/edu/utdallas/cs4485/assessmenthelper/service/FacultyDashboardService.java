@@ -72,10 +72,9 @@ public class FacultyDashboardService {
             String rank, Integer intervalYears, LocalDate nextDueDate, String nextDueSemester, String dueStatus) {}
 
     /**
-     * Observations this cycle in which the professor is the observee or the observer. completed counts submitted ones
-     * too, since submitting is the observer's last step.
+     * Observations this cycle in which the professor is the observee or the observer. completed counts only fully signed records; pendingSignOff counts submitted forms.
      */
-    public record TermObservations(int total, int completed, int scheduled) {}
+    public record TermObservations(int total, int completed, int scheduled, int pendingSignOff) {}
 
     public enum Role {
         OBSERVEE,
@@ -97,7 +96,7 @@ public class FacultyDashboardService {
 
     /**
      * An observation the professor is part of. {@code with} is the other professor: the observer or the observee.
-     * overdue is true once the date has passed and the form is still not submitted.
+     * overdue is true after the cycle observation deadline until final completion.
      */
     public record ObservationItem(
             int observationId,
@@ -169,9 +168,14 @@ public class FacultyDashboardService {
         var rows = observations(professorId, today);
         var thisCycle =
                 rows.stream().filter(r -> r.item().cycleId() == cycle.cycleId()).toList();
-        int completed =
-                (int) thisCycle.stream().filter(r -> r.item().status().done()).count();
-        var termObservations = new TermObservations(thisCycle.size(), completed, thisCycle.size() - completed);
+        int completed = (int) thisCycle.stream()
+                .filter(r -> r.item().status() == ObservationStatus.COMPLETED)
+                .count();
+        int pending = (int) thisCycle.stream()
+                .filter(r -> r.item().status() == ObservationStatus.SUBMITTED)
+                .count();
+        var termObservations =
+                new TermObservations(thisCycle.size(), completed, thisCycle.size() - completed - pending, pending);
 
         var own =
                 thisCycle.stream().filter(r -> r.item().role() == Role.OBSERVEE).findFirst();
@@ -226,9 +230,9 @@ public class FacultyDashboardService {
                 if (o.role() == Role.OBSERVEE && o.status() == ObservationStatus.SUBMITTED)
                     upcoming.add(new Upcoming(
                             UpcomingType.SIGN_OFF,
-                            o.date(),
-                            o.startTime(),
-                            false,
+                            cycle.observationDeadline(),
+                            null,
+                            o.overdue(),
                             o.observationId(),
                             o.role(),
                             o.status(),
@@ -302,7 +306,7 @@ public class FacultyDashboardService {
         return db.query(
                 """
                 SELECT o.observation_id, o.observation_date, o.start_time, o.status, o.completed_at, oe.cycle_id,
-                sm.term, sm.academic_year, pe.professor_id AS observee_id,
+                sm.term, sm.academic_year, ec.observation_deadline, pe.professor_id AS observee_id,
                 pe.first_name || ' ' || pe.last_name AS observee, po.first_name || ' ' || po.last_name AS observer,
                 c.course_code, c.course_number, s.section_number,
                 EXISTS (SELECT 1 FROM process_feedback f WHERE f.signup_id=o.signup_id AND f.professor_id=?)
@@ -334,7 +338,9 @@ public class FacultyDashboardService {
                                     + r.getString("section_number"),
                             r.getString(observee ? "observer" : "observee"),
                             status,
-                            !status.done() && date != null && date.isBefore(today),
+                            status != ObservationStatus.COMPLETED
+                                    && r.getObject("observation_deadline", LocalDate.class) != null
+                                    && today.isAfter(r.getObject("observation_deadline", LocalDate.class)),
                             date,
                             r.getObject("start_time", LocalTime.class),
                             r.getObject("completed_at", LocalDateTime.class));
