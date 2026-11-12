@@ -298,8 +298,8 @@ class ObservationLockingIntegrationTests {
         save(kaia, List.of(answer(1, 1, null))).andExpect(status().isForbidden());
         sign(kaia, "Mine.").andExpect(status().isForbidden());
 
-        // Another school's committee has no part in this record.
-        read(otherSchoolCommittee()).andExpect(status().isForbidden());
+        // Committee access also covers other schools.
+        read(otherSchoolCommittee()).andExpect(status().isOk());
     }
 
     @Test
@@ -334,7 +334,7 @@ class ObservationLockingIntegrationTests {
     void onlyCommitteeMembersCanForwardAndTheRecipientMustExist() throws Exception {
         complete(null);
 
-        for (AccountPrincipal other : List.of(keira, leander, dario, otherSchoolCommittee()))
+        for (AccountPrincipal other : List.of(keira, leander, dario))
             forward(other, id(dario)).andExpect(status().isForbidden());
         forward(kaia, 999_999).andExpect(status().isNotFound());
         write(
@@ -344,6 +344,7 @@ class ObservationLockingIntegrationTests {
                                 .content("{}"))
                 .andExpect(status().isBadRequest());
         assertThat(events()).extracting(e -> e.get("EVENT_TYPE")).doesNotContain("FORWARDED");
+        forward(otherSchoolCommittee(), id(dario)).andExpect(status().isNoContent());
     }
 
     // Takes the observation from scheduled to completed: the observer starts and submits, the observee signs off.

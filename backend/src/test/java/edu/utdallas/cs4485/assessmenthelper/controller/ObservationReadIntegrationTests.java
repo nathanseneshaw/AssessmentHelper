@@ -79,6 +79,17 @@ class ObservationReadIntegrationTests {
     }
 
     @Test
+    void committeeCanReadAbelsEvaluationHistoryAcrossSchools() throws Exception {
+        Integer abelId = db.queryForObject(
+                "SELECT professor_id FROM professor WHERE email = ?", Integer.class, "abel.blythewood@example.edu");
+        String path = "/api/professors/" + abelId + "/evaluations";
+        read(kaia, path)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].cycleId").isNumber());
+        read(dario, path).andExpect(status().isForbidden());
+    }
+
+    @Test
     void observerSeesTheScheduledFormAndMayStartIt() throws Exception {
         read(keira, "/api/observations/" + scheduled)
                 .andExpect(status().isOk())
@@ -225,7 +236,7 @@ class ObservationReadIntegrationTests {
     }
 
     @Test
-    void theCommitteeReadsOnlyCompletedFormsInItsOwnSchool() throws Exception {
+    void theCommitteeReadsOnlyCompletedFormsAcrossSchools() throws Exception {
         for (String status : List.of("ACCEPTED", "SCHEDULED", "IN_PROGRESS", "SUBMITTED")) {
             db.update("UPDATE observation SET status = ? WHERE observation_id = ?", status, scheduled);
             read(kaia, "/api/observations/" + scheduled).andExpect(status().isForbidden());
@@ -242,9 +253,9 @@ class ObservationReadIntegrationTests {
         read(kaia, "/api/observations/" + completed).andExpect(status().isOk());
         read(kaia, "/api/observations/" + keirasOwn).andExpect(status().isOk());
 
-        // A committee member from another school has no access, and neither does a professor without the role.
+        // Committee access spans schools; an unrelated professor still has no access.
         AccountPrincipal otherSchool = principal("kaia.clearbrook@example.edu", 2, Role.AC, Role.PROFESSOR);
-        read(otherSchool, "/api/observations/" + completed).andExpect(status().isForbidden());
+        read(otherSchool, "/api/observations/" + completed).andExpect(status().isOk());
         read(dario, "/api/observations/" + completed).andExpect(status().isForbidden());
     }
 

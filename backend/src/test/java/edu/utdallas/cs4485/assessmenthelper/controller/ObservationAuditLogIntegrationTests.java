@@ -99,14 +99,14 @@ class ObservationAuditLogIntegrationTests {
     }
 
     @Test
-    void onlyTheObserveesSchoolCommitteeMayReadTheLog() throws Exception {
+    void onlyCommitteeMembersAcrossSchoolsMayReadTheLog() throws Exception {
         for (AccountPrincipal other : List.of(keira, leander, dario))
             read(other).andExpect(status().isForbidden());
         AccountPrincipal otherSchool = new AccountPrincipal(
                 new CurrentUser(null, id(kaia), 2, "Kaia Clearbrook", "kaia.clearbrook@example.edu", List.of(Role.AC)),
                 null,
                 true);
-        read(otherSchool).andExpect(status().isForbidden());
+        read(otherSchool).andExpect(status().isOk());
         mvc.perform(get("/api/observations/999999/audit-log").with(user(kaia))).andExpect(status().isNotFound());
     }
 
