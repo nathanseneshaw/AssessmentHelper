@@ -76,7 +76,14 @@ export function fakeBackend(routes: Record<string, Route> = {}) {
           routes[path]?.(init, url) ??
           (/^\/api\/professors\/\d+\/missing-observations$/.test(path)
             ? Response.json([])
-            : problem(404, "Not found"))
+            : path === "/api/missing-observations"
+              ? Response.json({
+                  cycleId: 1,
+                  cycleLabel: "Fall 2026",
+                  observationDeadline: null,
+                  signups: [],
+                })
+              : problem(404, "Not found"))
         );
     }
   }) as typeof fetch);
