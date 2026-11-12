@@ -510,6 +510,7 @@ export function AcObserverMatching() {
                         <th className="p-2">Status</th>
                         <th className="p-2">Sent</th>
                         <th className="p-2">Expires</th>
+                        <th className="p-2">Responded</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -535,6 +536,10 @@ export function AcObserverMatching() {
                           </td>
                           <td className="p-2">
                             {r.expiresAt?.replace("T", " ").slice(0, 19) ?? "—"}
+                          </td>
+                          <td className="p-2">
+                            {r.respondedAt?.replace("T", " ").slice(0, 19) ??
+                              "—"}
                           </td>
                         </tr>
                       ))}
