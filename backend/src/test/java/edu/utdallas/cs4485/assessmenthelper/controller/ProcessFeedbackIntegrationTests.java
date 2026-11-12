@@ -1,5 +1,7 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.cycleOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.principal;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -8,14 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
-import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
-import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,8 +24,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,7 +53,7 @@ class ProcessFeedbackIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private JdbcAggregateTemplate db;
 
     // From data.sql: Keira and Leander are observees in Fall 2026, and Keira was also observed in Fall 2025. Dario has
     // never been an observee.
@@ -66,11 +65,11 @@ class ProcessFeedbackIntegrationTests {
 
     @BeforeEach
     void observees() {
-        keira = principal("keira.larkspur@example.edu");
-        leander = principal("leander.coldwell@example.edu");
-        dario = principal("dario.hollowell@example.edu");
-        fall2026 = cycleOf("Fall", 2026);
-        fall2025 = cycleOf("Fall", 2025);
+        keira = principal(db, "keira.larkspur@example.edu", 1, Role.PROFESSOR);
+        leander = principal(db, "leander.coldwell@example.edu", 1, Role.PROFESSOR);
+        dario = principal(db, "dario.hollowell@example.edu", 1, Role.PROFESSOR);
+        fall2026 = cycleOf(db, "Fall", 2026);
+        fall2025 = cycleOf(db, "Fall", 2025);
     }
 
     @Test
@@ -109,27 +108,5 @@ class ProcessFeedbackIntegrationTests {
                 .header("X-XSRF-TOKEN", token.getValue())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
-    }
-
-    private int cycleOf(String term, int year) {
-        return db.queryForObject("""
-                SELECT c.cycle_id FROM evaluation_cycle c JOIN semester s ON s.semester_id = c.semester_id
-                WHERE s.term = ? AND s.academic_year = ?
-                """, Integer.class, term, year);
-    }
-
-    private AccountPrincipal principal(String email) {
-        Map<String, Object> professor = db.queryForMap(
-                "SELECT professor_id, first_name || ' ' || last_name AS name FROM professor WHERE email = ?", email);
-        return new AccountPrincipal(
-                new CurrentUser(
-                        null,
-                        ((Number) professor.get("PROFESSOR_ID")).intValue(),
-                        1,
-                        (String) professor.get("NAME"),
-                        email,
-                        List.of(Role.PROFESSOR)),
-                null,
-                true);
     }
 }

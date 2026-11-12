@@ -13,6 +13,7 @@ import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
 import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
 import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
@@ -28,13 +29,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class EvaluationRecordService {
 
-    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
     private final ProfessorRepository professorRepository;
     private final ObserveeRepository observeeRepository;
     private final EvaluationCycleRepository cycleRepository;
     private final SemesterRepository semesterRepository;
     private final EvaluationSignupRepository signupRepository;
     private final ObservationRepository observationRepository;
+    private final EvaluationDeferralRepository deferralRepository;
 
     public EvaluationRecordService(
             ProfessorRepository professorRepository,
@@ -43,14 +44,14 @@ public class EvaluationRecordService {
             SemesterRepository semesterRepository,
             EvaluationSignupRepository signupRepository,
             ObservationRepository observationRepository,
-            org.springframework.jdbc.core.JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+            EvaluationDeferralRepository deferralRepository) {
         this.professorRepository = professorRepository;
         this.observeeRepository = observeeRepository;
         this.cycleRepository = cycleRepository;
         this.semesterRepository = semesterRepository;
         this.signupRepository = signupRepository;
         this.observationRepository = observationRepository;
+        this.deferralRepository = deferralRepository;
     }
 
     /**
@@ -99,28 +100,15 @@ public class EvaluationRecordService {
                 observationRepository.findBySignupIdIn(observeeIdBySignupId.keySet()).stream()
                         .collect(groupingBy(observation -> observeeIdBySignupId.get(observation.signupId())));
 
-        Map<Integer, EvaluationRecord.Deferral> deferrals = jdbc
-                .query(
-                        """
-                SELECT oe.cycle_id,d.reason,d.deferred_at,p.first_name || ' ' || p.last_name AS actor,
-                s.term || ' ' || s.academic_year AS target
-                FROM evaluation_deferral d JOIN evaluation_signup es ON es.signup_id=d.signup_id
-                JOIN observee oe ON oe.observee_id=es.observee_id JOIN professor p ON p.professor_id=d.deferred_by
-                JOIN semester s ON s.semester_id=d.target_semester_id WHERE d.professor_id=?
-                """,
-                        (r, n) -> Map.entry(
-                                r.getInt("cycle_id"),
-                                new EvaluationRecord.Deferral(
-                                        r.getString("reason"),
-                                        r.getString("actor"),
-                                        r.getObject("deferred_at", java.time.LocalDateTime.class),
-                                        r.getString("target"))),
-                        professorId)
-                .stream()
-                .collect(toMap(
-                        Map.Entry::getKey,
-                        Map.Entry::getValue,
-                        (a, b) -> a.deferredAt().isAfter(b.deferredAt()) ? a : b));
+        Map<Integer, EvaluationRecord.Deferral> deferrals =
+                deferralRepository.findRecordDeferralsByProfessorId(professorId).stream()
+                        .map(r -> Map.entry(
+                                r.cycleId(),
+                                new EvaluationRecord.Deferral(r.reason(), r.actor(), r.deferredAt(), r.target())))
+                        .collect(toMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue,
+                                (a, b) -> a.deferredAt().isAfter(b.deferredAt()) ? a : b));
 
         Comparator<Observee> newestFirst = comparing(
                         (Observee observee) ->

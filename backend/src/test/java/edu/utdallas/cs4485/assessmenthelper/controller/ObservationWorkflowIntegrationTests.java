@@ -1,5 +1,12 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observationOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.principal;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
+import static java.util.Comparator.comparing;
+import static java.util.Comparator.comparingInt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
@@ -10,15 +17,32 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObservationCriterion;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObservationTemplate;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
+import edu.utdallas.cs4485.assessmenthelper.repository.CourseRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.CourseSectionRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.DepartmentRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationAuditLogRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationCriterionRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationResponseRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
-import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import edu.utdallas.cs4485.assessmenthelper.service.ConflictException;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService.Answer;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationTemplateService;
+import edu.utdallas.cs4485.assessmenthelper.service.ObserverEligibilityService;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Instant;
@@ -34,6 +58,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,14 +68,16 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.ResultMatcher;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest
@@ -76,7 +103,7 @@ class ObservationWorkflowIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private JdbcAggregateTemplate db;
 
     @Autowired
     private JsonMapper json;
@@ -88,10 +115,52 @@ class ObservationWorkflowIntegrationTests {
     private ObservationTemplateService templates;
 
     @Autowired
+    private ObservationRepository observations;
+
+    @Autowired
+    private ObserverRepository observers;
+
+    @Autowired
     private EvaluationSignupRepository signups;
 
     @Autowired
     private ObserveeRepository observees;
+
+    @Autowired
+    private ProfessorRepository professors;
+
+    @Autowired
+    private DepartmentRepository departments;
+
+    @Autowired
+    private CourseSectionRepository sections;
+
+    @Autowired
+    private CourseRepository courses;
+
+    @Autowired
+    private SemesterRepository semesters;
+
+    @Autowired
+    private ObservationCriterionRepository criteria;
+
+    @Autowired
+    private ObservationResponseRepository responses;
+
+    @Autowired
+    private ObserverNotificationRepository notifications;
+
+    @Autowired
+    private ObservationAuditLogRepository auditLog;
+
+    @Autowired
+    private ObserverRequestRepository observerRequests;
+
+    @Autowired
+    private ObserverEligibilityService eligibility;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     // From data.sql: Keira observes Leander's CS 3345.001 on 2026-11-04 at 08:30 and has not started yet. Kaia is on
     // the Assessment Committee in their school; Dario has no part in this observation.
@@ -104,26 +173,22 @@ class ObservationWorkflowIntegrationTests {
 
     @BeforeEach
     void scheduledObservation() {
-        keira = principal("keira.larkspur@example.edu", 1, Role.PROFESSOR);
-        leander = principal("leander.coldwell@example.edu", 1, Role.PROFESSOR);
-        kaia = principal("kaia.clearbrook@example.edu", 1, Role.AC, Role.PROFESSOR);
-        dario = principal("dario.hollowell@example.edu", 1, Role.PROFESSOR);
-        observation = db.queryForObject("""
-                SELECT o.observation_id FROM observation o
-                JOIN evaluation_signup es ON es.signup_id = o.signup_id JOIN observee oe ON oe.observee_id = es.observee_id
-                JOIN professor p ON p.professor_id = oe.professor_id
-                JOIN evaluation_cycle c ON c.cycle_id = oe.cycle_id JOIN semester s ON s.semester_id = c.semester_id
-                WHERE p.email = 'leander.coldwell@example.edu' AND s.term = 'Fall' AND s.academic_year = 2026
-                """, Integer.class);
-        questions = db.queryForList("""
-                SELECT q.criterion_id FROM observation_criterion q JOIN observation o ON o.template_id = q.template_id
-                WHERE o.observation_id = ? AND q.selected=TRUE ORDER BY q.display_order
-                """, Integer.class, observation);
+        keira = principal(db, "keira.larkspur@example.edu", 1, Role.PROFESSOR);
+        leander = principal(db, "leander.coldwell@example.edu", 1, Role.PROFESSOR);
+        kaia = principal(db, "kaia.clearbrook@example.edu", 1, Role.AC, Role.PROFESSOR);
+        dario = principal(db, "dario.hollowell@example.edu", 1, Role.PROFESSOR);
+        observation = observationOf(db, "leander.coldwell@example.edu", "Fall", 2026);
+        questions = criteria
+                .findByTemplateIdOrderByDisplayOrderAscCriterionIdAsc(current().templateId())
+                .stream()
+                .filter(ObservationCriterion::selected)
+                .map(ObservationCriterion::criterionId)
+                .toList();
     }
 
     @Test
     void observerFillsInAndSubmitsTheFormThenBothCanReadIt() throws Exception {
-        Map<String, Object> evaluation = evaluationStatus();
+        EvaluationStatus evaluation = evaluationStatus();
 
         // The date and time agreed when the request was accepted are kept.
         start(keira)
@@ -186,17 +251,12 @@ class ObservationWorkflowIntegrationTests {
                 .andExpect(jsonPath("$.canEdit").value(false));
         // The observer's signature columns record the submission, and the observee is asked to review and sign off.
         // Nothing is signed for the observee yet, and the evaluation itself is left as it was.
-        Map<String, Object> row = db.queryForMap(
-                "SELECT observer_signed, observee_signed, observee_signed_at, completed_at FROM observation WHERE observation_id = ?",
-                observation);
-        assertThat(row).containsEntry("OBSERVER_SIGNED", true).containsEntry("OBSERVEE_SIGNED", false);
-        assertThat(row.get("OBSERVEE_SIGNED_AT")).isNull();
-        assertThat(row.get("COMPLETED_AT")).isNull();
-        assertThat(db.queryForObject(
-                        "SELECT observer_signed_at FROM observation WHERE observation_id = ?",
-                        LocalDateTime.class,
-                        observation))
-                .isEqualTo(LocalDateTime.parse(NOW));
+        Observation row = current();
+        assertThat(row.observerSigned()).isTrue();
+        assertThat(row.observeeSigned()).isFalse();
+        assertThat(row.observeeSignedAt()).isNull();
+        assertThat(row.completedAt()).isNull();
+        assertThat(row.observerSignedAt()).isEqualTo(LocalDateTime.parse(NOW));
         assertThat(notificationsTo(leander))
                 .containsExactly(
                         "Keira Larkspur submitted the observation of CS 3345.001. Please review it and sign off.");
@@ -256,7 +316,7 @@ class ObservationWorkflowIntegrationTests {
         assertThat(notificationsTo(leander)).hasSize(1);
 
         // Completed records from earlier cycles are just as final.
-        db.update("UPDATE observation SET status = 'COMPLETED' WHERE observation_id = ?", observation);
+        updateObservation(o -> withStatus(o, "COMPLETED"));
         start(keira).andExpect(status().isConflict()).andExpect(detail("This observation has already been submitted."));
         save(keira, answer(1, 1, null)).andExpect(status().isConflict());
         submit(keira, complete()).andExpect(status().isConflict());
@@ -296,31 +356,21 @@ class ObservationWorkflowIntegrationTests {
         read(leander).andExpect(status().isOk()).andExpect(jsonPath("$.canSign").value(true));
         read(keira).andExpect(status().isOk()).andExpect(jsonPath("$.canSign").value(false));
         assertThat(statusOf()).isEqualTo("SUBMITTED");
-        assertThat(db.queryForObject(
-                        "SELECT observee_signed FROM observation WHERE observation_id = ?", Boolean.class, observation))
-                .isFalse();
+        assertThat(current().observeeSigned()).isFalse();
     }
 
     @Test
     void invalidAnswersAreRejectedWithoutChangingTheDraft() throws Exception {
         start(keira).andExpect(status().isOk());
         save(keira, answer(1, 4, "Kept")).andExpect(status().isOk());
-        List<Map<String, Object>> draft = stored();
+        List<Answer> draft = stored();
 
         // A question from another form is not on this one, even though it exists.
-        db.update("""
-                INSERT INTO observation_template (template_name, version, created_date, active_status)
-                VALUES ('Pilot Observation Form', 1, DATE '2026-09-01', FALSE)
-                """);
-        db.update("""
-                INSERT INTO observation_criterion (template_id, criterion_text, question_type, required, display_order,
-                    rating_min, rating_max)
-                SELECT template_id, 'Pilot question', 'RATING', TRUE, 1, 1, 5 FROM observation_template
-                WHERE template_name = 'Pilot Observation Form'
-                """);
-        int pilot = db.queryForObject(
-                "SELECT criterion_id FROM observation_criterion WHERE criterion_text = 'Pilot question'",
-                Integer.class);
+        ObservationTemplate pilotForm = db.insert(
+                new ObservationTemplate(null, null, "Pilot Observation Form", 1, LocalDate.of(2026, 9, 1), false));
+        int pilot = db.insert(new ObservationCriterion(
+                        null, pilotForm.templateId(), "Pilot question", "RATING", true, 1, 1, 5, true, false))
+                .criterionId();
 
         Map<String, List<Answer>> invalid = new LinkedHashMap<>();
         invalid.put("Question 99999 is not on this form.", List.of(new Answer(99999, 3, null)));
@@ -371,18 +421,14 @@ class ObservationWorkflowIntegrationTests {
 
         // Exactly 4000 characters fit, counted after trimming.
         save(keira, answer(7, null, " " + "y".repeat(4000) + " ")).andExpect(status().isOk());
-        assertThat(db.queryForObject(
-                        "SELECT LENGTH(comments) FROM observation_response WHERE observation_id = ?",
-                        Integer.class,
-                        observation))
-                .isEqualTo(4000);
+        assertThat(stored())
+                .singleElement()
+                .satisfies(a -> assertThat(a.comments()).hasSize(4000));
     }
 
     @Test
     void startingAnUnscheduledObservationRecordsTodayAndTheCurrentMinute() throws Exception {
-        db.update(
-                "UPDATE observation SET status = 'ACCEPTED', observation_date = NULL, start_time = NULL WHERE observation_id = ?",
-                observation);
+        updateObservation(o -> withPlan(withStatus(o, "ACCEPTED"), null, null));
         read(keira).andExpect(jsonPath("$.canStart").value(true));
         start(keira)
                 .andExpect(status().isOk())
@@ -396,7 +442,11 @@ class ObservationWorkflowIntegrationTests {
     void startingBeforeThePlannedDayRecordsTodayAndTheCurrentMinute() {
         // A week before Leander's class, at 09:05:30 in Dallas: the observation is happening now, not on Nov 4.
         var weekEarly = new ObservationService(
-                db,
+                observations,
+                responses,
+                auditLog,
+                notifications,
+                professors,
                 templates,
                 signups,
                 observees,
@@ -409,7 +459,7 @@ class ObservationWorkflowIntegrationTests {
 
     @Test
     void startingAfterThePlannedDayKeepsThePlannedDateAndTime() throws Exception {
-        db.update("UPDATE observation SET observation_date = DATE '2026-11-02' WHERE observation_id = ?", observation);
+        updateObservation(o -> withPlan(o, LocalDate.of(2026, 11, 2), o.startTime()));
         start(keira)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.observationDate").value("2026-11-02"))
@@ -453,6 +503,7 @@ class ObservationWorkflowIntegrationTests {
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     void simultaneousSubmitsSubmitTheFormOnce() throws Exception {
+        Observation original = current();
         try {
             service.start(observation, keira);
             var ready = new CountDownLatch(2);
@@ -479,13 +530,55 @@ class ObservationWorkflowIntegrationTests {
             assertThat(stored()).hasSize(6);
             assertThat(notificationsTo(leander)).hasSize(1);
         } finally {
-            // This test commits, so put the observation back the way data.sql has it. Its audit log rows stay because
-            // the database won't delete them.
-            db.update("DELETE FROM observation_response WHERE observation_id = ?", observation);
-            db.update("DELETE FROM observer_notification WHERE created_at = TIMESTAMP '2026-11-04 10:15:42'");
-            db.update(
-                    "UPDATE observation SET status = 'SCHEDULED', observer_signed = FALSE, observer_signed_at = NULL WHERE observation_id = ?",
-                    observation);
+            restore(original);
+        }
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void schedulingWhileTheObserverStartsWaitsForTheStartAndThenRefuses() throws Exception {
+        Observation original = current();
+        try {
+            updateObservation(o -> withPlan(withStatus(o, "ACCEPTED"), null, null));
+            int observer = keira.user().professorId();
+            int request =
+                    only(observerRequests.findBySignupId(original.signupId())).requestId();
+            LocalDate date = eligibility.availableDates(observer, request).getFirst();
+            var started = new CountDownLatch(1);
+            var commit = new CountDownLatch(1);
+            try (var executor = Executors.newFixedThreadPool(2)) {
+                var start =
+                        executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+                            service.start(observation, keira);
+                            started.countDown();
+                            try {
+                                if (!commit.await(5, TimeUnit.SECONDS))
+                                    throw new IllegalStateException("Commit timed out");
+                            } catch (InterruptedException e) {
+                                throw new IllegalStateException(e);
+                            }
+                        }));
+                assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+                Callable<String> schedule = () -> {
+                    try {
+                        eligibility.scheduleObservation(observer, request, date);
+                        return "SCHEDULED";
+                    } catch (ConflictException e) {
+                        return e.getMessage();
+                    }
+                };
+                var scheduled = executor.submit(schedule);
+                // Gives the schedule time to reach the observation row while the start still holds it, so that
+                // scheduling from an unlocked read would overwrite the start once it commits.
+                Thread.sleep(300);
+                commit.countDown();
+                start.get(10, TimeUnit.SECONDS);
+                assertThat(scheduled.get(10, TimeUnit.SECONDS))
+                        .isEqualTo("This observation has already been scheduled or started.");
+            }
+            assertThat(statusOf()).isEqualTo("IN_PROGRESS");
+        } finally {
+            restore(original);
         }
     }
 
@@ -553,45 +646,50 @@ class ObservationWorkflowIntegrationTests {
         return jsonPath("$.detail").value(message);
     }
 
-    private List<Map<String, Object>> stored() {
-        return db.queryForList(
-                "SELECT criterion_id, rating, comments FROM observation_response WHERE observation_id = ? ORDER BY criterion_id",
-                observation);
+    private List<Answer> stored() {
+        return responses.findByObservationId(observation).stream()
+                .map(r -> new Answer(r.criterionId(), r.rating(), r.comments()))
+                .sorted(comparingInt(Answer::criterionId))
+                .toList();
+    }
+
+    private Observation current() {
+        return observations.findById(observation).orElseThrow();
     }
 
     private String statusOf() {
-        return db.queryForObject("SELECT status FROM observation WHERE observation_id = ?", String.class, observation);
+        return current().status();
+    }
+
+    private void updateObservation(UnaryOperator<Observation> change) {
+        observations.save(change.apply(current()));
+    }
+
+    // The tests that commit put the observation back the way data.sql has it. Its audit log rows stay because the
+    // database won't delete them.
+    private void restore(Observation original) {
+        responses.deleteAll(responses.findByObservationId(observation));
+        notifications.deleteAll(notifications.findAll().stream()
+                .filter(n -> n.createdAt().equals(LocalDateTime.parse(NOW)))
+                .toList());
+        observations.save(original);
     }
 
     // The notifications sent at the test's fixed time; the seeded ones are all older.
     private List<String> notificationsTo(AccountPrincipal principal) {
-        return db.queryForList(
-                "SELECT message FROM observer_notification WHERE professor_id = ? AND created_at = ? ORDER BY notification_id",
-                String.class,
-                principal.user().professorId(),
-                LocalDateTime.parse(NOW));
+        return notifications.findByProfessorId(principal.user().professorId()).stream()
+                .filter(n -> n.createdAt().equals(LocalDateTime.parse(NOW)))
+                .sorted(comparing(ObserverNotification::notificationId))
+                .map(ObserverNotification::message)
+                .toList();
     }
 
-    private Map<String, Object> evaluationStatus() {
-        return db.queryForMap("""
-                SELECT es.status AS signup_status, oe.status AS observee_status FROM observation o
-                JOIN evaluation_signup es ON es.signup_id = o.signup_id
-                JOIN observee oe ON oe.observee_id = es.observee_id WHERE o.observation_id = ?
-                """, observation);
-    }
+    private record EvaluationStatus(String signupStatus, String observeeStatus) {}
 
-    private AccountPrincipal principal(String email, int schoolId, Role... roles) {
-        Map<String, Object> professor = db.queryForMap(
-                "SELECT professor_id, first_name || ' ' || last_name AS name FROM professor WHERE email = ?", email);
-        return new AccountPrincipal(
-                new CurrentUser(
-                        null,
-                        ((Number) professor.get("PROFESSOR_ID")).intValue(),
-                        schoolId,
-                        (String) professor.get("NAME"),
-                        email,
-                        List.of(roles)),
-                null,
-                true);
+    private EvaluationStatus evaluationStatus() {
+        EvaluationSignup signup = signups.findById(current().signupId()).orElseThrow();
+        return new EvaluationStatus(
+                signup.status(),
+                observees.findById(signup.observeeId()).orElseThrow().status());
     }
 }

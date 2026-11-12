@@ -1,5 +1,14 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.cycleOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observationOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.principal;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.submitted;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
+import static java.util.Comparator.comparing;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInRelativeOrder;
@@ -9,14 +18,25 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObservationCriterion;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObservationResponse;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationCriterionRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationResponseRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationTemplateRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
-import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Map;
+import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +46,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,7 +70,25 @@ class ObservationReadIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private JdbcAggregateTemplate db;
+
+    @Autowired
+    private ObservationRepository observations;
+
+    @Autowired
+    private EvaluationSignupRepository signups;
+
+    @Autowired
+    private ObserveeRepository observees;
+
+    @Autowired
+    private ObservationTemplateRepository templates;
+
+    @Autowired
+    private ObservationCriterionRepository criteria;
+
+    @Autowired
+    private ObservationResponseRepository responses;
 
     // From data.sql: Keira observes Leander's CS 3345.001 on 2026-11-04 and has not started yet. In Fall 2025 Arlo
     // observed both Keira and Luca, and both forms are complete. Kaia is on the Assessment Committee in their school;
@@ -67,15 +105,15 @@ class ObservationReadIntegrationTests {
 
     @BeforeEach
     void demoObservations() {
-        keira = principal("keira.larkspur@example.edu", 1, Role.PROFESSOR);
-        leander = principal("leander.coldwell@example.edu", 1, Role.PROFESSOR);
-        arlo = principal("arlo.glimmerton@example.edu", 1, Role.PROFESSOR);
-        luca = principal("luca.lindenhall@example.edu", 1, Role.PROFESSOR);
-        kaia = principal("kaia.clearbrook@example.edu", 1, Role.AC, Role.PROFESSOR);
-        dario = principal("dario.hollowell@example.edu", 1, Role.PROFESSOR);
-        scheduled = observationOf("leander.coldwell@example.edu", "Fall", 2026);
-        completed = observationOf("luca.lindenhall@example.edu", "Fall", 2025);
-        keirasOwn = observationOf("keira.larkspur@example.edu", "Fall", 2025);
+        keira = principal(db, "keira.larkspur@example.edu", 1, Role.PROFESSOR);
+        leander = principal(db, "leander.coldwell@example.edu", 1, Role.PROFESSOR);
+        arlo = principal(db, "arlo.glimmerton@example.edu", 1, Role.PROFESSOR);
+        luca = principal(db, "luca.lindenhall@example.edu", 1, Role.PROFESSOR);
+        kaia = principal(db, "kaia.clearbrook@example.edu", 1, Role.AC, Role.PROFESSOR);
+        dario = principal(db, "dario.hollowell@example.edu", 1, Role.PROFESSOR);
+        scheduled = observationOf(db, "leander.coldwell@example.edu", "Fall", 2026);
+        completed = observationOf(db, "luca.lindenhall@example.edu", "Fall", 2025);
+        keirasOwn = observationOf(db, "keira.larkspur@example.edu", "Fall", 2025);
     }
 
     @Test
@@ -98,7 +136,7 @@ class ObservationReadIntegrationTests {
                 .andExpect(jsonPath("$.course.startTime").value("08:30:00"))
                 .andExpect(jsonPath("$.course.endTime").value("09:45:00"))
                 .andExpect(jsonPath("$.semesterLabel").value("Fall 2026"))
-                .andExpect(jsonPath("$.cycleId").value(cycleOf("Fall", 2026)))
+                .andExpect(jsonPath("$.cycleId").value(cycleOf(db, "Fall", 2026)))
                 .andExpect(jsonPath("$.observationDate").value("2026-11-04"))
                 .andExpect(jsonPath("$.startTime").value("08:30:00"))
                 .andExpect(jsonPath("$.template.criteria.length()").value(7))
@@ -118,9 +156,8 @@ class ObservationReadIntegrationTests {
 
     @Test
     void formListsTheSevenQuestionsInOrder() throws Exception {
-        int templateId = db.queryForObject(
-                "SELECT template_id FROM observation_template WHERE template_name = 'Standard Classroom Observation'",
-                Integer.class);
+        int templateId = only(templates.findAll(), t -> t.templateName().equals("Standard Classroom Observation"))
+                .templateId();
         read(keira, "/api/observations/" + scheduled)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.template.templateId").value(templateId))
@@ -146,8 +183,21 @@ class ObservationReadIntegrationTests {
                 .andExpect(jsonPath("$.template.criteria[5].ratingMax").value(nullValue()));
 
         // Questions follow display order, not insertion order, and the form keeps its template once that is retired.
-        db.update("UPDATE observation_criterion SET display_order = 8 WHERE criterion_text = 'Student Engagement'");
-        db.update("UPDATE observation_template SET active_status = FALSE");
+        criteria.saveAll(criteria.findAll().stream()
+                .filter(c -> c.criterionText().equals("Student Engagement"))
+                .map(c -> new ObservationCriterion(
+                        c.criterionId(),
+                        c.templateId(),
+                        c.criterionText(),
+                        c.questionType(),
+                        c.required(),
+                        8,
+                        c.ratingMin(),
+                        c.ratingMax(),
+                        c.selected(),
+                        c.notesEnabled()))
+                .toList());
+        templates.findAll().forEach(t -> templates.save(inactive(t)));
         read(keira, "/api/observations/" + scheduled)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.template.templateId").value(templateId))
@@ -160,11 +210,8 @@ class ObservationReadIntegrationTests {
         read(leander, "/api/observations/" + scheduled).andExpect(status().isForbidden());
 
         // A started draft is still the observer's alone.
-        db.update("UPDATE observation SET status = 'IN_PROGRESS' WHERE observation_id = ?", scheduled);
-        db.update(
-                "INSERT INTO observation_response (observation_id, criterion_id, rating, comments) VALUES (?, ?, 4, 'Draft')",
-                scheduled,
-                criterion("Student Engagement"));
+        updateObservation(scheduled, o -> withStatus(o, "IN_PROGRESS"));
+        responses.save(new ObservationResponse(null, scheduled, criterion("Student Engagement"), 4, "Draft"));
         read(leander, "/api/observations/" + scheduled).andExpect(status().isForbidden());
         read(keira, "/api/observations/" + scheduled)
                 .andExpect(status().isOk())
@@ -174,10 +221,7 @@ class ObservationReadIntegrationTests {
                 .andExpect(jsonPath("$.responses[0].rating").value(4));
 
         // Submitted, both may read it and neither may change it.
-        db.update("""
-                UPDATE observation SET status = 'SUBMITTED', observer_signed = TRUE,
-                observer_signed_at = TIMESTAMP '2026-11-04 10:00:00' WHERE observation_id = ?
-                """, scheduled);
+        updateObservation(scheduled, o -> submitted(o, LocalDateTime.of(2026, 11, 4, 10, 0)));
         read(leander, "/api/observations/" + scheduled)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.viewerRole").value("OBSERVEE"))
@@ -198,18 +242,22 @@ class ObservationReadIntegrationTests {
     @Test
     void bothSidesReopenACompletedFormWithItsAnswers() throws Exception {
         // data.sql records no answers on the completed forms, so give this one a full set.
-        db.update("""
-                INSERT INTO observation_response (observation_id, criterion_id, rating, comments)
-                SELECT o.observation_id, q.criterion_id, CASE WHEN q.question_type = 'RATING' THEN 4 END,
-                    'Notes on ' || q.criterion_text
-                FROM observation o JOIN observation_criterion q ON q.template_id = o.template_id
-                WHERE o.observation_id = ? AND q.selected=TRUE
-                """, completed);
-        List<Map<String, Object>> stored = db.queryForList("""
-                SELECT r.criterion_id, r.rating, r.comments FROM observation_response r
-                JOIN observation_criterion q ON q.criterion_id = r.criterion_id
-                WHERE r.observation_id = ? ORDER BY q.display_order
-                """, completed);
+        responses.saveAll(criteria
+                .findByTemplateIdOrderByDisplayOrderAscCriterionIdAsc(
+                        observations.findById(completed).orElseThrow().templateId())
+                .stream()
+                .filter(ObservationCriterion::selected)
+                .map(q -> new ObservationResponse(
+                        null,
+                        completed,
+                        q.criterionId(),
+                        "RATING".equals(q.questionType()) ? 4 : null,
+                        "Notes on " + q.criterionText()))
+                .toList());
+        List<ObservationResponse> stored = responses.findByObservationId(completed).stream()
+                .sorted(comparing(
+                        r -> criteria.findById(r.criterionId()).orElseThrow().displayOrder()))
+                .toList();
         assertThat(stored).hasSize(7);
         read(arlo, "/api/observations/" + completed)
                 .andExpect(status().isOk())
@@ -219,9 +267,12 @@ class ObservationReadIntegrationTests {
                 .andExpect(jsonPath("$.observer.name").value("Arlo Glimmerton"))
                 .andExpect(jsonPath("$.semesterLabel").value("Fall 2025"))
                 .andExpect(jsonPath("$.submittedAt").value("2025-10-07T15:00:00"))
-                .andExpect(jsonPath("$.responses[*].criterionId").value(contains(column(stored, "CRITERION_ID"))))
-                .andExpect(jsonPath("$.responses[*].rating").value(contains(column(stored, "RATING"))))
-                .andExpect(jsonPath("$.responses[*].comments").value(contains(column(stored, "COMMENTS"))))
+                .andExpect(jsonPath("$.responses[*].criterionId")
+                        .value(contains(column(stored, ObservationResponse::criterionId))))
+                .andExpect(
+                        jsonPath("$.responses[*].rating").value(contains(column(stored, ObservationResponse::rating))))
+                .andExpect(jsonPath("$.responses[*].comments")
+                        .value(contains(column(stored, ObservationResponse::comments))))
                 .andExpect(jsonPath("$.canStart").value(false))
                 .andExpect(jsonPath("$.canEdit").value(false));
         read(luca, "/api/observations/" + completed)
@@ -235,11 +286,11 @@ class ObservationReadIntegrationTests {
     @Test
     void theCommitteeReadsOnlyCompletedFormsInItsOwnSchool() throws Exception {
         for (String status : List.of("ACCEPTED", "SCHEDULED", "IN_PROGRESS", "SUBMITTED")) {
-            db.update("UPDATE observation SET status = ? WHERE observation_id = ?", status, scheduled);
+            updateObservation(scheduled, o -> withStatus(o, status));
             read(kaia, "/api/observations/" + scheduled).andExpect(status().isForbidden());
             read(keira, "/api/observations/" + scheduled).andExpect(status().isOk());
         }
-        db.update("UPDATE observation SET status = 'COMPLETED' WHERE observation_id = ?", scheduled);
+        updateObservation(scheduled, o -> withStatus(o, "COMPLETED"));
         read(kaia, "/api/observations/" + scheduled)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.viewerRole").value("COMMITTEE"))
@@ -251,7 +302,7 @@ class ObservationReadIntegrationTests {
         read(kaia, "/api/observations/" + keirasOwn).andExpect(status().isOk());
 
         // A committee member from another school has no access, and neither does a professor without the role.
-        AccountPrincipal otherSchool = principal("kaia.clearbrook@example.edu", 2, Role.AC, Role.PROFESSOR);
+        AccountPrincipal otherSchool = principal(db, "kaia.clearbrook@example.edu", 2, Role.AC, Role.PROFESSOR);
         read(otherSchool, "/api/observations/" + completed).andExpect(status().isForbidden());
         read(dario, "/api/observations/" + completed).andExpect(status().isForbidden());
     }
@@ -259,18 +310,18 @@ class ObservationReadIntegrationTests {
     @Test
     void aCommitteeMemberWhoIsTheObserveeSeesTheirOwnFormAsTheObservee() throws Exception {
         // Kaia's own class is observed, so being on the committee must not show her the draft.
-        db.update("""
-                UPDATE observee SET professor_id = ? WHERE observee_id =
-                (SELECT es.observee_id FROM evaluation_signup es JOIN observation o ON o.signup_id = es.signup_id
-                WHERE o.observation_id = ?)
-                """, kaia.user().professorId(), scheduled);
-        db.update("UPDATE observation SET status = 'IN_PROGRESS' WHERE observation_id = ?", scheduled);
+        Observee observee = observees
+                .findById(signups.findById(
+                                observations.findById(scheduled).orElseThrow().signupId())
+                        .orElseThrow()
+                        .observeeId())
+                .orElseThrow();
+        observees.save(
+                new Observee(observee.observeeId(), kaia.user().professorId(), observee.cycleId(), observee.status()));
+        updateObservation(scheduled, o -> withStatus(o, "IN_PROGRESS"));
         read(kaia, "/api/observations/" + scheduled).andExpect(status().isForbidden());
 
-        db.update("""
-                UPDATE observation SET status = 'SUBMITTED', observer_signed = TRUE,
-                observer_signed_at = TIMESTAMP '2026-11-04 10:00:00' WHERE observation_id = ?
-                """, scheduled);
+        updateObservation(scheduled, o -> submitted(o, LocalDateTime.of(2026, 11, 4, 10, 0)));
         read(kaia, "/api/observations/" + scheduled)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.viewerRole").value("OBSERVEE"))
@@ -291,7 +342,7 @@ class ObservationReadIntegrationTests {
     @Test
     void theCommitteeListAndTemplateEndpointsAreGone() throws Exception {
         read(kaia, "/api/observations").andExpect(status().isNotFound());
-        read(kaia, "/api/observations?cycleId=" + cycleOf("Fall", 2025)).andExpect(status().isNotFound());
+        read(kaia, "/api/observations?cycleId=" + cycleOf(db, "Fall", 2025)).andExpect(status().isNotFound());
         read(dario, "/api/observation-templates/active").andExpect(status().isNotFound());
     }
 
@@ -307,7 +358,7 @@ class ObservationReadIntegrationTests {
                 .andExpect(jsonPath("$[0].observerName").value("Keira Larkspur"))
                 .andExpect(jsonPath("$[0].courseLabel").value("CS 3345.001"))
                 .andExpect(jsonPath("$[0].semesterLabel").value("Fall 2026"))
-                .andExpect(jsonPath("$[0].cycleId").value(cycleOf("Fall", 2026)))
+                .andExpect(jsonPath("$[0].cycleId").value(cycleOf(db, "Fall", 2026)))
                 .andExpect(jsonPath("$[0].observationDate").value("2026-11-04"))
                 .andExpect(jsonPath("$[0].startTime").value("08:30:00"))
                 .andExpect(jsonPath("$[0].submittedAt").value(nullValue()))
@@ -315,7 +366,7 @@ class ObservationReadIntegrationTests {
                 .andExpect(jsonPath("$[1].status").value("COMPLETED"))
                 .andExpect(jsonPath("$[1].observerName").value("Arlo Glimmerton"))
                 .andExpect(jsonPath("$[1].semesterLabel").value("Fall 2025"))
-                .andExpect(jsonPath("$[1].cycleId").value(cycleOf("Fall", 2025)))
+                .andExpect(jsonPath("$[1].cycleId").value(cycleOf(db, "Fall", 2025)))
                 .andExpect(jsonPath("$[1].submittedAt").value("2025-10-28T15:00:00"))
                 .andExpect(jsonPath("$[1].observeeSignedAt").doesNotExist())
                 .andExpect(jsonPath("$[1].completedAt").doesNotExist());
@@ -334,7 +385,7 @@ class ObservationReadIntegrationTests {
                 .andExpect(jsonPath("$[*].observationId").value(containsInRelativeOrder(keirasOwn, completed)));
 
         // An observation without a date yet, as when one has just been accepted, comes first.
-        db.update("UPDATE observation SET observation_date = NULL WHERE observation_id = ?", completed);
+        updateObservation(completed, o -> withPlan(o, null, o.startTime()));
         read(arlo, arlos).andExpect(jsonPath("$[0].observationId").value(completed));
     }
 
@@ -342,44 +393,15 @@ class ObservationReadIntegrationTests {
         return mvc.perform(get(path).with(user(principal)));
     }
 
-    private AccountPrincipal principal(String email, int schoolId, Role... roles) {
-        Map<String, Object> professor = db.queryForMap(
-                "SELECT professor_id, first_name || ' ' || last_name AS name FROM professor WHERE email = ?", email);
-        return new AccountPrincipal(
-                new CurrentUser(
-                        null,
-                        ((Number) professor.get("PROFESSOR_ID")).intValue(),
-                        schoolId,
-                        (String) professor.get("NAME"),
-                        email,
-                        List.of(roles)),
-                null,
-                true);
-    }
-
-    private int observationOf(String observeeEmail, String term, int year) {
-        return db.queryForObject("""
-                SELECT o.observation_id FROM observation o
-                JOIN evaluation_signup es ON es.signup_id = o.signup_id JOIN observee oe ON oe.observee_id = es.observee_id
-                JOIN professor p ON p.professor_id = oe.professor_id
-                JOIN evaluation_cycle c ON c.cycle_id = oe.cycle_id JOIN semester s ON s.semester_id = c.semester_id
-                WHERE p.email = ? AND s.term = ? AND s.academic_year = ?
-                """, Integer.class, observeeEmail, term, year);
-    }
-
-    private int cycleOf(String term, int year) {
-        return db.queryForObject("""
-                SELECT c.cycle_id FROM evaluation_cycle c JOIN semester s ON s.semester_id = c.semester_id
-                WHERE s.term = ? AND s.academic_year = ?
-                """, Integer.class, term, year);
-    }
-
     private int criterion(String text) {
-        return db.queryForObject(
-                "SELECT criterion_id FROM observation_criterion WHERE criterion_text = ?", Integer.class, text);
+        return only(criteria.findAll(), c -> c.criterionText().equals(text)).criterionId();
     }
 
-    private static Object[] column(List<Map<String, Object>> rows, String name) {
-        return rows.stream().map(row -> row.get(name)).toArray();
+    private void updateObservation(int observationId, UnaryOperator<Observation> change) {
+        observations.save(change.apply(observations.findById(observationId).orElseThrow()));
+    }
+
+    private static Object[] column(List<ObservationResponse> rows, Function<ObservationResponse, Object> value) {
+        return rows.stream().map(value).toArray();
     }
 }

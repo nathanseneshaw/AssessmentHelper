@@ -1,13 +1,15 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.ObservationCriterion;
 import edu.utdallas.cs4485.assessmenthelper.entity.ObservationTemplate;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationCriterionRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObservationTemplateRepository;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,41 +21,36 @@ public class FormTemplateService {
 
     public record Update(Integer templateId, List<Criterion> criteria) {}
 
-    private final JdbcTemplate db;
     private final ObservationTemplateRepository templates;
+    private final ObservationCriterionRepository criterionRepository;
     private final Clock clock;
 
-    public FormTemplateService(JdbcTemplate db, ObservationTemplateRepository templates, Clock clock) {
-        this.db = db;
+    public FormTemplateService(
+            ObservationTemplateRepository templates, ObservationCriterionRepository criterionRepository, Clock clock) {
         this.templates = templates;
+        this.criterionRepository = criterionRepository;
         this.clock = clock;
     }
 
     @Transactional(readOnly = true)
     public Template current() {
-        var ids = db.queryForList(
-                "SELECT template_id FROM observation_template WHERE active_status=TRUE ORDER BY version DESC,template_id DESC",
-                Integer.class);
-        if (ids.isEmpty()) throw new ConflictException("Configure an active observation template first.");
-        return version(ids.getFirst());
+        var template = templates
+                .findFirstByActiveStatusTrueOrderByVersionDescTemplateIdDesc()
+                .orElseThrow(() -> new ConflictException("Configure an active observation template first."));
+        return version(template.templateId());
     }
 
     private Template version(int id) {
         var template = templates.findById(id).orElseThrow(() -> new NotFoundException("Template version not found."));
-        var criteria = db.query(
-                "SELECT criterion_text, selected, notes_enabled FROM observation_criterion WHERE template_id=? ORDER BY display_order,criterion_id",
-                (r, n) -> new Criterion(r.getString(1), r.getBoolean(2), r.getBoolean(3)),
-                id);
+        var criteria = criterionRepository.findByTemplateIdOrderByDisplayOrderAscCriterionIdAsc(id).stream()
+                .map(c -> new Criterion(c.criterionText(), c.selected(), c.notesEnabled()))
+                .toList();
         return new Template(id, template.version(), criteria);
     }
 
     @Transactional(readOnly = true)
     public List<Template> history() {
-        return db
-                .queryForList(
-                        "SELECT template_id FROM observation_template ORDER BY version DESC,template_id DESC",
-                        Integer.class)
-                .stream()
+        return templates.findTemplateIdsNewestFirst().stream()
                 .map(this::version)
                 .toList();
     }
@@ -64,16 +61,14 @@ public class FormTemplateService {
         lockCurrent(currentId);
         if (sourceId == currentId) throw new ConflictException("This version is already current.");
         version(sourceId);
-        db.update("UPDATE observation_template SET active_status=FALSE WHERE active_status=TRUE");
-        db.update("UPDATE observation_template SET active_status=TRUE WHERE template_id=?", sourceId);
+        templates.deactivateActiveTemplates();
+        templates.activateTemplate(sourceId);
         return current();
     }
 
     private void lockCurrent(Integer expectedId) {
         // Every save and restore locks the same retained row, even when the active version moves backwards.
-        var locked = db.queryForList(
-                "SELECT template_id FROM observation_template WHERE template_id=(SELECT MIN(template_id) FROM observation_template) FOR UPDATE",
-                Integer.class);
+        var locked = templates.lockFirstTemplateId();
         if (locked.isEmpty() || current().templateId() != expectedId)
             throw new ConflictException(
                     "Another committee member updated this template. Close and reopen this window to load their changes.");
@@ -99,21 +94,25 @@ public class FormTemplateService {
             throw new IllegalArgumentException("Select at least one criterion for the observation form.");
         lockCurrent(update.templateId());
         var old = templates.findById(update.templateId()).orElseThrow();
-        db.update("UPDATE observation_template SET active_status=FALSE WHERE active_status=TRUE");
-        int nextVersion =
-                db.queryForObject("SELECT COALESCE(MAX(version),0)+1 FROM observation_template", Integer.class);
+        templates.deactivateActiveTemplates();
+        int nextVersion = templates.nextTemplateVersion();
         var saved = templates.save(
                 new ObservationTemplate(null, userId, old.templateName(), nextVersion, LocalDate.now(clock), true));
-        int order = 0;
+        var criteria = new ArrayList<ObservationCriterion>();
         for (var criterion : update.criteria()) {
-            db.update(
-                    "INSERT INTO observation_criterion(template_id,criterion_text,question_type,required,display_order,rating_min,rating_max,selected,notes_enabled) VALUES (?,?,'RATING',TRUE,?,1,5,?,?)",
+            criteria.add(new ObservationCriterion(
+                    null,
                     saved.templateId(),
                     criterion.title().trim(),
-                    ++order,
+                    "RATING",
+                    true,
+                    criteria.size() + 1,
+                    1,
+                    5,
                     criterion.selected(),
-                    criterion.notes());
+                    criterion.notes()));
         }
+        criterionRepository.saveAll(criteria);
         return current();
     }
 }

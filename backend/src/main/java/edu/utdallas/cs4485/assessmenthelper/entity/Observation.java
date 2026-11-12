@@ -18,4 +18,5 @@ public record Observation(
         Boolean observerSigned,
         LocalDateTime observeeSignedAt,
         LocalDateTime observerSignedAt,
-        LocalDateTime completedAt) {}
+        LocalDateTime completedAt,
+        String observeeComments) {}

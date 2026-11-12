@@ -1,16 +1,28 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.completed;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
+import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationNotificationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.EvaluationEligibilityService;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,7 +32,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -52,15 +63,26 @@ class EvaluationEligibilityIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private ProfessorRepository professors;
+
+    @Autowired
+    private EvaluationNotificationRepository notifications;
+
+    @Autowired
+    private ObserveeRepository observees;
+
+    @Autowired
+    private ObservationRepository observations;
+
+    @Autowired
+    private SemesterRepository semesters;
 
     @Autowired
     private EvaluationEligibilityService service;
 
     @Test
     void seededProfessorsProduceThirteenDueFifteenOverdueAndSeventyThreeUpcoming() throws Exception {
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM professor", Integer.class))
-                .isEqualTo(161);
+        assertThat(professors.count()).isEqualTo(161);
         var due = service.findDue();
         var overdue = service.findOverdue();
         assertThat(due.count()).isEqualTo(13);
@@ -176,14 +198,11 @@ class EvaluationEligibilityIntegrationTests {
                                 {"recipient":"leander.coldwell@example.edu","subject":"Overdue reminder","body":"Dear Professor Coldwell, please sign up."}
                                 """))
                 .andExpect(status().isOk());
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM evaluation_notification", Integer.class))
-                .isEqualTo(3);
-        assertThat(db.queryForObject(
-                        "SELECT COUNT(*) FROM evaluation_notification WHERE professor_id = ? AND body = ?",
-                        Integer.class,
-                        HOLLIS,
-                        "Dear Professor Carrowmore, please sign up."))
-                .isEqualTo(2);
+        assertThat(notifications.count()).isEqualTo(3);
+        assertThat(notifications.findAll())
+                .filteredOn(
+                        n -> n.professorId() == HOLLIS && n.body().equals("Dear Professor Carrowmore, please sign up."))
+                .hasSize(2);
         assertThat(service.findDue().count()).isEqualTo(13);
         assertThat(service.findOverdue().count()).isEqualTo(15);
         assertThat(service.findDue().faculty().stream()
@@ -221,16 +240,17 @@ class EvaluationEligibilityIntegrationTests {
                                 """))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("The evaluation cycle changed. Refresh the evaluation list."));
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM evaluation_notification", Integer.class))
-                .isZero();
+        assertThat(notifications.count()).isZero();
     }
 
     @Test
     void completingAnOverdueEvaluationClearsItsOldObligation() throws Exception {
-        db.update("UPDATE observee SET status = 'COMPLETED' WHERE professor_id = ? AND cycle_id = 1", LEANDER);
-        db.update(
-                "UPDATE observation SET status = 'COMPLETED', completed_at = TIMESTAMP '2026-10-20 10:00:00' WHERE signup_id = ?",
-                LEANDER_SIGNUP);
+        observees.findByProfessorId(LEANDER).stream()
+                .filter(o -> o.cycleId() == 1)
+                .forEach(o -> observees.save(new Observee(o.observeeId(), o.professorId(), o.cycleId(), "COMPLETED")));
+        observations
+                .findBySignupIdIn(List.of(LEANDER_SIGNUP))
+                .forEach(o -> observations.save(completed(o, LocalDateTime.of(2026, 10, 20, 10, 0))));
         mvc.perform(get("/api/overdue-evaluations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(14));
@@ -244,13 +264,17 @@ class EvaluationEligibilityIntegrationTests {
 
     @Test
     void inactiveFacultyAreExcludedAndMissingCycleConfigurationIsReported() throws Exception {
-        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id IN (?, ?)", HOLLIS, LEANDER);
+        professors.findAllById(List.of(HOLLIS, LEANDER)).forEach(p -> professors.save(inactive(p)));
         assertThat(service.findDue().count()).isEqualTo(12);
         assertThat(service.findOverdue().count()).isEqualTo(14);
-        db.update("""
-                UPDATE semester SET start_date = DATE '2028-08-21', end_date = DATE '2028-12-15'
-                WHERE term = 'Fall' AND academic_year = 2026
-                """);
+        semesters.findAll().stream()
+                .filter(semester -> semester.term().equals("Fall") && semester.academicYear() == 2026)
+                .forEach(semester -> semesters.save(new Semester(
+                        semester.semesterId(),
+                        semester.term(),
+                        semester.academicYear(),
+                        LocalDate.of(2028, 8, 21),
+                        LocalDate.of(2028, 12, 15))));
         mvc.perform(get("/api/due-evaluations"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail")

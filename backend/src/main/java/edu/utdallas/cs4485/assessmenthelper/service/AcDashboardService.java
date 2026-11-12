@@ -1,5 +1,9 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -8,7 +12,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,17 +26,23 @@ public class AcDashboardService {
 
     private final EvaluationEligibilityService eligibility;
     private final ObserverEligibilityService observers;
-    private final JdbcTemplate db;
+    private final EvaluationSignupRepository signupRepository;
+    private final ObserveeRepository observeeRepository;
+    private final ObserverNotificationRepository notificationRepository;
     private final Clock clock;
 
     public AcDashboardService(
             EvaluationEligibilityService eligibility,
             ObserverEligibilityService observers,
-            JdbcTemplate db,
+            EvaluationSignupRepository signupRepository,
+            ObserveeRepository observeeRepository,
+            ObserverNotificationRepository notificationRepository,
             Clock clock) {
         this.eligibility = eligibility;
         this.observers = observers;
-        this.db = db;
+        this.signupRepository = signupRepository;
+        this.observeeRepository = observeeRepository;
+        this.notificationRepository = notificationRepository;
         this.clock = clock;
     }
 
@@ -96,10 +105,7 @@ public class AcDashboardService {
         var ac = observers.acState();
         if (ac.cycle().cycleId() != due.cycleId())
             throw new ConflictException("The evaluation cycle changed. Refresh the dashboard.");
-        var signedUp = Set.copyOf(db.queryForList("""
-                SELECT oe.professor_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
-                WHERE oe.cycle_id=? AND es.status<>'CANCELLED'
-                """, Integer.class, due.cycleId()));
+        var signedUp = Set.copyOf(signupRepository.findSignedUpProfessorIds(due.cycleId()));
         int participating = (int) due.faculty().stream()
                 .filter(f -> signedUp.contains(f.professorId()))
                 .count();
@@ -118,13 +124,8 @@ public class AcDashboardService {
                 .filter(s -> s.candidates().size() >= ObserverEligibilityService.LIST_SIZE)
                 .count();
         int signups = activeSignups.size();
-        var survey =
-                db.queryForObject("""
-                SELECT COUNT(DISTINCT oe.professor_id) AS offered, COUNT(DISTINCT f.professor_id) AS submitted
-                FROM observee oe
-                LEFT JOIN process_feedback f ON f.cycle_id=oe.cycle_id AND f.professor_id=oe.professor_id
-                WHERE oe.cycle_id=? AND oe.status IN ('ACTIVE', 'COMPLETED')
-                """, (r, n) -> new Ratio(r.getInt("submitted"), r.getInt("offered")), due.cycleId());
+        var counts = observeeRepository.countSurveyCompletion(due.cycleId());
+        var survey = new Ratio(counts.submitted(), counts.offered());
         return new Metrics(
                 due.cycleId(),
                 due.cycleLabel(),
@@ -162,74 +163,50 @@ public class AcDashboardService {
             if (o.status() == Status.COMPLETED || o.status() == Status.DEFERRED) continue;
             if (o.observerId() == null) {
                 if (!o.listReleased()) continue;
-                sent += notify(
+                notify(
                         o.observeeId(),
                         o,
                         "choose an observer for " + o.course() + " and send a request so the observation can happen"
                                 + deadline + ".",
                         now);
             } else if (o.status() == Status.PENDING_SIGN_OFF || "Not signed".equals(o.missingReason())) {
-                sent += notify(
+                notify(
                         o.observeeId(),
                         o,
                         "review and sign the submitted observation for " + o.course() + deadline + ".",
                         now);
             } else {
-                sent += notify(
+                notify(
                         o.observerId(),
                         o,
                         (o.date() == null ? "schedule the observation and submit" : "complete and submit")
                                 + " your observation of " + o.observee() + "'s " + o.course() + deadline + ".",
                         now);
             }
+            sent++;
         }
         return new Reminders(sent);
     }
 
-    private int notify(int professorId, TrackedObservation o, String reminder, LocalDateTime now) {
-        return db.update(
-                "INSERT INTO observer_notification(professor_id,signup_id,message,created_at) VALUES (?,?,?,?)",
-                professorId,
-                o.signupId(),
-                "Reminder from the Assessment Committee: " + reminder,
-                now);
+    private void notify(int professorId, TrackedObservation o, String reminder, LocalDateTime now) {
+        notificationRepository.save(new ObserverNotification(
+                null, professorId, o.signupId(), "Reminder from the Assessment Committee: " + reminder, now));
     }
 
     // Track all non-cancelled signups, including those awaiting a generated observer list.
     private List<TrackedObservation> tracked(int cycleId) {
         LocalDate today = LocalDate.now(clock);
-        return db.query(
-                """
-                SELECT es.signup_id, oe.professor_id AS observee_id, p.first_name || ' ' || p.last_name AS observee,
-                ob.professor_id AS observer_id, op.first_name || ' ' || op.last_name AS observer,
-                c.course_code, c.course_number, s.section_number, ls.released_at, o.observation_id,
-                o.observation_date, o.start_time, o.status, o.observee_signed, o.observer_signed, o.completed_at,
-                es.status AS signup_status, ec.observation_deadline, d.reason, d.deferred_at,
-                dp.first_name || ' ' || dp.last_name AS deferred_by,
-                ds.term || ' ' || ds.academic_year AS target_semester
-                FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
-                JOIN evaluation_cycle ec ON ec.cycle_id=oe.cycle_id
-                JOIN professor p ON p.professor_id=oe.professor_id
-                JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
-                LEFT JOIN observer_list_state ls ON ls.signup_id=es.signup_id
-                LEFT JOIN observation o ON o.signup_id=es.signup_id
-                LEFT JOIN observer ob ON ob.observer_id=o.observer_id
-                LEFT JOIN professor op ON op.professor_id=ob.professor_id
-                LEFT JOIN evaluation_deferral d ON d.signup_id=es.signup_id
-                LEFT JOIN professor dp ON dp.professor_id=d.deferred_by
-                LEFT JOIN semester ds ON ds.semester_id=d.target_semester_id
-                WHERE oe.cycle_id=? AND es.status<>'CANCELLED' ORDER BY es.signup_id
-                """,
-                (r, n) -> {
-                    LocalDate date = r.getObject("observation_date", LocalDate.class);
-                    LocalDate deadline = r.getObject("observation_deadline", LocalDate.class);
-                    String stored = r.getString("status");
-                    String reason = r.getObject("observation_id") == null
+        return signupRepository.findTrackedObservations(cycleId).stream()
+                .map(r -> {
+                    LocalDate date = r.observationDate();
+                    LocalDate deadline = r.observationDeadline();
+                    String stored = r.status();
+                    String reason = r.observationId() == null
                             ? "Not scheduled - awaiting observer"
                             : "SUBMITTED".equalsIgnoreCase(stored)
                                     ? "Not signed"
                                     : date == null ? "Not scheduled" : "Not submitted";
-                    Status status = "DEFERRED".equals(r.getString("signup_status"))
+                    Status status = "DEFERRED".equals(r.signupStatus())
                             ? Status.DEFERRED
                             : "COMPLETED".equalsIgnoreCase(stored)
                                     ? Status.COMPLETED
@@ -237,34 +214,30 @@ public class AcDashboardService {
                                             ? Status.MISSING
                                             : "SUBMITTED".equalsIgnoreCase(stored)
                                                     ? Status.PENDING_SIGN_OFF
-                                                    : r.getObject("observation_id") == null
+                                                    : r.observationId() == null
                                                             ? Status.AWAITING_OBSERVER
                                                             : Status.SCHEDULED;
                     return new TrackedObservation(
-                            r.getInt("signup_id"),
-                            r.getObject("observation_id", Integer.class),
-                            r.getInt("observee_id"),
-                            r.getString("observee"),
-                            r.getObject("observer_id", Integer.class),
-                            r.getString("observer"),
-                            r.getString("course_code") + " " + r.getString("course_number") + "."
-                                    + r.getString("section_number"),
-                            r.getTimestamp("released_at") != null,
+                            r.signupId(),
+                            r.observationId(),
+                            r.observeeId(),
+                            r.observee(),
+                            r.observerId(),
+                            r.observer(),
+                            r.courseCode() + " " + r.courseNumber() + "." + r.sectionNumber(),
+                            r.releasedAt() != null,
                             date,
-                            r.getObject("start_time", LocalTime.class),
+                            r.startTime(),
                             status,
                             status == Status.MISSING ? reason : null,
-                            r.getBoolean("observee_signed"),
-                            r.getBoolean("observer_signed"),
-                            r.getObject("completed_at", LocalDateTime.class),
-                            r.getObject("deferred_at") == null
+                            Boolean.TRUE.equals(r.observeeSigned()),
+                            Boolean.TRUE.equals(r.observerSigned()),
+                            r.completedAt(),
+                            r.deferredAt() == null
                                     ? null
                                     : new EvaluationRecord.Deferral(
-                                            r.getString("reason"),
-                                            r.getString("deferred_by"),
-                                            r.getObject("deferred_at", LocalDateTime.class),
-                                            r.getString("target_semester")));
-                },
-                cycleId);
+                                            r.reason(), r.deferredBy(), r.deferredAt(), r.targetSemester()));
+                })
+                .toList();
     }
 }

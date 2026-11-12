@@ -1,31 +1,42 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository.MissingSignupRow;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class MissingObservationService {
-    private final JdbcTemplate db;
+    private final EvaluationSignupRepository signupRepository;
+    private final ObservationRepository observationRepository;
+    private final ProfessorRepository professorRepository;
+    private final SemesterRepository semesterRepository;
     private final EvaluationDeadlineService deadlines;
     private final ObserverEligibilityService eligibility;
     private final ObservationService observations;
     private final Clock clock;
 
     public MissingObservationService(
-            JdbcTemplate db,
+            EvaluationSignupRepository signupRepository,
+            ObservationRepository observationRepository,
+            ProfessorRepository professorRepository,
+            SemesterRepository semesterRepository,
             EvaluationDeadlineService deadlines,
             ObserverEligibilityService eligibility,
             ObservationService observations,
             Clock clock) {
-        this.db = db;
+        this.signupRepository = signupRepository;
+        this.observationRepository = observationRepository;
+        this.professorRepository = professorRepository;
+        this.semesterRepository = semesterRepository;
         this.deadlines = deadlines;
         this.eligibility = eligibility;
         this.observations = observations;
@@ -58,22 +69,9 @@ public class MissingObservationService {
         if (deadline == null || !LocalDate.now(clock).isAfter(deadline)) {
             return new MissingSignups(cycle.cycleId(), cycle.label(), deadline, List.of());
         }
-        List<MissingSignup> rows = db.query("""
-                SELECT es.signup_id, oe.professor_id AS observee_id, p.first_name || ' ' || p.last_name AS observee,
-                c.course_code, c.course_number, s.section_number,
-                op.first_name || ' ' || op.last_name AS observer, o.status
-                FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
-                JOIN professor p ON p.professor_id=oe.professor_id
-                JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
-                LEFT JOIN observation o ON o.signup_id=es.signup_id
-                LEFT JOIN observer ob ON ob.observer_id=o.observer_id
-                LEFT JOIN professor op ON op.professor_id=ob.professor_id
-                WHERE oe.cycle_id=? AND es.status NOT IN ('CANCELLED', 'DEFERRED')
-                AND NOT EXISTS (SELECT 1 FROM observation d WHERE d.signup_id=es.signup_id
-                AND UPPER(d.status)='COMPLETED')
-                ORDER BY p.last_name, p.first_name, es.signup_id,
-                CASE WHEN UPPER(o.status)='SUBMITTED' THEN 1 ELSE 0 END, o.observation_id
-                """, this::missingSignup, cycle.cycleId());
+        List<MissingSignup> rows = signupRepository.findMissingSignups(cycle.cycleId()).stream()
+                .map(this::missingSignup)
+                .toList();
         // The last row is the newest submitted observation, or the newest observation if none were submitted.
         var representative = new LinkedHashMap<Integer, MissingSignup>();
         for (var row : rows) {
@@ -82,15 +80,15 @@ public class MissingObservationService {
         return new MissingSignups(cycle.cycleId(), cycle.label(), deadline, List.copyOf(representative.values()));
     }
 
-    private MissingSignup missingSignup(ResultSet rs, int row) throws SQLException {
-        String course = rs.getString("course_code") + " " + rs.getString("course_number");
+    private MissingSignup missingSignup(MissingSignupRow row) {
+        String course = row.courseCode() + " " + row.courseNumber();
         return new MissingSignup(
-                rs.getInt("signup_id"),
-                rs.getInt("observee_id"),
-                rs.getString("observee"),
-                course + "." + rs.getString("section_number"),
-                rs.getString("observer"),
-                rs.getString("status"));
+                row.signupId(),
+                row.observeeId(),
+                row.observee(),
+                course + "." + row.sectionNumber(),
+                row.observer(),
+                row.status());
     }
 
     @Transactional(readOnly = true)
@@ -99,24 +97,9 @@ public class MissingObservationService {
         LocalDate today = LocalDate.now(clock);
         var cycle = eligibility.cycle();
         // Use each observation's cycle deadline, including obligations from earlier cycles.
-        var observationDeadlines = db.query(
-                """
-                SELECT o.observation_id, ec.observation_deadline FROM observation o
-                JOIN evaluation_signup es ON es.signup_id=o.signup_id
-                JOIN observee oe ON oe.observee_id=es.observee_id
-                JOIN observer ob ON ob.observer_id=o.observer_id
-                JOIN evaluation_cycle ec ON ec.cycle_id=oe.cycle_id
-                WHERE es.status NOT IN ('CANCELLED', 'DEFERRED')
-                AND (oe.professor_id=? OR ob.professor_id=?)
-                """,
-                rs -> {
-                    var result = new java.util.HashMap<Integer, LocalDate>();
-                    while (rs.next())
-                        result.put(rs.getInt("observation_id"), rs.getObject("observation_deadline", LocalDate.class));
-                    return result;
-                },
-                professorId,
-                professorId);
+        var observationDeadlines = new java.util.HashMap<Integer, LocalDate>();
+        for (var row : observationRepository.findObservationDeadlines(professorId))
+            observationDeadlines.put(row.observationId(), row.observationDeadline());
         for (var observation : observations.professorObservations(professorId)) {
             LocalDate due = observationDeadlines.get(observation.observationId());
             if (due == null || !today.isAfter(due) || observation.status() == ObservationService.Status.COMPLETED)
@@ -147,21 +130,15 @@ public class MissingObservationService {
             }
         }
         // Missing policy/hire data is not proof of a missed evaluation.
-        int applicable = db.queryForObject("""
-                SELECT COUNT(*) FROM professor p JOIN evaluation_policy ep ON ep.professor_rank=p.professor_rank
-                WHERE p.professor_id=? AND p.active_status=TRUE AND ep.active_status=TRUE
-                """, Integer.class, professorId);
+        int applicable = professorRepository.countApplicableEvaluationPolicies(professorId);
         if (applicable == 0) return alerts;
         var deadline = deadlines.findByProfessor(professorId);
-        LocalDate semesterEnd = db.queryForObject(
-                "SELECT end_date FROM semester WHERE semester_id=?", LocalDate.class, cycle.semesterId());
+        LocalDate semesterEnd =
+                semesterRepository.findById(cycle.semesterId()).orElseThrow().endDate();
         boolean required = deadline.nextDueDate() != null
                 && (deadline.overdue() || !deadline.nextDueDate().isAfter(semesterEnd));
         if (!required) return alerts;
-        int signups = db.queryForObject("""
-                SELECT COUNT(*) FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
-                WHERE oe.professor_id=? AND oe.cycle_id=? AND es.status NOT IN ('CANCELLED', 'DEFERRED')
-                """, Integer.class, professorId, cycle.cycleId());
+        int signups = signupRepository.countActiveSignupsInCycle(professorId, cycle.cycleId());
         if (signups == 0 && cycle.signupDeadline() != null && today.isAfter(cycle.signupDeadline())) {
             alerts.add(
                     new Alert(
@@ -171,11 +148,7 @@ public class MissingObservationService {
                             "Your required evaluation has no signup for " + cycle.label()
                                     + ". The signup deadline has passed. Contact the Assessment Committee to arrange your evaluation."));
         } else if (signups > 0 && cycle.observationDeadline() != null && today.isAfter(cycle.observationDeadline())) {
-            int scheduled = db.queryForObject("""
-                    SELECT COUNT(*) FROM observation o JOIN evaluation_signup es ON es.signup_id=o.signup_id
-                    JOIN observee oe ON oe.observee_id=es.observee_id
-                    WHERE oe.professor_id=? AND oe.cycle_id=? AND es.status NOT IN ('CANCELLED', 'DEFERRED')
-                    """, Integer.class, professorId, cycle.cycleId());
+            int scheduled = observationRepository.countActiveObservationsInCycle(professorId, cycle.cycleId());
             if (scheduled == 0)
                 alerts.add(new Alert(
                         "MISSING_SCHEDULE",

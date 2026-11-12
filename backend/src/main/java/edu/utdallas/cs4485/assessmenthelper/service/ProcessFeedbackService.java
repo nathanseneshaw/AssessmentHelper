@@ -1,10 +1,13 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.ProcessFeedback;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProcessFeedbackRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,11 +27,19 @@ public class ProcessFeedbackService {
     /** Ratings follow the six questions in the displayed survey, ending with overall effectiveness. */
     public record Submission(List<Integer> ratings, String comments) {}
 
-    private final JdbcTemplate db;
+    private final EvaluationCycleRepository cycleRepository;
+    private final ProfessorRepository professorRepository;
+    private final ProcessFeedbackRepository feedbackRepository;
     private final Clock clock;
 
-    public ProcessFeedbackService(JdbcTemplate db, Clock clock) {
-        this.db = db;
+    public ProcessFeedbackService(
+            EvaluationCycleRepository cycleRepository,
+            ProfessorRepository professorRepository,
+            ProcessFeedbackRepository feedbackRepository,
+            Clock clock) {
+        this.cycleRepository = cycleRepository;
+        this.professorRepository = professorRepository;
+        this.feedbackRepository = feedbackRepository;
         this.clock = clock;
     }
 
@@ -50,48 +61,36 @@ public class ProcessFeedbackService {
     public List<Survey> surveys(AccountPrincipal principal) {
         int id = professorId(principal);
         LocalDate today = LocalDate.now(clock);
-        return db.query(
-                """
-                SELECT c.cycle_id, s.term, s.academic_year, c.observation_deadline, c.feedback_deadline,
-                    f.feedback_id, f.clarity_rating, f.scheduling_rating, f.communication_rating,
-                    f.organization_rating, f.usefulness_rating, f.overall_rating,
-                    f.observee_comment, f.submitted_date FROM evaluation_cycle c
-                JOIN semester s ON s.semester_id=c.semester_id
-                JOIN observee oe ON oe.cycle_id=c.cycle_id AND oe.professor_id=?
-                LEFT JOIN process_feedback f ON f.cycle_id=c.cycle_id AND f.professor_id=oe.professor_id
-                WHERE oe.status IN ('ACTIVE', 'COMPLETED')
-                ORDER BY s.academic_year DESC, s.start_date DESC, c.cycle_id DESC
-                """,
-                (r, row) -> {
-                    LocalDate observation = r.getObject("observation_deadline", LocalDate.class);
-                    LocalDate feedback = r.getObject("feedback_deadline", LocalDate.class);
-                    String status =
-                            r.getObject("feedback_id") != null ? "SUBMITTED" : window(observation, feedback, today);
+        return cycleRepository.findFeedbackSurveys(id).stream()
+                .map(r -> {
+                    LocalDate observation = r.observationDeadline();
+                    LocalDate feedback = r.feedbackDeadline();
+                    String status = r.feedbackId() != null ? "SUBMITTED" : window(observation, feedback, today);
                     return new Survey(
-                            r.getInt("cycle_id"),
-                            r.getString("term") + " " + r.getInt("academic_year"),
+                            r.cycleId(),
+                            r.term() + " " + r.academicYear(),
                             observation,
                             feedback,
                             status,
-                            r.getObject("feedback_id") == null
+                            r.feedbackId() == null
                                     ? null
                                     : java.util.Arrays.asList(
-                                            r.getObject("clarity_rating", Integer.class),
-                                            r.getObject("scheduling_rating", Integer.class),
-                                            r.getObject("communication_rating", Integer.class),
-                                            r.getObject("organization_rating", Integer.class),
-                                            r.getObject("usefulness_rating", Integer.class),
-                                            r.getObject("overall_rating", Integer.class)),
-                            r.getString("observee_comment"),
-                            r.getObject("submitted_date", LocalDate.class));
-                },
-                id);
+                                            r.clarityRating(),
+                                            r.schedulingRating(),
+                                            r.communicationRating(),
+                                            r.organizationRating(),
+                                            r.usefulnessRating(),
+                                            r.overallRating()),
+                            r.observeeComment(),
+                            r.submittedDate());
+                })
+                .toList();
     }
 
     public Survey submit(int cycleId, Submission body, AccountPrincipal principal) {
         int id = professorId(principal);
         // Serialize simultaneous submissions for the same faculty member, including requests from other tabs.
-        db.queryForObject("SELECT professor_id FROM professor WHERE professor_id=? FOR UPDATE", Integer.class, id);
+        professorRepository.findForUpdateByProfessorId(id).orElseThrow();
         Survey survey = surveys(principal).stream()
                 .filter(s -> s.cycleId() == cycleId)
                 .findFirst()
@@ -108,22 +107,21 @@ public class ProcessFeedbackService {
         if (comments != null && comments.length() > 4000)
             throw new IllegalArgumentException("Comments must be at most 4000 characters.");
         var ratings = body.ratings();
-        db.update(
-                """
-                INSERT INTO process_feedback (cycle_id, professor_id, clarity_rating, scheduling_rating,
-                    communication_rating, organization_rating, usefulness_rating, overall_rating,
-                    observee_comment, submitted_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+        feedbackRepository.save(new ProcessFeedback(
+                null,
                 cycleId,
                 id,
+                null,
+                ratings.get(5),
+                null,
+                null,
+                comments,
+                LocalDate.now(clock),
                 ratings.get(0),
                 ratings.get(1),
                 ratings.get(2),
                 ratings.get(3),
-                ratings.get(4),
-                ratings.get(5),
-                comments,
-                LocalDate.now(clock));
+                ratings.get(4)));
         return surveys(principal).stream()
                 .filter(s -> s.cycleId() == cycleId)
                 .findFirst()

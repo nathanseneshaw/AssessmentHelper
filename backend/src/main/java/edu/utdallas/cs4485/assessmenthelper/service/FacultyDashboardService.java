@@ -1,5 +1,8 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -8,7 +11,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,19 +24,25 @@ public class FacultyDashboardService {
     private final EvaluationEligibilityService eligibility;
     private final ObserverEligibilityService observers;
     private final EvaluationRecordService records;
-    private final JdbcTemplate db;
+    private final ProfessorRepository professorRepository;
+    private final EvaluationSignupRepository signupRepository;
+    private final ObservationRepository observationRepository;
     private final Clock clock;
 
     public FacultyDashboardService(
             EvaluationEligibilityService eligibility,
             ObserverEligibilityService observers,
             EvaluationRecordService records,
-            JdbcTemplate db,
+            ProfessorRepository professorRepository,
+            EvaluationSignupRepository signupRepository,
+            ObservationRepository observationRepository,
             Clock clock) {
         this.eligibility = eligibility;
         this.observers = observers;
         this.records = records;
-        this.db = db;
+        this.professorRepository = professorRepository;
+        this.signupRepository = signupRepository;
+        this.observationRepository = observationRepository;
         this.clock = clock;
     }
 
@@ -275,79 +283,46 @@ public class FacultyDashboardService {
     }
 
     private Profile profile(int professorId) {
-        return db.queryForObject(
-                """
-                SELECT p.first_name || ' ' || p.last_name AS name, p.professor_rank, d.department_name, s.school_name
-                FROM professor p JOIN department d ON d.department_id=p.department_id
-                JOIN school s ON s.school_id=d.school_id WHERE p.professor_id=?
-                """,
-                (r, n) -> new Profile(
-                        r.getString("name"),
-                        r.getString("professor_rank"),
-                        r.getString("department_name"),
-                        r.getString("school_name")),
-                professorId);
+        var r = professorRepository.findDashboardProfile(professorId).orElseThrow();
+        return new Profile(r.name(), r.professorRank(), r.departmentName(), r.schoolName());
     }
 
     /** The course of the professor's signup this cycle, or null if they have not signed up. */
     private String signupCourse(int professorId, int cycleId) {
-        return db.queryForList("""
-                        SELECT c.course_code || ' ' || c.course_number || '.' || s.section_number
-                        FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
-                        JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
-                        WHERE oe.professor_id=? AND oe.cycle_id=? AND es.status<>'CANCELLED'
-                        """, String.class, professorId, cycleId).stream()
+        return signupRepository.findSignupCourseLabels(professorId, cycleId).stream()
                 .findFirst()
                 .orElse(null);
     }
 
     // Newest first; an observation with no date yet comes before every dated one.
     private List<Row> observations(int professorId, LocalDate today) {
-        return db.query(
-                """
-                SELECT o.observation_id, o.observation_date, o.start_time, o.status, o.completed_at, oe.cycle_id,
-                sm.term, sm.academic_year, ec.observation_deadline, pe.professor_id AS observee_id,
-                pe.first_name || ' ' || pe.last_name AS observee, po.first_name || ' ' || po.last_name AS observer,
-                c.course_code, c.course_number, s.section_number,
-                EXISTS (SELECT 1 FROM process_feedback f WHERE f.signup_id=o.signup_id AND f.professor_id=?)
-                    AS feedback_given
-                FROM observation o JOIN evaluation_signup es ON es.signup_id=o.signup_id
-                JOIN observee oe ON oe.observee_id=es.observee_id JOIN professor pe ON pe.professor_id=oe.professor_id
-                JOIN observer ob ON ob.observer_id=o.observer_id JOIN professor po ON po.professor_id=ob.professor_id
-                JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
-                JOIN evaluation_cycle ec ON ec.cycle_id=oe.cycle_id JOIN semester sm ON sm.semester_id=ec.semester_id
-                WHERE (pe.professor_id=? OR po.professor_id=?) AND es.status<>'CANCELLED'
-                ORDER BY o.observation_date DESC NULLS FIRST, o.observation_id DESC
-                """,
-                (r, n) -> {
-                    LocalDate date = r.getObject("observation_date", LocalDate.class);
-                    String stored = r.getString("status");
+        return observationRepository.findDashboardObservations(professorId).stream()
+                .map(r -> {
+                    LocalDate date = r.observationDate();
+                    String stored = r.status();
                     var status = switch (stored == null ? "" : stored.toUpperCase(Locale.ROOT)) {
                         case "COMPLETED" -> ObservationStatus.COMPLETED;
                         case "SUBMITTED" -> ObservationStatus.SUBMITTED;
                         case "IN_PROGRESS" -> ObservationStatus.IN_PROGRESS;
                         default -> ObservationStatus.NOT_STARTED;
                     };
-                    boolean observee = r.getInt("observee_id") == professorId;
+                    boolean observee = r.observeeId() == professorId;
                     var item = new ObservationItem(
-                            r.getInt("observation_id"),
-                            r.getInt("cycle_id"),
-                            r.getString("term") + " " + r.getInt("academic_year"),
+                            r.observationId(),
+                            r.cycleId(),
+                            r.term() + " " + r.academicYear(),
                             observee ? Role.OBSERVEE : Role.OBSERVER,
-                            r.getString("course_code") + " " + r.getString("course_number") + "."
-                                    + r.getString("section_number"),
-                            r.getString(observee ? "observer" : "observee"),
+                            r.courseCode() + " " + r.courseNumber() + "." + r.sectionNumber(),
+                            observee ? r.observer() : r.observee(),
                             status,
                             status != ObservationStatus.COMPLETED
-                                    && r.getObject("observation_deadline", LocalDate.class) != null
-                                    && today.isAfter(r.getObject("observation_deadline", LocalDate.class)),
+                                    && r.observationDeadline() != null
+                                    && today.isAfter(r.observationDeadline()),
                             date,
-                            r.getObject("start_time", LocalTime.class),
-                            r.getObject("completed_at", LocalDateTime.class));
-                    return new Row(item, r.getBoolean("feedback_given"));
-                },
-                professorId,
-                professorId,
-                professorId);
+                            r.startTime(),
+                            r.completedAt());
+                    return new Row(item, Boolean.TRUE.equals(r.feedbackGiven()));
+                })
+                .toList();
     }
 }

@@ -3,6 +3,8 @@ package edu.utdallas.cs4485.assessmenthelper.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.AcDashboardService.Status;
 import edu.utdallas.cs4485.assessmenthelper.service.AcDashboardService.TrackedObservation;
 import java.time.LocalDate;
@@ -35,11 +37,27 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     @Autowired
     private EvaluationDeadlineService deadlines;
 
+    @Autowired
+    private ProfessorRepository professors;
+
     private TrackedObservation leandersEvaluation() {
         return dashboard.observations().observations().stream()
                 .filter(o -> o.observee().contains("Leander"))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private void promoteLeanderToFull() {
+        var leander = professors.findById(LEANDER).orElseThrow();
+        professors.save(new Professor(
+                leander.professorId(),
+                leander.departmentId(),
+                "FULL",
+                leander.firstName(),
+                leander.lastName(),
+                leander.email(),
+                leander.hireDate(),
+                leander.activeStatus()));
     }
 
     private List<MissingObservationService.Alert> lateAlerts(int professorId) {
@@ -72,7 +90,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     void us3_changingARankChangesTheEvaluationInterval() {
         assertThat(deadlines.findByProfessor(LEANDER).evaluationIntervalYears()).isEqualTo(1);
 
-        db.update("UPDATE professor SET professor_rank = 'FULL' WHERE professor_id = ?", LEANDER);
+        promoteLeanderToFull();
 
         assertThat(deadlines.findByProfessor(LEANDER).evaluationIntervalYears()).isEqualTo(2);
         assertThat(deadlines.findByProfessor(LEANDER).professorRank()).isEqualTo("FULL");
@@ -82,7 +100,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     void us3_aRankChangeMovesTheNextDueDateLater() {
         LocalDate asAssistant = deadlines.findByProfessor(LEANDER).nextDueDate();
 
-        db.update("UPDATE professor SET professor_rank = 'FULL' WHERE professor_id = ?", LEANDER);
+        promoteLeanderToFull();
         LocalDate asFull = deadlines.findByProfessor(LEANDER).nextDueDate();
 
         assertThat(asAssistant).isNotNull();

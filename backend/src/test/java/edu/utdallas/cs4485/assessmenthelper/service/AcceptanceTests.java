@@ -1,11 +1,21 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withDepartment;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withExpiration;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withSignupDeadline;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverRequest;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.HashSet;
@@ -17,7 +27,6 @@ import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Acceptance tests named after the team's test cases (TC 16 to TC 23). Same data and clock as
@@ -31,7 +40,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
     ObserverEligibilityService.class,
     EvaluationSignupService.class,
     ObserverRequestService.class,
-    ObserverRequestContextRepository.class,
     AcceptanceTests.Time.class
 })
 class AcceptanceTests {
@@ -57,7 +65,19 @@ class AcceptanceTests {
     ObserverRequestService requests;
 
     @Autowired
-    JdbcTemplate db;
+    ProfessorRepository professors;
+
+    @Autowired
+    EvaluationCycleRepository cycles;
+
+    @Autowired
+    ObserverRepository observers;
+
+    @Autowired
+    ObserverRequestRepository observerRequests;
+
+    @Autowired
+    ObservationRepository observations;
 
     // ---------- helpers ----------
 
@@ -84,17 +104,21 @@ class AcceptanceTests {
 
     /** The committee releases the list once the signup deadline has passed. */
     void releaseAfterDeadline(int signupId) {
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        setSignupDeadline(LocalDate.of(2026, 10, 20));
         service.release(signupId);
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-31' WHERE cycle_id=1");
+        setSignupDeadline(LocalDate.of(2026, 10, 31));
+    }
+
+    void setSignupDeadline(LocalDate deadline) {
+        cycles.save(withSignupDeadline(cycles.findById(1).orElseThrow(), deadline));
     }
 
     String requestStatus(int requestId) {
-        return db.queryForObject("SELECT status FROM observer_request WHERE request_id=?", String.class, requestId);
+        return observerRequests.findById(requestId).orElseThrow().status();
     }
 
     int observationCount(int signupId) {
-        return db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, signupId);
+        return observations.findBySignupIdIn(List.of(signupId)).size();
     }
 
     // ---------- TC 16: signup ----------
@@ -138,18 +162,18 @@ class AcceptanceTests {
 
     @Test
     void tc18_5_wrongDepartmentOrConflictingScheduleNeverAppears() {
-        db.update("UPDATE professor SET department_id = 2 WHERE professor_id = ?", ARLO);
+        professors.save(withDepartment(professors.findById(ARLO).orElseThrow(), 2));
         int signup = darioSignsUp();
         assertThat(candidateProfessors(signup)).doesNotContain(ARLO, XIOMARA, PERRIN);
     }
 
     @Test
     void tc18_4_and_tc19_noEligibleObserversGivesAnEmptyListThatCannotBeReleased() {
-        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        observers.findByCycleId(1).forEach(o -> observers.save(inactive(o)));
         int signup = darioSignsUp();
         assertThat(candidates(signup)).isEmpty();
 
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        setSignupDeadline(LocalDate.of(2026, 10, 20));
         assertThatThrownBy(() -> service.release(signup))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("No eligible observers");
@@ -168,8 +192,9 @@ class AcceptanceTests {
         requests.create(signup, c.get(1).observerId(), null);
         requests.create(signup, c.get(2).observerId(), null);
 
-        var requested =
-                db.queryForList("SELECT observer_id FROM observer_request WHERE signup_id=?", Integer.class, signup);
+        var requested = observerRequests.findBySignupId(signup).stream()
+                .map(ObserverRequest::observerId)
+                .toList();
         assertThat(requested)
                 .containsExactlyInAnyOrder(
                         c.get(0).observerId(), c.get(1).observerId(), c.get(2).observerId())
@@ -217,10 +242,8 @@ class AcceptanceTests {
         var request = requests.create(signup, observer.observerId(), null);
 
         // Time passes: the request's expiration moves into the past.
-        db.update(
-                "UPDATE observer_request SET expiration_date=? WHERE request_id=?",
-                LocalDateTime.of(2026, 10, 21, 9, 0),
-                request.requestId());
+        var stored = observerRequests.findById(request.requestId()).orElseThrow();
+        observerRequests.save(withExpiration(stored, LocalDateTime.of(2026, 10, 21, 9, 0)));
 
         assertThatThrownBy(() -> service.respond(observer.professorId(), request.requestId(), true))
                 .isInstanceOf(ConflictException.class);

@@ -3,12 +3,15 @@ package edu.utdallas.cs4485.assessmenthelper.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService.AuditEvent;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService.Status;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService.ViewerRole;
-import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.access.AccessDeniedException;
@@ -22,6 +25,14 @@ import org.springframework.transaction.annotation.Transactional;
 @Import(AcceptanceSupport.Time.class)
 @Transactional
 class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
+    @Autowired
+    private ObservationRepository observationRecords;
+
+    @Autowired
+    private EvaluationSignupRepository signups;
+
+    @Autowired
+    private ObserveeRepository observees;
 
     private List<AuditEvent> events(int obs) {
         return audit.auditLog(obs, kaia()).stream()
@@ -30,10 +41,9 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     private String observeeStatus(int obs) {
-        return db.queryForObject("""
-                SELECT oe.status FROM observee oe JOIN evaluation_signup es ON es.observee_id = oe.observee_id
-                JOIN observation o ON o.signup_id = es.signup_id WHERE o.observation_id = ?
-                """, String.class, obs);
+        int signupId = observationRecords.findById(obs).orElseThrow().signupId();
+        int observeeId = signups.findById(signupId).orElseThrow().observeeId();
+        return observees.findById(observeeId).orElseThrow().status();
     }
 
     // ---------- US41: who may read the record ----------
@@ -174,9 +184,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
         complete(obs, null);
 
         assertThat(observeeStatus(obs)).isEqualTo("COMPLETED");
-        assertThat(db.queryForObject(
-                        "SELECT completed_at FROM observation WHERE observation_id = ?", LocalDateTime.class, obs))
-                .isNotNull();
+        assertThat(observationRecords.findById(obs).orElseThrow().completedAt()).isNotNull();
     }
 
     @Test

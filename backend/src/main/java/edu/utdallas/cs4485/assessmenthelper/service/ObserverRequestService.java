@@ -116,7 +116,8 @@ public class ObserverRequestService {
             throw new ConflictException("You can have up to 5 pending observer requests per signup.");
         }
         eligibility.requireEligible(signupId, observerId);
-        var saved = repository.save(new ObserverRequest(null, signupId, observerId, now, expires, null, PENDING));
+        var saved =
+                repository.save(new ObserverRequest(null, signupId, observerId, now, expires, null, PENDING, false));
         eligibility.requestSent(signupId, observerId);
         return saved;
     }
@@ -148,7 +149,10 @@ public class ObserverRequestService {
                                 ? context.candidates(signup.signupId())
                                 : List.of(),
                         find(signup.signupId(), null).stream()
-                                .map(request -> new RequestSummary(request, context.observerName(request.observerId())))
+                                .map(request -> new RequestSummary(
+                                        request,
+                                        context.observerName(request.observerId())
+                                                .orElseThrow()))
                                 .toList()))
                 .toList();
     }
@@ -179,8 +183,8 @@ public class ObserverRequestService {
         var initial = context.findSignup(signupId)
                 .orElseThrow(() -> new NotFoundException("No evaluation signup with id " + signupId));
         // Same lock order as course selection, so its section cannot change during a send.
-        professors.findForSignupUpdate(initial.professorId()).orElseThrow();
-        signupRepository.findForRequestUpdate(signupId).orElseThrow();
+        professors.findForUpdateByProfessorId(initial.professorId()).orElseThrow();
+        signupRepository.findForUpdateBySignupId(signupId).orElseThrow();
         return context.findSignup(signupId).orElseThrow();
     }
 
@@ -239,7 +243,7 @@ public class ObserverRequestService {
             return load(requestId);
         }
         lockSignup(signupId);
-        return repository.save(withStatus(requirePending(requestId), CONFIRMED, now()));
+        return repository.save(requirePending(requestId).withStatus(CONFIRMED, now()));
     }
     /**
      * The observer declines the request.
@@ -249,13 +253,13 @@ public class ObserverRequestService {
      */
     @Transactional
     public ObserverRequest decline(Integer requestId) {
-        return repository.save(withStatus(requirePending(requestId), DECLINED, now()));
+        return repository.save(requirePending(requestId).withStatus(DECLINED, now()));
     }
     /** Marks every PENDING request past its expiration date as EXPIRED and returns how many it changed. */
     @Transactional
     public int expireOverdue() {
         List<ObserverRequest> overdue = repository.findByStatusAndExpirationDateBefore(PENDING, now());
-        overdue.forEach(request -> repository.save(withStatus(request, EXPIRED, request.responseDate())));
+        overdue.forEach(request -> repository.save(request.withStatus(EXPIRED, request.responseDate())));
         return overdue.size();
     }
 
@@ -285,12 +289,7 @@ public class ObserverRequestService {
         boolean overdue = PENDING.equals(request.status())
                 && request.expirationDate() != null
                 && request.expirationDate().isBefore(now());
-        return overdue ? repository.save(withStatus(request, EXPIRED, request.responseDate())) : request;
-    }
-
-    private static ObserverRequest withStatus(ObserverRequest r, String status, LocalDateTime responseDate) {
-        return new ObserverRequest(
-                r.requestId(), r.signupId(), r.observerId(), r.requestDate(), r.expirationDate(), responseDate, status);
+        return overdue ? repository.save(request.withStatus(EXPIRED, request.responseDate())) : request;
     }
 
     private LocalDateTime now() {

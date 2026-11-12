@@ -26,8 +26,8 @@ class ProfessorAccessTests {
     @BeforeEach
     void requestOneIsSentToProfessorSeven() {
         when(requests.findById(1))
-                .thenReturn(Optional.of(
-                        new ObserverRequest(1, 2, 3, LocalDateTime.of(2026, 10, 20, 12, 0), null, null, "PENDING")));
+                .thenReturn(Optional.of(new ObserverRequest(
+                        1, 2, 3, LocalDateTime.of(2026, 10, 20, 12, 0), null, null, "PENDING", false)));
         when(observers.findById(3)).thenReturn(Optional.of(new Observer(3, 7, 1, true)));
     }
 

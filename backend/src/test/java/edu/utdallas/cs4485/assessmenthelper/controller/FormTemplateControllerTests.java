@@ -1,10 +1,13 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationCriterionRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationTemplateRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -18,7 +21,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +33,10 @@ class FormTemplateControllerTests {
     MockMvc mvc;
 
     @Autowired
-    JdbcTemplate db;
+    ObservationTemplateRepository templates;
+
+    @Autowired
+    ObservationCriterionRepository criteria;
 
     @Autowired
     FormTemplateService service;
@@ -75,14 +80,9 @@ class FormTemplateControllerTests {
                 .andExpect(jsonPath("$.criteria[0].title").value("Edited engagement"))
                 .andExpect(jsonPath("$.criteria[1].selected").value(false))
                 .andExpect(jsonPath("$.criteria[1].notes").value(true));
-        assertThat(db.queryForObject(
-                        "SELECT COUNT(*) FROM observation_criterion WHERE template_id=?",
-                        Integer.class,
-                        original.templateId()))
-                .isEqualTo(original.criteria().size());
-        assertThat(db.queryForObject(
-                        "SELECT COUNT(*) FROM observation_template WHERE active_status=TRUE", Integer.class))
-                .isEqualTo(1);
+        assertThat(criteria.findByTemplateIdOrderByDisplayOrderAscCriterionIdAsc(original.templateId()))
+                .hasSize(original.criteria().size());
+        assertThat(templates.findByActiveStatusTrue()).hasSize(1);
         mvc.perform(as(OTHER_AC, put("/api/form-template"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body(original.templateId(), CRITERIA)))
@@ -135,7 +135,7 @@ class FormTemplateControllerTests {
 
     @Test
     void withoutAnActiveTemplateTheEditorReportsAConflict() throws Exception {
-        db.update("UPDATE observation_template SET active_status=FALSE");
+        templates.findAll().forEach(t -> templates.save(inactive(t)));
         mvc.perform(as(AC, get("/api/form-template")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("Configure an active observation template first."));
