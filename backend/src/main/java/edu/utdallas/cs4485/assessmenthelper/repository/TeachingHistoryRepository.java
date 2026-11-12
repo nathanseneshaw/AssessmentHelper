@@ -11,6 +11,29 @@ public interface TeachingHistoryRepository extends ListCrudRepository<TeachingHi
 
     boolean existsByProfessorIdAndSectionId(Integer professorId, Integer sectionId);
 
+    record TeachingRow(
+            Integer sectionId,
+            Integer courseId,
+            String courseCode,
+            String courseNumber,
+            String courseName,
+            String sectionNumber,
+            String term,
+            Integer academicYear,
+            LocalDate startDate,
+            LocalDate endDate) {}
+
+    // NULLS LAST keeps semesters without a start date at the end on both H2 and PostgreSQL.
+    @Query("""
+            SELECT s.section_id, c.course_id, c.course_code, c.course_number, c.course_name, s.section_number,
+                   sem.term, sem.academic_year, sem.start_date, sem.end_date
+            FROM teaching_history t JOIN course_section s ON s.section_id=t.section_id
+            JOIN course c ON c.course_id=s.course_id JOIN semester sem ON sem.semester_id=s.semester_id
+            WHERE t.professor_id=:professorId
+            ORDER BY sem.start_date DESC NULLS LAST, c.course_number, s.section_number, s.section_id
+            """)
+    List<TeachingRow> findTeachingRows(Integer professorId);
+
     @Query("""
             SELECT DISTINCT s.*, c.course_code, c.course_number, c.course_name
             FROM teaching_history t JOIN course_section s ON s.section_id=t.section_id
