@@ -85,6 +85,23 @@ export interface ObservationDetail {
   observeeSignedAt: string | null;
 }
 
+export type AuditEvent =
+  | "STARTED"
+  | "EDITED"
+  | "SUBMITTED"
+  | "OBSERVEE_COMMENTED"
+  | "OBSERVEE_SIGNED"
+  | "LOCKED"
+  | "VIEWED"
+  | "FORWARDED";
+
+export interface AuditEntry {
+  event: AuditEvent;
+  actorName: string | null;
+  recipientName: string | null;
+  occurredAt: string;
+}
+
 export const STATUS_LABELS: Record<ObservationStatus, string> = {
   ACCEPTED: "Not started",
   SCHEDULED: "Not started",
@@ -168,6 +185,8 @@ const send = <T>(path: string, method: string, body?: unknown) =>
 
 export const observationPath = (observationId: number) =>
   `/api/observations/${observationId}`;
+export const auditLogPath = (observationId: number) =>
+  `${observationPath(observationId)}/audit-log`;
 export const professorObservationsPath = (professorId: number) =>
   `/api/professors/${professorId}/observations`;
 

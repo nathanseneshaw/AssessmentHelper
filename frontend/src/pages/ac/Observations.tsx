@@ -7,11 +7,14 @@ import {
   type TrackedObservation,
 } from "../../api/acDashboard";
 import {
+  type AuditEntry,
+  auditLogPath,
   type ObservationDetail,
   observationPath,
   useApiResource,
 } from "../../api/observations";
 import { ActionButton } from "../../components/ActionButton";
+import { AuditLog } from "../../components/AuditLog";
 import { DeferralDetails } from "../../components/DeferralDetails";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { ObservationRecord } from "../../components/ObservationRecord";
@@ -146,6 +149,20 @@ function ObservationDetails({
       ? observationPath(observation.observationId)
       : null,
   );
+  const [showLog, setShowLog] = useState(false);
+  const {
+    data: auditLog,
+    error: logError,
+    reload: reloadLog,
+  } = useApiResource<AuditEntry[]>(
+    showLog && observation.observationId
+      ? auditLogPath(observation.observationId)
+      : null,
+  );
+  // Opening the form records a view, so an open log loads again to include it.
+  useEffect(() => {
+    if (submittedForm) reloadLog();
+  }, [submittedForm, reloadLog]);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.showModal();
@@ -214,13 +231,49 @@ function ObservationDetails({
       )}
       {observation.status === "COMPLETED" && observation.observationId && (
         <div className="mt-6">
-          <button
-            type="button"
-            onClick={() => setShowForm((shown) => !shown)}
-            className="rounded-lg bg-brand-green px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-          >
-            {showForm ? "Hide submitted form" : "View submitted form"}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setShowForm((shown) => !shown)}
+              className="rounded-lg bg-brand-green px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            >
+              {showForm ? "Hide submitted form" : "View submitted form"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowLog((shown) => !shown)}
+              className="rounded-lg border border-brand-green px-4 py-2 text-sm font-semibold text-brand-green hover:bg-mist"
+            >
+              {showLog ? "Hide audit log" : "View audit log"}
+            </button>
+          </div>
+          {showLog && (
+            <section aria-labelledby={`${titleId}-log`} className="mt-5">
+              <h3 id={`${titleId}-log`} className="font-semibold text-lg">
+                Audit log
+              </h3>
+              <div className="mt-2">
+                {logError ? (
+                  <p role="alert" className="text-sm text-brand-red">
+                    {logError}{" "}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={reloadLog}
+                    >
+                      Retry
+                    </button>
+                  </p>
+                ) : auditLog ? (
+                  <AuditLog entries={auditLog} />
+                ) : (
+                  <p role="status" className="text-muted text-sm">
+                    Loading audit log…
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
           {showForm && (
             <div className="mt-5">
               {formError ? (

@@ -241,19 +241,6 @@ class ObservationReadIntegrationTests {
 
     @Test
     void bothSidesReopenACompletedFormWithItsAnswers() throws Exception {
-        // data.sql records no answers on the completed forms, so give this one a full set.
-        responses.saveAll(criteria
-                .findByTemplateIdOrderByDisplayOrderAscCriterionIdAsc(
-                        observations.findById(completed).orElseThrow().templateId())
-                .stream()
-                .filter(ObservationCriterion::selected)
-                .map(q -> new ObservationResponse(
-                        null,
-                        completed,
-                        q.criterionId(),
-                        "RATING".equals(q.questionType()) ? 4 : null,
-                        "Notes on " + q.criterionText()))
-                .toList());
         List<ObservationResponse> stored = responses.findByObservationId(completed).stream()
                 .sorted(comparing(
                         r -> criteria.findById(r.criterionId()).orElseThrow().displayOrder()))
