@@ -83,7 +83,7 @@ export function AcEmailTemplates() {
     <div>
       <PageHeader
         title="Email Templates"
-        subtitle="Manage reusable email text. Notifications are simulated and do not deliver mail."
+        subtitle="Manage reusable email text for faculty notifications."
       />
       {error && (
         <p role="alert" className="mt-4">

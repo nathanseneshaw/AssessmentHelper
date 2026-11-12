@@ -149,10 +149,10 @@ export function OverdueEvaluations({
       {sent ? (
         <>
           <h2 id={titleId} className="font-semibold text-xl text-brand-green">
-            Email Recorded
+            Email Sent
           </h2>
           <p role="status" className="mt-3 text-sm">
-            The simulated email has been recorded. No email was delivered.
+            The email has been sent and the notification has been recorded.
           </p>
           <div className="mt-10 flex justify-end">
             <button
@@ -204,8 +204,8 @@ export function OverdueEvaluations({
                   : "Notify Faculty Member"}
               </h2>
               <p className="mt-1 text-sm text-muted">
-                Review and edit the email. Sending records a simulated email; it
-                does not deliver mail.
+                Review and edit the email before sending it to the faculty
+                member.
               </p>
             </div>
             <button

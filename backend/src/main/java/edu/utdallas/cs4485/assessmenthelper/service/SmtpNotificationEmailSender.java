@@ -2,9 +2,12 @@ package edu.utdallas.cs4485.assessmenthelper.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
+import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 
 @Component
 @ConditionalOnProperty(prefix = "app.email", name = "enabled", havingValue = "true")
@@ -28,16 +31,25 @@ public class SmtpNotificationEmailSender implements NotificationEmailSender {
     @Override
     public void send(String recipient, String subject, String body) {
         if (from.isBlank()) {
-            throw new IllegalStateException("Set SMTP_FROM or SMTP_USERNAME before enabling email delivery.");
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "Email delivery is not configured. Contact an administrator.");
         }
         if (testMode && testRecipient.isBlank()) {
-            throw new IllegalStateException("Set APP_EMAIL_TEST_RECIPIENT when APP_EMAIL_TEST_MODE is enabled.");
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "Email test delivery is not configured. Contact an administrator.");
         }
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(from);
         message.setTo(testMode ? testRecipient : recipient);
         message.setSubject(subject);
         message.setText(body);
-        mailSender.send(message);
+        try {
+            mailSender.send(message);
+        } catch (MailException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "Email delivery is temporarily unavailable. Please try again later.",
+                    e);
+        }
     }
 }

@@ -38,6 +38,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Import({
     FacultyDashboardService.class,
     EvaluationEligibilityService.class,
+    DisabledNotificationEmailSender.class,
     EvaluationDeadlineService.class,
     EvaluationPolicyService.class,
     EmailTemplateService.class,

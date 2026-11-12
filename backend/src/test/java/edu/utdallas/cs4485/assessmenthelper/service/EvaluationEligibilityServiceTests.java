@@ -32,6 +32,7 @@ class EvaluationEligibilityServiceTests {
             signups,
             observations,
             notifications,
+            new DisabledNotificationEmailSender(),
             clock,
             deferrals,
             mock(EmailTemplateService.class));
