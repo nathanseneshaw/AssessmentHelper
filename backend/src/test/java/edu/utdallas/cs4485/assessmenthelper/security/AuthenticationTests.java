@@ -147,11 +147,11 @@ class AuthenticationTests {
     }
 
     @Test
-    void committeeMembersCanReadEvaluationsOnlyInTheirOwnSchool() throws Exception {
+    void committeeMembersCanReadEvaluationsAcrossSchools() throws Exception {
         MockHttpSession session = signIn(KAIA, KAIA_PASSWORD);
 
         mockMvc.perform(get("/api/professors/34/evaluations").session(session)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/professors/160/evaluations").session(session)).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/professors/160/evaluations").session(session)).andExpect(status().isOk());
     }
 
     @Test

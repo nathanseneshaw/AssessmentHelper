@@ -88,12 +88,11 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void us41_aCommitteeMemberFromAnotherSchoolCannotReadTheRecord() {
+    void us41_aCommitteeMemberFromAnotherSchoolCanReadTheRecord() {
         int obs = observationId();
         complete(obs, null);
 
-        assertThatThrownBy(() -> observations.detail(obs, outsiderCommittee()))
-                .isInstanceOf(AccessDeniedException.class);
+        assertThat(observations.detail(obs, outsiderCommittee()).viewerRole()).isEqualTo(ViewerRole.COMMITTEE);
     }
 
     @Test
@@ -426,14 +425,14 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void audit_onlyCommitteeMembersInTheSameSchoolCanReadTheLog() {
+    void audit_onlyCommitteeMembersAcrossSchoolsCanReadTheLog() {
         int obs = observationId();
         complete(obs, null);
 
         assertThatThrownBy(() -> audit.auditLog(obs, keira())).isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> audit.auditLog(obs, leander())).isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> audit.auditLog(obs, dario())).isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> audit.auditLog(obs, outsiderCommittee())).isInstanceOf(AccessDeniedException.class);
+        assertThat(audit.auditLog(obs, outsiderCommittee())).isNotEmpty();
         assertThat(audit.auditLog(obs, kaia())).isNotEmpty();
     }
 
@@ -497,12 +496,13 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void forward_aCommitteeMemberFromAnotherSchoolCannotForward() {
+    void forward_aCommitteeMemberFromAnotherSchoolCanForward() {
         int obs = observationId();
         complete(obs, null);
 
-        assertThatThrownBy(() -> observations.forward(obs, DARIO, outsiderCommittee()))
-                .isInstanceOf(AccessDeniedException.class);
+        int before = notificationCount(DARIO);
+        observations.forward(obs, DARIO, outsiderCommittee());
+        assertThat(notificationCount(DARIO)).isEqualTo(before + 1);
     }
 
     @Test
