@@ -41,7 +41,14 @@ import org.springframework.test.web.servlet.MockMvc;
 class ObserverRequestControllerTests {
 
     private static final ObserverRequest PENDING = new ObserverRequest(
-            1, 2, 3, LocalDateTime.of(2026, 10, 20, 12, 0), LocalDateTime.of(2026, 10, 27, 12, 0), null, "PENDING");
+            1,
+            2,
+            3,
+            LocalDateTime.of(2026, 10, 20, 12, 0),
+            LocalDateTime.of(2026, 10, 27, 12, 0),
+            null,
+            "PENDING",
+            false);
 
     private static final AccountPrincipal OBSERVER = new AccountPrincipal(
             new CurrentUser(3, 3, 1, "Test Observer", "observer@univ.edu", List.of(Role.PROFESSOR)), null, true);
@@ -115,7 +122,8 @@ class ObserverRequestControllerTests {
                 LocalDateTime.of(2026, 10, 20, 12, 0),
                 LocalDateTime.of(2026, 10, 27, 12, 0),
                 LocalDateTime.of(2026, 10, 21, 9, 0),
-                "DECLINED");
+                "DECLINED",
+                false);
         when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
         when(service.decline(1)).thenReturn(declined);
 

@@ -130,6 +130,7 @@ class EvaluationRecordServiceTests {
                 false,
                 null,
                 null,
-                completedAt));
+                completedAt,
+                null));
     }
 }

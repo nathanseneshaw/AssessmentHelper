@@ -1,5 +1,9 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.matchOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observerOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.signupOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
@@ -13,6 +17,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObservationCriterion;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverMatch;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationCriterionRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverMatchRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -32,8 +47,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -115,7 +130,28 @@ class WorkflowEndToEndTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private JdbcAggregateTemplate db;
+
+    @Autowired
+    private ObserveeRepository observees;
+
+    @Autowired
+    private ObserverRepository observers;
+
+    @Autowired
+    private ObserverMatchRepository matches;
+
+    @Autowired
+    private ObserverRequestRepository requests;
+
+    @Autowired
+    private ObservationRepository observations;
+
+    @Autowired
+    private ObservationCriterionRepository criteria;
+
+    @Autowired
+    private ObserverNotificationRepository notifications;
 
     @Autowired
     private JsonMapper json;
@@ -146,7 +182,7 @@ class WorkflowEndToEndTests {
                 .andExpect(jsonPath("$.sectionId").value(298))
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.signupDate").value("2026-10-21"));
-        signupId = signupOf(34);
+        signupId = signupOf(db, 34);
 
         // ---- Matching: the committee sees the generated list, Dario does not until it is released ----
         mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
@@ -178,7 +214,7 @@ class WorkflowEndToEndTests {
                 .andExpect(jsonPath(DARIOS_ROW + ".listReleased").value(true));
 
         // Dario asks Arlo, who sees the request and accepts it.
-        sendRequest(DARIO, 34, signupId, matchOf(signupId, 26))
+        sendRequest(DARIO, 34, signupId, matchOf(db, signupId, 26))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.requestDate").value("2026-11-02T09:00:00"));
@@ -201,12 +237,10 @@ class WorkflowEndToEndTests {
                 .andExpect(jsonPath("$[0].unavailableReason")
                         .value("An observation is already scheduled for this signup."));
         // Accepting recorded the observation, and the committee's tracker now shows who observes whom.
-        assertThat(db.queryForMap(
-                        "SELECT o.status, ob.professor_id FROM observation o"
-                                + " JOIN observer ob ON ob.observer_id = o.observer_id WHERE o.signup_id = ?",
-                        signupId))
-                .containsEntry("STATUS", "SCHEDULED")
-                .containsEntry("PROFESSOR_ID", 26);
+        Observation scheduled = only(observationsOf(signupId));
+        assertThat(scheduled.status()).isEqualTo("SCHEDULED");
+        assertThat(observers.findById(scheduled.observerId()).orElseThrow().professorId())
+                .isEqualTo(26);
         mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
                 .andExpect(jsonPath(DARIOS_ROW + ".observer").value("Arlo Glimmerton"))
                 .andExpect(jsonPath(DARIOS_ROW + ".status").value("SCHEDULED"));
@@ -296,7 +330,7 @@ class WorkflowEndToEndTests {
 
         // ---- Feedback survey, once the observation period is over (before the 2026-12-01 feedback deadline) ----
         clock.set("2026-11-16T10:00:00");
-        int cycleId = db.queryForObject("SELECT cycle_id FROM observee WHERE professor_id = 34", Integer.class);
+        int cycleId = only(observees.findByProfessorId(34)).cycleId();
         mvc.perform(as(DARIO, get("/api/feedback-surveys")))
                 .andExpect(jsonPath("$[0].cycleId").value(cycleId))
                 .andExpect(jsonPath("$[0].status").value("AVAILABLE"));
@@ -313,22 +347,20 @@ class WorkflowEndToEndTests {
     @Test
     void declinedRequestLeavesTheCommitteeToAssignAnObserver() throws Exception {
         signUp(DARIO, 34, 298);
-        signupId = signupOf(34);
+        signupId = signupOf(db, 34);
         clock.set("2026-11-02T09:00:00");
         mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/release")))
                 .andExpect(status().isNoContent());
 
         // Arlo declines Dario's request, so there is no observation and the signup is still waiting.
-        sendRequest(DARIO, 34, signupId, matchOf(signupId, 26)).andExpect(status().isCreated());
-        int requestId = db.queryForObject(
-                "SELECT request_id FROM observer_request WHERE signup_id = ?", Integer.class, signupId);
+        sendRequest(DARIO, 34, signupId, matchOf(db, signupId, 26)).andExpect(status().isCreated());
+        int requestId = only(requests.findBySignupId(signupId)).requestId();
         respond(ARLO, 26, requestId, false).andExpect(status().isNoContent());
         mvc.perform(as(DARIO, get("/api/observer-eligibility/faculty/34")))
                 .andExpect(jsonPath("$.outgoing[0].status").value("DECLINED"))
                 .andExpect(jsonPath("$.notifications[0].message")
                         .value("Arlo Glimmerton declined your observation request for CS 3345.005."));
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id = ?", Integer.class, signupId))
-                .isZero();
+        assertThat(observationsOf(signupId)).isEmpty();
         mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
                 .andExpect(jsonPath(DARIOS_ROW + ".status").value("AWAITING_OBSERVER"));
         // A declined request cannot be answered a second time.
@@ -337,11 +369,12 @@ class WorkflowEndToEndTests {
         assign(41).andExpect(status().isConflict());
 
         // Let the other recommendations expire before the committee assigns Keira.
-        var remainingMatches = db.queryForList(
-                "SELECT match_id FROM observer_match WHERE signup_id=? AND observer_id<>? ORDER BY match_id",
-                Integer.class,
-                signupId,
-                observerId(26));
+        int arlosObserverId = observerOf(db, 26);
+        var remainingMatches = matches.findBySignupId(signupId).stream()
+                .filter(m -> m.observerId() != arlosObserverId)
+                .map(ObserverMatch::matchId)
+                .sorted()
+                .toList();
         for (int match : remainingMatches) {
             LocalDateTime expires = LocalDateTime.now(clock).plusMinutes(1);
             act(
@@ -372,18 +405,18 @@ class WorkflowEndToEndTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"));
         mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
-                .andExpect(jsonPath(DARIOS_ROW + ".status").value("SCHEDULED"))
+                .andExpect(jsonPath(DARIOS_ROW + ".status").value("PENDING_SIGN_OFF"))
                 .andExpect(jsonPath(DARIOS_ROW + ".observerSigned").value(true))
                 .andExpect(jsonPath(DARIOS_ROW + ".observeeSigned").value(false));
     }
 
     @Test
-    void anObservationNobodyCompletesIsReportedMissingOnceItsDatePasses() throws Exception {
+    void anUnsubmittedObservationIsMissingAfterTheCycleDeadlineAndRemindsOnlyItsObserver() throws Exception {
         signUp(DARIO, 34, 298);
-        signupId = signupOf(34);
+        signupId = signupOf(db, 34);
         clock.set("2026-11-02T09:00:00");
         act(KAIA, "/api/observer-eligibility/signups/" + signupId + "/release").andExpect(status().isNoContent());
-        String invitation = sendRequest(DARIO, 34, signupId, matchOf(signupId, 26))
+        String invitation = sendRequest(DARIO, 34, signupId, matchOf(db, signupId, 26))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
@@ -393,27 +426,29 @@ class WorkflowEndToEndTests {
         clock.set("2026-11-03T13:00:00");
         act(ARLO, "/api/observations/" + observation + "/start").andExpect(status().isOk());
 
-        // The form was opened on 11-03 and never submitted. It is on schedule that day and missing from the next. The
-        // seeded observations are compared before and after, so only Dario's changes the count.
-        mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
-                .andExpect(jsonPath(DARIOS_ROW + ".status").value("SCHEDULED"));
-        int missingBefore = missingObservations();
+        // Passing the scheduled date does not make an unsubmitted form missing.
         clock.set("2026-11-04T09:00:00");
         mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
-                .andExpect(jsonPath(DARIOS_ROW + ".status").value("MISSING"));
-        assertThat(missingObservations()).isEqualTo(missingBefore + 1);
+                .andExpect(jsonPath(DARIOS_ROW + ".status").value("SCHEDULED"));
+        assertThat(missingObservations()).isZero();
+        // The deadline day remains on time; every incomplete observation is missing the following day.
+        clock.set("2026-11-15T23:59:59");
+        assertThat(missingObservations()).isZero();
+        clock.set("2026-11-16T09:00:00");
+        String tracking = mvc.perform(as(KAIA, get("/api/ac-dashboard/observations")))
+                .andExpect(jsonPath(DARIOS_ROW + ".status").value("MISSING"))
+                .andExpect(jsonPath(DARIOS_ROW + ".missingReason").value("Not submitted"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        List<?> missing = JsonPath.read(tracking, "$.observations[?(@.status == 'MISSING')]");
+        assertThat(missingObservations()).isEqualTo(missing.size()).isPositive();
         mvc.perform(as(KAIA, post("/api/ac-dashboard/observations/reminders"))).andExpect(status().isOk());
-        // Both people involved are reminded that the observation has not been completed.
-        for (int professorId : List.of(34, 26)) {
-            assertThat(db.queryForList(
-                            "SELECT message FROM observer_notification WHERE professor_id = ? AND created_at = ?"
-                                    + " AND message LIKE '%has not been completed.%'",
-                            String.class, professorId, LocalDateTime.parse("2026-11-04T09:00:00")))
-                    .singleElement()
-                    .asString()
-                    .startsWith("Reminder from the Assessment Committee: your observation of")
-                    .endsWith("has not been completed. Complete it as soon as possible.");
-        }
+        assertThat(reminders(26, LocalDateTime.parse("2026-11-16T09:00:00")))
+                .singleElement()
+                .asString()
+                .contains("complete and submit your observation of Dario Hollowell's CS 3345.005");
+        assertThat(reminders(34, LocalDateTime.parse("2026-11-16T09:00:00"))).isEmpty();
         mvc.perform(as(DARIO, get("/api/professors/34/evaluations")))
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$[0].lastObservationCompletedAt").value(nullValue()));
@@ -449,7 +484,7 @@ class WorkflowEndToEndTests {
         return act(
                 KAIA,
                 "/api/observer-eligibility/signups/" + signupId + "/assign",
-                "{\"observerId\":" + observerId(observerProfessorId) + "}");
+                "{\"observerId\":" + observerOf(db, observerProfessorId) + "}");
     }
 
     private ResultActions saveDraft(AccountPrincipal observer, int observation, List<Answer> answers) throws Exception {
@@ -473,23 +508,16 @@ class WorkflowEndToEndTests {
         return JsonPath.read(metrics, "$.missingObservations");
     }
 
-    private int signupOf(int professorId) {
-        return db.queryForObject("""
-                SELECT s.signup_id FROM evaluation_signup s JOIN observee e ON e.observee_id = s.observee_id
-                WHERE e.professor_id = ? AND e.cycle_id = 1
-                """, Integer.class, professorId);
+    private List<Observation> observationsOf(int signup) {
+        return observations.findBySignupIdIn(List.of(signup));
     }
 
-    private int matchOf(int signup, int observerProfessorId) {
-        return db.queryForObject("""
-                SELECT m.match_id FROM observer_match m JOIN observer o ON o.observer_id = m.observer_id
-                WHERE m.signup_id = ? AND o.professor_id = ?
-                """, Integer.class, signup, observerProfessorId);
-    }
-
-    private int observerId(int professorId) {
-        return db.queryForObject(
-                "SELECT observer_id FROM observer WHERE professor_id = ? AND cycle_id = 1", Integer.class, professorId);
+    private List<String> reminders(int professorId, LocalDateTime createdAt) {
+        return notifications.findByProfessorId(professorId).stream()
+                .filter(n -> n.createdAt().equals(createdAt))
+                .map(ObserverNotification::message)
+                .filter(message -> message.startsWith("Reminder from the Assessment Committee:"))
+                .toList();
     }
 
     // The observee finds the observation in their own list, as the faculty screens do.
@@ -504,16 +532,13 @@ class WorkflowEndToEndTests {
 
     // A complete form: every question on the observation's template, rated 4 or answered with a sentence.
     private List<Answer> form(int observation) {
-        return db.query(
-                """
-                SELECT q.criterion_id, q.question_type FROM observation_criterion q
-                JOIN observation o ON o.template_id = q.template_id
-                WHERE o.observation_id = ? AND q.selected = TRUE ORDER BY q.display_order
-                """,
-                (r, n) -> "RATING".equals(r.getString("question_type"))
-                        ? new Answer(r.getInt("criterion_id"), 4, null)
-                        : new Answer(r.getInt("criterion_id"), null, "Clear explanations and good rapport."),
-                observation);
+        int templateId = observations.findById(observation).orElseThrow().templateId();
+        return criteria.findByTemplateIdOrderByDisplayOrderAscCriterionIdAsc(templateId).stream()
+                .filter(ObservationCriterion::selected)
+                .map(q -> "RATING".equals(q.questionType())
+                        ? new Answer(q.criterionId(), 4, null)
+                        : new Answer(q.criterionId(), null, "Clear explanations and good rapport."))
+                .toList();
     }
 
     private String body(List<Answer> answers) {

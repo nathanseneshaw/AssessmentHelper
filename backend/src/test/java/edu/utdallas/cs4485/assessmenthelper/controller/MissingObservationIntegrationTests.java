@@ -1,5 +1,15 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.firstTemplateId;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.newObservation;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observerOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.professor;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.submitted;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withObservationDeadline;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withSignupDeadline;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -7,6 +17,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.TestFixtures;
+import edu.utdallas.cs4485.assessmenthelper.entity.CourseSection;
+import edu.utdallas.cs4485.assessmenthelper.entity.Department;
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
+import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -14,10 +32,13 @@ import edu.utdallas.cs4485.assessmenthelper.service.MissingObservationService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +48,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,7 +67,7 @@ class MissingObservationIntegrationTests {
     }
 
     @Autowired
-    JdbcTemplate db;
+    JdbcAggregateTemplate db;
 
     @Autowired
     MissingObservationService service;
@@ -58,16 +79,70 @@ class MissingObservationIntegrationTests {
 
     @BeforeEach
     void requiredProfessor() {
-        db.update("""
-                INSERT INTO professor (department_id, professor_rank, first_name, last_name, email, hire_date)
-                SELECT MIN(department_id), 'ASSOCIATE', 'Missing', 'Test', 'missing-test@example.edu', DATE '2024-09-01'
-                FROM department
-                """);
+        int department = db.findAll(Department.class).stream()
+                .mapToInt(Department::departmentId)
+                .min()
+                .orElseThrow();
+        db.insert(new Professor(
+                null,
+                department,
+                "ASSOCIATE",
+                "Missing",
+                "Test",
+                "missing-test@example.edu",
+                LocalDate.parse("2024-09-01"),
+                true));
         professor = id("missing-test@example.edu");
     }
 
     int id(String email) {
-        return db.queryForObject("SELECT professor_id FROM professor WHERE email=?", Integer.class, email);
+        return professor(db, email).professorId();
+    }
+
+    void updateProfessor(int id, UnaryOperator<Professor> change) {
+        db.update(change.apply(db.findById(id, Professor.class)));
+    }
+
+    void updateCycle(UnaryOperator<EvaluationCycle> change) {
+        db.update(change.apply(db.findById(1, EvaluationCycle.class)));
+    }
+
+    void signUp(String status) {
+        Observee observee = db.insert(new Observee(null, professor, 1, "ACTIVE"));
+        int section = db.findAll(CourseSection.class).stream()
+                .mapToInt(CourseSection::sectionId)
+                .min()
+                .orElseThrow();
+        db.insert(new EvaluationSignup(null, observee.observeeId(), section, null, status));
+    }
+
+    void updateObservations(Predicate<Observation> which, UnaryOperator<Observation> change) {
+        db.findAll(Observation.class).stream().filter(which).forEach(o -> db.update(change.apply(o)));
+    }
+
+    Predicate<Observation> observedBy(int professorId) {
+        int observerId = observerOf(db, professorId);
+        return o -> o.observerId() == observerId;
+    }
+
+    Predicate<Observation> on(int signupId) {
+        return o -> o.signupId() == signupId;
+    }
+
+    static Professor withHireDate(Professor p, LocalDate hireDate) {
+        return new Professor(
+                p.professorId(),
+                p.departmentId(),
+                p.professorRank(),
+                p.firstName(),
+                p.lastName(),
+                p.email(),
+                hireDate,
+                p.activeStatus());
+    }
+
+    void setSignupStatus(int signupId, String status) {
+        db.update(withStatus(db.findById(signupId, EvaluationSignup.class), status));
     }
 
     boolean has(int id, String kind) {
@@ -81,42 +156,30 @@ class MissingObservationIntegrationTests {
 
     @Test
     void signupDeadlineIsInclusive() {
-        db.update("UPDATE evaluation_cycle SET signup_deadline=DATE '2026-11-16' WHERE cycle_id=1");
+        updateCycle(c -> withSignupDeadline(c, LocalDate.parse("2026-11-16")));
         assertThat(has(professor, "MISSING_SIGNUP")).isFalse();
     }
 
     @Test
     void upcomingAndInactiveProfessorsAreExcluded() {
-        db.update("UPDATE professor SET hire_date=DATE '2025-09-01' WHERE professor_id=?", professor);
+        updateProfessor(professor, p -> withHireDate(p, LocalDate.parse("2025-09-01")));
         assertThat(service.findByProfessor(professor)).isEmpty();
-        db.update(
-                "UPDATE professor SET hire_date=DATE '2024-09-01', active_status=FALSE WHERE professor_id=?",
-                professor);
+        updateProfessor(professor, p -> inactive(withHireDate(p, LocalDate.parse("2024-09-01"))));
         assertThat(service.findByProfessor(professor)).isEmpty();
     }
 
     @Test
     void registeredButUnscheduledEvaluationIsFlagged() {
-        db.update("INSERT INTO observee (professor_id,cycle_id,status) VALUES (?,1,'ACTIVE')", professor);
-        db.update("""
-                INSERT INTO evaluation_signup (observee_id,section_id,status)
-                SELECT oe.observee_id, (SELECT MIN(section_id) FROM course_section), 'PENDING'
-                FROM observee oe WHERE oe.professor_id=? AND oe.cycle_id=1
-                """, professor);
+        signUp("PENDING");
         assertThat(has(professor, "MISSING_SIGNUP")).isFalse();
         assertThat(has(professor, "MISSING_SCHEDULE")).isTrue();
-        db.update("UPDATE evaluation_cycle SET observation_deadline=DATE '2026-11-16' WHERE cycle_id=1");
+        setObservationDeadline(LocalDate.parse("2026-11-16"));
         assertThat(has(professor, "MISSING_SCHEDULE")).isFalse();
     }
 
     @Test
     void cancelledSignupDoesNotSatisfyRequirement() {
-        db.update("INSERT INTO observee (professor_id,cycle_id,status) VALUES (?,1,'ACTIVE')", professor);
-        db.update("""
-                INSERT INTO evaluation_signup (observee_id,section_id,status)
-                SELECT oe.observee_id, (SELECT MIN(section_id) FROM course_section), 'CANCELLED'
-                FROM observee oe WHERE oe.professor_id=? AND oe.cycle_id=1
-                """, professor);
+        signUp("CANCELLED");
         assertThat(has(professor, "MISSING_SIGNUP")).isTrue();
     }
 
@@ -126,46 +189,50 @@ class MissingObservationIntegrationTests {
         int observee = id("leander.coldwell@example.edu");
         assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
         assertThat(has(observee, "LATE_SUBMISSION")).isFalse();
-        db.update("""
-                UPDATE observation SET status='SUBMITTED', observer_signed_at=TIMESTAMP '2026-11-16 09:00:00'
-                WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
-                """, observer);
+        updateObservations(observedBy(observer), o -> submitted(o, LocalDateTime.parse("2026-11-16T09:00:00")));
         assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        assertThat(has(observee, "MISSING_SIGN_OFF")).isTrue();
     }
 
     @Test
-    void futureAndSameDayObservationsAreNotLate() {
+    void futureAndSameDayObservationsAreMissingAfterTheCycleDeadline() {
         int observer = id("keira.larkspur@example.edu");
-        db.update("""
-                UPDATE observation SET observation_date=DATE '2026-11-16'
-                WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
-                """, observer);
-        assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
-        db.update("""
-                UPDATE observation SET observation_date=DATE '2026-11-17'
-                WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
-                """, observer);
-        assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        updateObservations(observedBy(observer), o -> withPlan(o, LocalDate.parse("2026-11-16"), o.startTime()));
+        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
+        updateObservations(observedBy(observer), o -> withPlan(o, LocalDate.parse("2026-11-17"), o.startTime()));
+        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
     }
 
     @Test
     void aStartedButUnsubmittedObservationIsStillLate() {
         int observer = id("keira.larkspur@example.edu");
-        db.update("""
-                UPDATE observation SET status='IN_PROGRESS'
-                WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
-                """, observer);
+        updateObservations(observedBy(observer), o -> withStatus(o, "IN_PROGRESS"));
         assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
     }
 
     @Test
-    void anUndatedObservationIsNotLate() {
+    void incompleteAlertsUseTheDeadlineAndExcludeCancelledAndCompletedRecords() {
         int observer = id("keira.larkspur@example.edu");
-        db.update("""
-                UPDATE observation SET observation_date=NULL, start_time=NULL
-                WHERE observer_id IN (SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1)
-                """, observer);
+        int observee = id("leander.coldwell@example.edu");
+        setObservationDeadline(LocalDate.parse("2026-11-16"));
         assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        setObservationDeadline(LocalDate.parse("2026-11-15"));
+        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
+        setObservationStatus(LEANDER, "SUBMITTED");
+        assertThat(has(observee, "MISSING_SIGN_OFF")).isTrue();
+        setObservationStatus(LEANDER, "COMPLETED");
+        assertThat(has(observee, "MISSING_SIGN_OFF")).isFalse();
+        setObservationStatus(LEANDER, "IN_PROGRESS");
+        setSignupStatus(signupOf(LEANDER), "CANCELLED");
+        assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
+        assertThat(has(observee, "MISSING_SUBMISSION")).isFalse();
+    }
+
+    @Test
+    void anUndatedObservationIsMissingAfterTheDeadline() {
+        int observer = id("keira.larkspur@example.edu");
+        updateObservations(observedBy(observer), o -> withPlan(o, null, null));
+        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
     }
 
     AccountPrincipal principal() {
@@ -206,10 +273,7 @@ class MissingObservationIntegrationTests {
             true);
 
     int signupOf(String email) {
-        return db.queryForObject("""
-                SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
-                JOIN professor p ON p.professor_id=oe.professor_id WHERE p.email=? AND oe.cycle_id=1
-                """, Integer.class, email);
+        return TestFixtures.signupOf(db, id(email));
     }
 
     List<MissingObservationService.MissingSignup> missing() {
@@ -235,7 +299,11 @@ class MissingObservationIntegrationTests {
     }
 
     void setObservationStatus(String email, String status) {
-        db.update("UPDATE observation SET status=? WHERE signup_id=?", status, signupOf(email));
+        updateObservations(on(signupOf(email)), o -> withStatus(o, status));
+    }
+
+    void setObservationDeadline(LocalDate deadline) {
+        updateCycle(c -> withObservationDeadline(c, deadline));
     }
 
     @Test
@@ -278,7 +346,7 @@ class MissingObservationIntegrationTests {
 
     @Test
     void aCancelledSignupIsNotListed() {
-        db.update("UPDATE evaluation_signup SET status='CANCELLED' WHERE signup_id=?", signupOf(AVERY));
+        setSignupStatus(signupOf(AVERY), "CANCELLED");
         assertThat(missingObservees()).hasSize(7);
         assertThat(missingObservees()).doesNotContain("Avery Hazelwood");
     }
@@ -287,13 +355,8 @@ class MissingObservationIntegrationTests {
     void aSignupShowsTheSubmittedObservationAheadOfANewerAcceptedOne() throws Exception {
         int signup = signupOf(LEANDER);
         setObservationStatus(LEANDER, "SUBMITTED");
-        db.update("""
-                INSERT INTO observation (signup_id, observer_id, template_id, observation_date, status)
-                SELECT ?, ob.observer_id, (SELECT MIN(template_id) FROM observation_template), DATE '2026-11-05',
-                'ACCEPTED'
-                FROM observer ob JOIN professor p ON p.professor_id=ob.professor_id
-                WHERE p.email=? AND ob.cycle_id=1
-                """, signup, AVERY);
+        var accepted = newObservation(signup, observerOf(db, id(AVERY)), firstTemplateId(db), "ACCEPTED");
+        db.insert(withPlan(accepted, LocalDate.parse("2026-11-05"), null));
         assertThat(Collections.frequency(missingObservees(), "Leander Coldwell"))
                 .isEqualTo(1);
         String signupPath = "$.signups[?(@.signupId == " + signup + ")]";
@@ -302,19 +365,19 @@ class MissingObservationIntegrationTests {
                 .andExpect(jsonPath(signupPath).value(hasSize(1)))
                 .andExpect(jsonPath(signupPath + ".observer").value("Keira Larkspur"))
                 .andExpect(jsonPath(signupPath + ".observationStatus").value("SUBMITTED"));
-        db.update("UPDATE observation SET status='COMPLETED' WHERE signup_id=? AND status='ACCEPTED'", signup);
+        updateObservations(on(signup).and(o -> "ACCEPTED".equals(o.status())), o -> withStatus(o, "COMPLETED"));
         assertThat(missingObservees()).doesNotContain("Leander Coldwell");
     }
 
     @Test
     void theObservationDeadlineDayIsStillOnTime() {
-        db.update("UPDATE evaluation_cycle SET observation_deadline=DATE '2026-11-16' WHERE cycle_id=1");
+        setObservationDeadline(LocalDate.parse("2026-11-16"));
         assertThat(missing()).isEmpty();
     }
 
     @Test
     void aCycleWithoutAnObservationDeadlineHasNothingMissing() {
-        db.update("UPDATE evaluation_cycle SET observation_deadline=NULL WHERE cycle_id=1");
+        setObservationDeadline(null);
         assertThat(service.findMissingSignups().observationDeadline()).isNull();
         assertThat(missing()).isEmpty();
     }

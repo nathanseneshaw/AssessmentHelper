@@ -1,9 +1,16 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withFeedbackDeadline;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import edu.utdallas.cs4485.assessmenthelper.entity.*;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProcessFeedbackRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.*;
 import java.time.*;
 import java.util.Arrays;
@@ -13,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.AccessDeniedException;
 
 @DataJdbcTest
@@ -22,7 +28,19 @@ class ProcessFeedbackServiceTests {
     JdbcAggregateTemplate entities;
 
     @Autowired
-    JdbcTemplate db;
+    ProfessorRepository professors;
+
+    @Autowired
+    ObserveeRepository observees;
+
+    @Autowired
+    EvaluationCycleRepository cycles;
+
+    @Autowired
+    SemesterRepository semesters;
+
+    @Autowired
+    ProcessFeedbackRepository feedback;
 
     private ProcessFeedbackService service;
     private Clock clock;
@@ -35,7 +53,7 @@ class ProcessFeedbackServiceTests {
         clock = mock(Clock.class);
         when(clock.getZone()).thenReturn(ZoneId.of("America/Chicago"));
         today("2026-11-02");
-        service = new ProcessFeedbackService(db, clock);
+        service = new ProcessFeedbackService(cycles, professors, feedback, clock);
         var school = entities.insert(new School(null, "Feedback School"));
         var department = entities.insert(new Department(null, school.schoolId(), "Feedback Department", "FD"));
         var professor = entities.insert(new Professor(
@@ -100,15 +118,14 @@ class ProcessFeedbackServiceTests {
     @Test
     void savesAllAnswersOncePerCycleAndProfessor() {
         assertThat(service.submit(cycleId, answers(), principal).status()).isEqualTo("SUBMITTED");
-        var row = db.queryForMap(
-                "SELECT * FROM process_feedback WHERE cycle_id=? AND professor_id=?", cycleId, professorId);
-        assertThat(row.get("CLARITY_RATING")).isEqualTo(1);
-        assertThat(row.get("SCHEDULING_RATING")).isEqualTo(2);
-        assertThat(row.get("COMMUNICATION_RATING")).isEqualTo(3);
-        assertThat(row.get("ORGANIZATION_RATING")).isEqualTo(4);
-        assertThat(row.get("USEFULNESS_RATING")).isEqualTo(5);
-        assertThat(row.get("OVERALL_RATING")).isEqualTo(4);
-        assertThat(row.get("OBSERVEE_COMMENT")).isEqualTo("Useful process");
+        var row = only(feedback.findByCycleId(cycleId), f -> f.professorId() == professorId);
+        assertThat(row.clarityRating()).isEqualTo(1);
+        assertThat(row.schedulingRating()).isEqualTo(2);
+        assertThat(row.communicationRating()).isEqualTo(3);
+        assertThat(row.organizationRating()).isEqualTo(4);
+        assertThat(row.usefulnessRating()).isEqualTo(5);
+        assertThat(row.overallRating()).isEqualTo(4);
+        assertThat(row.observeeComment()).isEqualTo("Useful process");
         assertThat(status()).isEqualTo("SUBMITTED");
         var saved = service.surveys(principal).stream()
                 .filter(s -> s.cycleId() == cycleId)
@@ -151,7 +168,7 @@ class ProcessFeedbackServiceTests {
 
     @Test
     void missingOrInvalidDeadlinesDoNotOpenSurvey() {
-        db.update("UPDATE evaluation_cycle SET feedback_deadline=NULL WHERE cycle_id=?", cycleId);
+        cycles.save(withFeedbackDeadline(cycles.findById(cycleId).orElseThrow(), null));
         assertThat(status()).isEqualTo("UNCONFIGURED");
         assertThatThrownBy(() -> service.submit(cycleId, answers(), principal)).isInstanceOf(ConflictException.class);
     }

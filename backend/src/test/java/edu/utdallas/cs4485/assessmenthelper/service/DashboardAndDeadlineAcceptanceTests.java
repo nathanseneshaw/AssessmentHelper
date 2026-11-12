@@ -3,6 +3,8 @@ package edu.utdallas.cs4485.assessmenthelper.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.AcDashboardService.Status;
 import edu.utdallas.cs4485.assessmenthelper.service.AcDashboardService.TrackedObservation;
 import java.time.LocalDate;
@@ -35,11 +37,27 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     @Autowired
     private EvaluationDeadlineService deadlines;
 
+    @Autowired
+    private ProfessorRepository professors;
+
     private TrackedObservation leandersEvaluation() {
         return dashboard.observations().observations().stream()
                 .filter(o -> o.observee().contains("Leander"))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private void promoteLeanderToFull() {
+        var leander = professors.findById(LEANDER).orElseThrow();
+        professors.save(new Professor(
+                leander.professorId(),
+                leander.departmentId(),
+                "FULL",
+                leander.firstName(),
+                leander.lastName(),
+                leander.email(),
+                leander.hireDate(),
+                leander.activeStatus()));
     }
 
     private List<MissingObservationService.Alert> lateAlerts(int professorId) {
@@ -72,7 +90,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     void us3_changingARankChangesTheEvaluationInterval() {
         assertThat(deadlines.findByProfessor(LEANDER).evaluationIntervalYears()).isEqualTo(1);
 
-        db.update("UPDATE professor SET professor_rank = 'FULL' WHERE professor_id = ?", LEANDER);
+        promoteLeanderToFull();
 
         assertThat(deadlines.findByProfessor(LEANDER).evaluationIntervalYears()).isEqualTo(2);
         assertThat(deadlines.findByProfessor(LEANDER).professorRank()).isEqualTo("FULL");
@@ -82,7 +100,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     void us3_aRankChangeMovesTheNextDueDateLater() {
         LocalDate asAssistant = deadlines.findByProfessor(LEANDER).nextDueDate();
 
-        db.update("UPDATE professor SET professor_rank = 'FULL' WHERE professor_id = ?", LEANDER);
+        promoteLeanderToFull();
         LocalDate asFull = deadlines.findByProfessor(LEANDER).nextDueDate();
 
         assertThat(asAssistant).isNotNull();
@@ -134,10 +152,15 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void us35_4_anObservationPastItsDateWithoutAnAcceptedFormIsMissing() {
+    void us35_4_anIncompleteObservationIsMissingOnlyAfterTheCycleDeadline() {
         clock.set(AFTER_THE_OBSERVATION_DATE);
-
+        assertThat(leandersEvaluation().status()).isEqualTo(Status.SCHEDULED);
+        assertThat(dashboard.metrics().missingObservations()).isZero();
+        clock.set("2026-11-15T16:00:00Z");
+        assertThat(dashboard.metrics().missingObservations()).isZero();
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         assertThat(leandersEvaluation().status()).isEqualTo(Status.MISSING);
+        assertThat(leandersEvaluation().missingReason()).isEqualTo("Not submitted");
         assertThat(dashboard.metrics().missingObservations()).isGreaterThanOrEqualTo(1);
     }
 
@@ -154,7 +177,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
 
     @Test
     void us35_5_theMissingCountDropsWhenTheObservationIsCompleted() {
-        clock.set(AFTER_THE_OBSERVATION_DATE);
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         int before = dashboard.metrics().missingObservations();
 
         complete(observationId(), null);
@@ -184,7 +207,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
         var afterObserver = leandersEvaluation();
         assertThat(afterObserver.observerSigned()).isTrue();
         assertThat(afterObserver.observeeSigned()).isFalse();
-        assertThat(afterObserver.status()).isNotEqualTo(Status.COMPLETED);
+        assertThat(afterObserver.status()).isEqualTo(Status.PENDING_SIGN_OFF);
 
         leanderSigns(obs, null);
         var afterObservee = leandersEvaluation();
@@ -203,30 +226,34 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void us14_theObserverIsToldTheirObservationIsLateOnceItsDatePasses() {
+    void us14_theObserverIsToldTheirObservationIsMissingAfterTheCycleDeadline() {
         assertThat(lateAlerts(KEIRA)).isEmpty();
 
         clock.set(AFTER_THE_OBSERVATION_DATE);
-
+        assertThat(lateAlerts(KEIRA)).isEmpty();
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         assertThat(lateAlerts(KEIRA)).hasSize(1);
         assertThat(lateAlerts(KEIRA).getFirst().observationId()).isEqualTo(observationId());
-        assertThat(lateAlerts(KEIRA).getFirst().dueDate()).isEqualTo(LocalDate.of(2026, 11, 4));
+        assertThat(lateAlerts(KEIRA).getFirst().dueDate()).isEqualTo(LocalDate.of(2026, 11, 15));
         assertThat(lateAlerts(KEIRA).getFirst().message()).contains("Leander Coldwell");
     }
 
     @Test
     void us14_theLateAlertGoesAwayOnceTheObserverSubmits() {
-        clock.set(AFTER_THE_OBSERVATION_DATE);
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         assertThat(lateAlerts(KEIRA)).hasSize(1);
 
         keiraSubmits(observationId());
 
         assertThat(lateAlerts(KEIRA)).isEmpty();
+        assertThat(leandersEvaluation().status()).isEqualTo(Status.MISSING);
+        assertThat(leandersEvaluation().missingReason()).isEqualTo("Not signed");
+        assertThat(missing.findByProfessor(LEANDER)).anyMatch(a -> "MISSING_SIGN_OFF".equals(a.kind()));
     }
 
     @Test
     void us14_theObserveeIsNotGivenALateSubmissionAlertForSomeoneElsesForm() {
-        clock.set(AFTER_THE_OBSERVATION_DATE);
+        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
 
         assertThat(lateAlerts(LEANDER)).isEmpty();
         assertThat(lateAlerts(DARIO)).isEmpty();

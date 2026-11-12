@@ -148,7 +148,7 @@ export function AcFacultyEvaluations() {
             action:
               faculty.status === "Upcoming"
                 ? "View Past Evaluations"
-                : "View Evaluation",
+                : "View Evaluation(s)",
           })),
         );
       })

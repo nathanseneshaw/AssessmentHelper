@@ -1,7 +1,12 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observationOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.principal;
+
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationResponseRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
-import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService.Answer;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationTemplateService.Criterion;
@@ -9,13 +14,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 /**
  * Shared setup for the acceptance tests that run on data.sql's Fall 2026 demo.
@@ -70,7 +74,16 @@ abstract class AcceptanceSupport {
     }
 
     @Autowired
-    protected JdbcTemplate db;
+    private JdbcAggregateTemplate db;
+
+    @Autowired
+    private ObservationRepository observationRecords;
+
+    @Autowired
+    private ObservationResponseRepository responses;
+
+    @Autowired
+    private ObserverNotificationRepository notifications;
 
     @Autowired
     protected ObservationService observations;
@@ -93,18 +106,7 @@ abstract class AcceptanceSupport {
 
     /** A logged-in professor, looked up by email. Roles decide whether they count as committee members. */
     protected AccountPrincipal as(String email, int schoolId, Role... roles) {
-        Map<String, Object> professor = db.queryForMap(
-                "SELECT professor_id, first_name || ' ' || last_name AS name FROM professor WHERE email = ?", email);
-        return new AccountPrincipal(
-                new CurrentUser(
-                        null,
-                        ((Number) professor.get("PROFESSOR_ID")).intValue(),
-                        schoolId,
-                        (String) professor.get("NAME"),
-                        email,
-                        List.of(roles)),
-                null,
-                true);
+        return principal(db, email, schoolId, roles);
     }
 
     protected AccountPrincipal keira() {
@@ -131,18 +133,12 @@ abstract class AcceptanceSupport {
     // ---------- the seeded observation ----------
 
     protected int observationId() {
-        return db.queryForObject("""
-                SELECT o.observation_id FROM observation o
-                JOIN evaluation_signup es ON es.signup_id = o.signup_id JOIN observee oe ON oe.observee_id = es.observee_id
-                JOIN professor p ON p.professor_id = oe.professor_id
-                JOIN evaluation_cycle c ON c.cycle_id = oe.cycle_id JOIN semester s ON s.semester_id = c.semester_id
-                WHERE p.email = 'leander.coldwell@example.edu' AND s.term = 'Fall' AND s.academic_year = 2026
-                """, Integer.class);
+        return observationOf(db, LEANDER_EMAIL, "Fall", 2026);
     }
 
     protected List<Criterion> criteria(int observationId) {
-        int templateId = db.queryForObject(
-                "SELECT template_id FROM observation WHERE observation_id = ?", Integer.class, observationId);
+        int templateId =
+                observationRecords.findById(observationId).orElseThrow().templateId();
         return templates.template(templateId).criteria();
     }
 
@@ -164,13 +160,11 @@ abstract class AcceptanceSupport {
     }
 
     protected int notificationCount(int professorId) {
-        return db.queryForObject(
-                "SELECT COUNT(*) FROM observer_notification WHERE professor_id = ?", Integer.class, professorId);
+        return notifications.findByProfessorId(professorId).size();
     }
 
     protected int storedResponseCount(int observationId) {
-        return db.queryForObject(
-                "SELECT COUNT(*) FROM observation_response WHERE observation_id = ?", Integer.class, observationId);
+        return responses.findByObservationId(observationId).size();
     }
 
     // ---------- workflow steps ----------

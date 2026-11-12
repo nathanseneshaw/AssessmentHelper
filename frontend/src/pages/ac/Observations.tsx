@@ -7,11 +7,14 @@ import {
   type TrackedObservation,
 } from "../../api/acDashboard";
 import {
+  type AuditEntry,
+  auditLogPath,
   type ObservationDetail,
   observationPath,
   useApiResource,
 } from "../../api/observations";
 import { ActionButton } from "../../components/ActionButton";
+import { AuditLog } from "../../components/AuditLog";
 import { DeferralDetails } from "../../components/DeferralDetails";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { ObservationRecord } from "../../components/ObservationRecord";
@@ -24,6 +27,7 @@ const STATUS: Record<ObservationStatus, { label: string; color: string }> = {
   DEFERRED: { label: "Deferred", color: "text-brand-green" },
   AWAITING_OBSERVER: { label: "Awaiting Observer", color: "text-muted" },
   SCHEDULED: { label: "Scheduled", color: "text-brand-orange" },
+  PENDING_SIGN_OFF: { label: "Pending sign-off", color: "text-brand-orange" },
   COMPLETED: { label: "Completed", color: "text-brand-green" },
   MISSING: { label: "Missing", color: "text-brand-red" },
 };
@@ -31,6 +35,7 @@ const STATUS: Record<ObservationStatus, { label: string; color: string }> = {
 function observationSummary(rows: TrackedObservation[]): string {
   const statuses: ObservationStatus[] = [
     "SCHEDULED",
+    "PENDING_SIGN_OFF",
     "COMPLETED",
     "MISSING",
     "AWAITING_OBSERVER",
@@ -75,11 +80,15 @@ function observationKpis(
     }));
   return [
     { label: "Scheduled", ...count("SCHEDULED", "Upcoming observations") },
+    {
+      label: "Pending sign-off",
+      ...count("PENDING_SIGN_OFF", "Submitted; awaiting observee signature"),
+    },
     { label: "Completed", ...count("COMPLETED", "Completed this cycle") },
     {
       label: "Missing",
       alert: true,
-      ...count("MISSING", "Past their date and not completed"),
+      ...count("MISSING", "Past the observation deadline; not fully signed"),
     },
     {
       label: "Observation Deadline",
@@ -140,12 +149,30 @@ function ObservationDetails({
       ? observationPath(observation.observationId)
       : null,
   );
+  const [showLog, setShowLog] = useState(false);
+  const {
+    data: auditLog,
+    error: logError,
+    reload: reloadLog,
+  } = useApiResource<AuditEntry[]>(
+    showLog && observation.observationId
+      ? auditLogPath(observation.observationId)
+      : null,
+  );
+  // Opening the form records a view, so an open log loads again to include it.
+  useEffect(() => {
+    if (submittedForm) reloadLog();
+  }, [submittedForm, reloadLog]);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.showModal();
     return () => previous?.focus();
   }, []);
   const details = [
+    ["Status", STATUS[observation.status].label],
+    ...(observation.missingReason
+      ? [["Missing reason", observation.missingReason]]
+      : []),
     ["Observer", observation.observer ?? "Not assigned"],
     ["Date / Time", dateTime(observation) ?? "Not scheduled"],
     ["Signed by observee", observation.observeeSigned ? "Yes" : "No"],
@@ -204,13 +231,49 @@ function ObservationDetails({
       )}
       {observation.status === "COMPLETED" && observation.observationId && (
         <div className="mt-6">
-          <button
-            type="button"
-            onClick={() => setShowForm((shown) => !shown)}
-            className="rounded-lg bg-brand-green px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-          >
-            {showForm ? "Hide submitted form" : "View submitted form"}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setShowForm((shown) => !shown)}
+              className="rounded-lg bg-brand-green px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            >
+              {showForm ? "Hide submitted form" : "View submitted form"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowLog((shown) => !shown)}
+              className="rounded-lg border border-brand-green px-4 py-2 text-sm font-semibold text-brand-green hover:bg-mist"
+            >
+              {showLog ? "Hide audit log" : "View audit log"}
+            </button>
+          </div>
+          {showLog && (
+            <section aria-labelledby={`${titleId}-log`} className="mt-5">
+              <h3 id={`${titleId}-log`} className="font-semibold text-lg">
+                Audit log
+              </h3>
+              <div className="mt-2">
+                {logError ? (
+                  <p role="alert" className="text-sm text-brand-red">
+                    {logError}{" "}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={reloadLog}
+                    >
+                      Retry
+                    </button>
+                  </p>
+                ) : auditLog ? (
+                  <AuditLog entries={auditLog} />
+                ) : (
+                  <p role="status" className="text-muted text-sm">
+                    Loading audit log…
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
           {showForm && (
             <div className="mt-5">
               {formError ? (
@@ -344,7 +407,7 @@ export function AcObservations() {
         {reminderResult}
       </p>
 
-      <div className="mt-10.25 grid max-w-324 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-10.25 grid max-w-324 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {kpis.map((kpi) => (
           <KpiCard key={kpi.label} kpi={kpi} />
         ))}
@@ -436,6 +499,11 @@ export function AcObservations() {
                       </td>
                       <td className={STATUS[row.status].color}>
                         {STATUS[row.status].label}
+                        {row.missingReason && (
+                          <p className="text-sm font-normal">
+                            {row.missingReason}
+                          </p>
+                        )}
                       </td>
                       <td>
                         {(row.status === "COMPLETED" ||

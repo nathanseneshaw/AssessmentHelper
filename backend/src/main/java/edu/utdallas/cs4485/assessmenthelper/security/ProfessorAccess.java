@@ -1,26 +1,16 @@
 package edu.utdallas.cs4485.assessmenthelper.security;
 
-import edu.utdallas.cs4485.assessmenthelper.repository.DepartmentRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestRepository;
-import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ProfessorAccess {
 
-    private final ProfessorRepository professorRepository;
-    private final DepartmentRepository departmentRepository;
     private final ObserverRequestRepository observerRequestRepository;
     private final ObserverRepository observerRepository;
 
-    public ProfessorAccess(
-            ProfessorRepository professorRepository,
-            DepartmentRepository departmentRepository,
-            ObserverRequestRepository observerRequestRepository,
-            ObserverRepository observerRepository) {
-        this.professorRepository = professorRepository;
-        this.departmentRepository = departmentRepository;
+    public ProfessorAccess(ObserverRequestRepository observerRequestRepository, ObserverRepository observerRepository) {
         this.observerRequestRepository = observerRequestRepository;
         this.observerRepository = observerRepository;
     }
@@ -41,15 +31,6 @@ public class ProfessorAccess {
     }
 
     public boolean canView(AccountPrincipal principal, Integer professorId) {
-        CurrentUser user = principal.user();
-        if (isSelf(principal, professorId)) {
-            return true;
-        }
-        return principal.isCommitteeMember()
-                && professorRepository
-                        .findById(professorId)
-                        .flatMap(professor -> departmentRepository.findById(professor.departmentId()))
-                        .map(department -> department.schoolId().equals(user.schoolId()))
-                        .orElse(false);
+        return isSelf(principal, professorId) || principal.isCommitteeMember();
     }
 }

@@ -195,7 +195,9 @@ describe("evaluation queue", () => {
 
   test("each row's button names the professor", () => {
     expect(
-      screen.getByRole("button", { name: "View Evaluation for Professor 1" }),
+      screen.getByRole("button", {
+        name: "View Evaluation(s) for Professor 1",
+      }),
     ).toBeDefined();
     expect(
       screen.getByRole("button", {
@@ -232,7 +234,7 @@ describe("evaluation queue", () => {
 
 test("AC can open past deferral details from the faculty evaluation queue", async () => {
   fireEvent.click(
-    screen.getByRole("button", { name: "View Evaluation for Professor 1" }),
+    screen.getByRole("button", { name: "View Evaluation(s) for Professor 1" }),
   );
   const dialog = await screen.findByRole("dialog", {
     name: "Evaluation History",

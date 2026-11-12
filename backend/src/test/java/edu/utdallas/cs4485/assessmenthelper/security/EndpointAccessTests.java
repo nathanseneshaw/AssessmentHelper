@@ -205,7 +205,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void committeeMembersAreRefusedProfessorsInAnotherSchool() throws Exception {
+    void committeeMembersCanViewProfessorsAcrossSchools() throws Exception {
         AccountPrincipal kaia = accounts.loadUserByUsername(KAIA);
         int isla = professorId(ISLA);
         int dario = accounts.loadUserByUsername(DARIO).user().professorId();
@@ -214,9 +214,16 @@ class EndpointAccessTests {
                 .filter(endpoint -> !endpoint.onlyForThatProfessor())
                 .toList();
 
+        assertThat(statuses(
+                        committeeCanView,
+                        endpoint -> forProfessor(endpoint, isla).with(user(kaia))))
+                .doesNotContainValue(401)
+                .doesNotContainValue(403);
         assertThat(statusesOtherThan(
                         403,
-                        professorScoped,
+                        professorScoped.stream()
+                                .filter(Endpoint::onlyForThatProfessor)
+                                .toList(),
                         endpoint -> forProfessor(endpoint, isla).with(user(kaia))))
                 .isEmpty();
         assertThat(statuses(

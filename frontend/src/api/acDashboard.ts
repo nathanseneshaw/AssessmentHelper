@@ -91,13 +91,14 @@ export function useDashboardRefresh(matching: unknown) {
 }
 
 /**
- * MISSING means the observation's date has passed and it is not completed.
+ * MISSING means the cycle observation deadline has passed without final completion.
  * SCHEDULED is any other observation that is not completed, even one with no date yet.
  */
 export type ObservationStatus =
   | "DEFERRED"
   | "AWAITING_OBSERVER"
   | "SCHEDULED"
+  | "PENDING_SIGN_OFF"
   | "COMPLETED"
   | "MISSING";
 
@@ -114,6 +115,7 @@ export interface TrackedObservation {
   date: string | null;
   startTime: string | null;
   status: ObservationStatus;
+  missingReason?: string | null;
   observeeSigned: boolean;
   observerSigned: boolean;
   completedAt: string | null;

@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationNotificationRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.EmailTemplateService;
 import edu.utdallas.cs4485.assessmenthelper.service.EvaluationEligibilityService;
 import java.time.*;
@@ -16,7 +17,6 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.*;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,7 +46,7 @@ class EmailTemplateIntegrationTests {
     MockMvc mvc;
 
     @Autowired
-    JdbcTemplate db;
+    EvaluationNotificationRepository notifications;
 
     @Test
     void catalogContainsFourDefaultsAndSupportedPlaceholders() throws Exception {
@@ -58,7 +58,7 @@ class EmailTemplateIntegrationTests {
 
     @Test
     void previewsUseServerFacultyContextAndDoNotSend() throws Exception {
-        int before = db.queryForObject("SELECT COUNT(*) FROM evaluation_notification", Integer.class);
+        long before = notifications.count();
         mvc.perform(get("/api/due-evaluations/1/professors/9/email-preview"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.recipient").value("hollis.carrowmore@example.edu"))
@@ -67,8 +67,7 @@ class EmailTemplateIntegrationTests {
         assertThat(overdue.body())
                 .contains("Dear Professor Coldwell,", "every year")
                 .doesNotContain("{{");
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM evaluation_notification", Integer.class))
-                .isEqualTo(before);
+        assertThat(notifications.count()).isEqualTo(before);
     }
 
     @Test

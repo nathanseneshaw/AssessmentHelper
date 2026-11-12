@@ -1,5 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -7,6 +8,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.TeachingHistory;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.TeachingHistoryRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -24,7 +35,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,7 +74,25 @@ class EvaluationSignupIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private ProfessorRepository professors;
+
+    @Autowired
+    private EvaluationCycleRepository cycles;
+
+    @Autowired
+    private ObserverRepository observers;
+
+    @Autowired
+    private ObserveeRepository observees;
+
+    @Autowired
+    private EvaluationSignupRepository signups;
+
+    @Autowired
+    private ObservationRepository observations;
+
+    @Autowired
+    private TeachingHistoryRepository teachingHistory;
 
     @Test
     void listsCatalogAndCombinesSemesterCourseAndProfessorFilters() throws Exception {
@@ -96,9 +124,9 @@ class EvaluationSignupIntegrationTests {
     @Test
     void createsReadsRetriesAndUpdatesOnePendingSignup() throws Exception {
         // Keep this editable-signup scenario without candidates; matching otherwise locks the course selection.
-        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        observers.findByCycleId(1).forEach(o -> observers.save(inactive(o)));
         mvc.perform(as(HOLLIS, get("/api/professors/9/evaluation-signups/13"))).andExpect(status().isNoContent());
-        int originalCount = countSignups();
+        long originalCount = signups.count();
         var first = mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":284}"))
@@ -125,24 +153,20 @@ class EvaluationSignupIntegrationTests {
         mvc.perform(as(HOLLIS, get("/api/professors/9/evaluation-signups/13")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sectionId").value(291));
-        assertThat(countSignups()).isEqualTo(originalCount + 1);
-        assertThat(db.queryForObject(
-                        "SELECT COUNT(*) FROM observee WHERE professor_id = 9 AND cycle_id = 1", Integer.class))
-                .isEqualTo(1);
+        assertThat(signups.count()).isEqualTo(originalCount + 1);
+        assertThat(hollisObserveesInCycleOne()).isEqualTo(1);
     }
 
     @Test
     void rejectsAnotherProfessorsSectionWithoutWritingAnything() throws Exception {
-        int originalCount = countSignups();
+        long originalCount = signups.count();
         mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":298}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("You can only select a section you teach."));
-        assertThat(countSignups()).isEqualTo(originalCount);
-        assertThat(db.queryForObject(
-                        "SELECT COUNT(*) FROM observee WHERE professor_id = 9 AND cycle_id = 1", Integer.class))
-                .isZero();
+        assertThat(signups.count()).isEqualTo(originalCount);
+        assertThat(hollisObserveesInCycleOne()).isZero();
     }
 
     @Test
@@ -180,19 +204,19 @@ class EvaluationSignupIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":270}"))
                 .andExpect(status().isConflict());
-        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id = 9");
+        professors.save(inactive(professors.findById(9).orElseThrow()));
         mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":284}"))
                 .andExpect(status().isConflict());
-        db.update("INSERT INTO evaluation_cycle (semester_id, status) VALUES (13, 'OPEN')");
+        cycles.save(new EvaluationCycle(null, 13, null, null, null, "OPEN"));
         mvc.perform(as(LEANDER, get("/api/professors/13/evaluation-signups/13")))
                 .andExpect(status().isConflict());
     }
 
     @Test
     void preservesMatchedSignupAndItsObservationButAllowsAnIdenticalRetry() throws Exception {
-        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (13, 284)");
+        teachingHistory.save(new TeachingHistory(null, 13, 284));
         mvc.perform(as(LEANDER, put("/api/professors/13/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":284}"))
@@ -204,15 +228,16 @@ class EvaluationSignupIntegrationTests {
                 .andExpect(jsonPath("$.signupId").value(33))
                 .andExpect(jsonPath("$.status").value("MATCHED"))
                 .andExpect(jsonPath("$.signupDate").value("2026-10-12"));
-        assertThat(db.queryForObject("SELECT section_id FROM evaluation_signup WHERE signup_id = 33", Integer.class))
-                .isEqualTo(294);
-        assertThat(db.queryForObject("SELECT status FROM observation WHERE signup_id = 33", String.class))
+        assertThat(signups.findById(33).orElseThrow().sectionId()).isEqualTo(294);
+        assertThat(observations.findBySignupIdIn(List.of(33)))
+                .singleElement()
+                .extracting(Observation::status)
                 .isEqualTo("SCHEDULED");
     }
 
     @Test
     void onlyTheProfessorCanChangeTheirSignupButCommitteeMembersCanReadIt() throws Exception {
-        int originalCount = countSignups();
+        long originalCount = signups.count();
         mvc.perform(as(LEANDER, get("/api/professors/9/evaluation-signups/13"))).andExpect(status().isForbidden());
         mvc.perform(as(LEANDER, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -225,11 +250,13 @@ class EvaluationSignupIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":284}"))
                 .andExpect(status().isForbidden());
-        assertThat(countSignups()).isEqualTo(originalCount);
+        assertThat(signups.count()).isEqualTo(originalCount);
     }
 
-    private int countSignups() {
-        return db.queryForObject("SELECT COUNT(*) FROM evaluation_signup", Integer.class);
+    private long hollisObserveesInCycleOne() {
+        return observees.findByProfessorId(9).stream()
+                .filter(o -> o.cycleId() == 1)
+                .count();
     }
 
     // Signs the request in as the professor and adds a CSRF token the way the frontend gets one. The csrf() helper

@@ -11,4 +11,10 @@ public record ObserverRequest(
         LocalDateTime requestDate,
         LocalDateTime expirationDate,
         LocalDateTime responseDate,
-        String status) {}
+        String status,
+        Boolean assignedByAc) {
+    public ObserverRequest withStatus(String status, LocalDateTime responseDate) {
+        return new ObserverRequest(
+                requestId, signupId, observerId, requestDate, expirationDate, responseDate, status, assignedByAc);
+    }
+}

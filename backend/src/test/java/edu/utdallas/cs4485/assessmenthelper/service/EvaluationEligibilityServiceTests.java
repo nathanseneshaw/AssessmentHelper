@@ -101,7 +101,8 @@ class EvaluationEligibilityServiceTests {
                         true,
                         null,
                         null,
-                        LocalDateTime.of(2026, 10, 1, 10, 0))));
+                        LocalDateTime.of(2026, 10, 1, 10, 0),
+                        null)));
         assertThat(service.findOverdue().count()).isEqualTo(1);
         when(observees.findAll()).thenReturn(List.of(new Observee(1, 1, 1, "COMPLETED")));
         assertThat(service.findOverdue().count()).isZero();
@@ -194,7 +195,8 @@ class EvaluationEligibilityServiceTests {
                         true,
                         null,
                         null,
-                        LocalDateTime.of(2026, 10, 15, 10, 0))));
+                        LocalDateTime.of(2026, 10, 15, 10, 0),
+                        null)));
         assertThat(service.findDue().count()).isZero();
         assertThat(service.findOverdue().count()).isZero();
     }

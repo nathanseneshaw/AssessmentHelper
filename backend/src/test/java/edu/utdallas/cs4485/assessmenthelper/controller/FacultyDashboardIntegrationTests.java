@@ -1,5 +1,10 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.completed;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.newFeedback;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.signupOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.submitted;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -7,17 +12,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -40,7 +51,10 @@ class FacultyDashboardIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private JdbcAggregateTemplate db;
+
+    @Autowired
+    private ObservationRepository observations;
 
     @Autowired
     private AcDashboardIntegrationTests.MovableClock clock;
@@ -118,8 +132,8 @@ class FacultyDashboardIntegrationTests {
     }
 
     @Test
-    void anObservationPastItsDateIsOverdueUntilTheObserverSubmitsIt() throws Exception {
-        clock.set("2026-11-05T15:00:00Z");
+    void anObservationPastTheDeadlineRemainsMissingUntilSigned() throws Exception {
+        clock.set("2026-11-16T15:00:00Z");
         dashboard(LEANDER)
                 .andExpect(jsonPath("$.evaluation.status").value("SCHEDULED"))
                 .andExpect(jsonPath("$.upcoming[0].overdue").value(true))
@@ -127,7 +141,7 @@ class FacultyDashboardIntegrationTests {
                 .andExpect(jsonPath("$.observationsForMe[0].overdue").value(true));
 
         // Starting the form does not make it any less late.
-        db.update("UPDATE observation SET status = 'IN_PROGRESS' WHERE signup_id = ?", signupOf(LEANDER));
+        updateLeandersObservation(o -> withStatus(o, "IN_PROGRESS"));
         dashboard(KEIRA)
                 .andExpect(jsonPath("$.upcoming[0].status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.upcoming[0].overdue").value(true));
@@ -135,19 +149,17 @@ class FacultyDashboardIntegrationTests {
         submitLeandersObservation();
         dashboard(LEANDER)
                 .andExpect(jsonPath("$.evaluation.status").value("SUBMITTED"))
-                .andExpect(jsonPath("$.termObservations.completed").value(1))
+                .andExpect(jsonPath("$.termObservations.completed").value(0))
+                .andExpect(jsonPath("$.termObservations.pendingSignOff").value(1))
                 .andExpect(jsonPath("$.termObservations.scheduled").value(0))
                 .andExpect(jsonPath("$.upcoming[?(@.type == 'OBSERVATION')]", hasSize(0)))
                 .andExpect(jsonPath("$.observationsForMe[0].status").value("SUBMITTED"))
-                .andExpect(jsonPath("$.observationsForMe[0].overdue").value(false));
+                .andExpect(jsonPath("$.observationsForMe[0].overdue").value(true));
     }
 
     @Test
     void aCompletedRecordCompletesTheEvaluation() throws Exception {
-        db.update("""
-                UPDATE observation SET status = 'COMPLETED', completed_at = TIMESTAMP '2026-11-04 09:45:00'
-                WHERE signup_id = ?
-                """, signupOf(LEANDER));
+        updateLeandersObservation(o -> completed(o, LocalDateTime.parse("2026-11-04T09:45:00")));
         dashboard(LEANDER)
                 .andExpect(jsonPath("$.evaluation.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.evaluation.completedAt").value("2026-11-04T09:45:00"))
@@ -156,7 +168,7 @@ class FacultyDashboardIntegrationTests {
 
     @Test
     void bothSidesOweProcessFeedbackOnASubmittedObservationUntilTheyGiveIt() throws Exception {
-        clock.set("2026-11-05T15:00:00Z");
+        clock.set("2026-11-16T15:00:00Z");
         submitLeandersObservation();
         for (int professor : List.of(LEANDER, KEIRA))
             dashboard(professor)
@@ -167,10 +179,7 @@ class FacultyDashboardIntegrationTests {
                             .value(false))
                     .andExpect(jsonPath("$.upcoming[?(@.type == 'OBSERVATION')]", hasSize(0)));
 
-        db.update("""
-                INSERT INTO process_feedback (cycle_id, professor_id, signup_id, overall_rating, submitted_date)
-                VALUES (1, ?, ?, 4, DATE '2026-11-05')
-                """, KEIRA, signupOf(LEANDER));
+        db.insert(newFeedback(1, KEIRA, signupOf(db, LEANDER), 4, LocalDate.parse("2026-11-05")));
         dashboard(KEIRA).andExpect(jsonPath("$.upcoming[?(@.type == 'FEEDBACK')]", hasSize(0)));
         dashboard(LEANDER).andExpect(jsonPath("$.upcoming[?(@.type == 'FEEDBACK')]", hasSize(1)));
 
@@ -182,7 +191,7 @@ class FacultyDashboardIntegrationTests {
 
     @Test
     void aCancelledSignupDropsOutOfTheDashboard() throws Exception {
-        db.update("UPDATE evaluation_signup SET status = 'CANCELLED' WHERE signup_id = ?", signupOf(KEIRA));
+        db.update(withStatus(db.findById(signupOf(db, KEIRA), EvaluationSignup.class), "CANCELLED"));
         dashboard(KEIRA)
                 .andExpect(jsonPath("$.evaluation.status").value("NOT_SIGNED_UP"))
                 .andExpect(jsonPath("$.upcoming[?(@.type == 'SIGNUP')]", hasSize(1)));
@@ -197,18 +206,11 @@ class FacultyDashboardIntegrationTests {
 
     /** What the observation form's Submit does: the observer's part is over. */
     private void submitLeandersObservation() {
-        db.update("""
-                UPDATE observation SET status = 'SUBMITTED', observer_signed = TRUE,
-                    observer_signed_at = TIMESTAMP '2026-11-04 09:45:00'
-                WHERE signup_id = ?
-                """, signupOf(LEANDER));
+        updateLeandersObservation(o -> submitted(o, LocalDateTime.parse("2026-11-04T09:45:00")));
     }
 
-    private int signupOf(int professorId) {
-        return db.queryForObject("""
-                SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id = es.observee_id
-                WHERE oe.professor_id = ? AND oe.cycle_id = 1
-                """, Integer.class, professorId);
+    private void updateLeandersObservation(UnaryOperator<Observation> change) {
+        observations.findBySignupIdIn(List.of(signupOf(db, LEANDER))).forEach(o -> observations.save(change.apply(o)));
     }
 
     private ResultActions dashboard(int professorId) throws Exception {
