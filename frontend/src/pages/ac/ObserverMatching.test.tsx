@@ -203,6 +203,73 @@ test("shows unsuccessful invitation history and additional eligible observers", 
   expect(details.getAllByText("2026-10-20 09:00:00")).toHaveLength(2);
 });
 
+test("invitation history shows when each observer answered or was assigned", async () => {
+  const matching = state.matchingCases[0];
+  if (!matching) throw new Error("Missing case");
+  matching.invitations = [
+    {
+      requestId: 1,
+      observerId: 2,
+      observerName: "Professor 2",
+      status: "DECLINED",
+      requestedAt: "2026-10-20T09:00:00",
+      expiresAt: "2026-10-27T09:00:00",
+      respondedAt: "2026-10-21T08:30:00.123456",
+    },
+    {
+      requestId: 2,
+      observerId: 3,
+      observerName: "Professor 3",
+      status: "PENDING",
+      requestedAt: "2026-10-20T09:00:00",
+      expiresAt: "2026-10-27T09:00:00",
+      respondedAt: null,
+    },
+    {
+      requestId: 3,
+      observerId: 4,
+      observerName: "Professor 4",
+      status: "ASSIGNED",
+      requestedAt: "2026-10-28T14:00:00",
+      expiresAt: "2026-11-04T14:00:00",
+      respondedAt: "2026-10-28T14:00:00",
+    },
+  ];
+  await open();
+  const table = within(
+    screen.getByRole("region", { name: "Matching status" }),
+  ).getByRole("table");
+  const rows = within(table)
+    .getAllByRole("row")
+    .map((row) =>
+      Array.from(row.querySelectorAll("th, td"), (cell) => cell.textContent),
+    );
+  expect(rows).toEqual([
+    ["Observer", "Status", "Sent", "Expires", "Responded"],
+    [
+      "Professor 2",
+      "Declined",
+      "2026-10-20 09:00:00",
+      "2026-10-27 09:00:00",
+      "2026-10-21 08:30:00",
+    ],
+    [
+      "Professor 3",
+      "Pending",
+      "2026-10-20 09:00:00",
+      "2026-10-27 09:00:00",
+      "—",
+    ],
+    [
+      "Professor 4",
+      "Assigned",
+      "2026-10-28 14:00:00",
+      "2026-11-04 14:00:00",
+      "2026-10-28 14:00:00",
+    ],
+  ]);
+});
+
 function exhaustedCase() {
   const signup = state.signups[0];
   const matching = state.matchingCases[0];

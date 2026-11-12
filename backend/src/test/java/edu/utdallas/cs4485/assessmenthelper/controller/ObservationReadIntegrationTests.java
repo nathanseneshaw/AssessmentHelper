@@ -197,14 +197,6 @@ class ObservationReadIntegrationTests {
 
     @Test
     void bothSidesReopenACompletedFormWithItsAnswers() throws Exception {
-        // data.sql records no answers on the completed forms, so give this one a full set.
-        db.update("""
-                INSERT INTO observation_response (observation_id, criterion_id, rating, comments)
-                SELECT o.observation_id, q.criterion_id, CASE WHEN q.question_type = 'RATING' THEN 4 END,
-                    'Notes on ' || q.criterion_text
-                FROM observation o JOIN observation_criterion q ON q.template_id = o.template_id
-                WHERE o.observation_id = ? AND q.selected=TRUE
-                """, completed);
         List<Map<String, Object>> stored = db.queryForList("""
                 SELECT r.criterion_id, r.rating, r.comments FROM observation_response r
                 JOIN observation_criterion q ON q.criterion_id = r.criterion_id

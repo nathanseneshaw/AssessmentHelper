@@ -2234,6 +2234,36 @@ JOIN professor op ON op.email = h.observer_email
 JOIN observer ob ON ob.professor_id = op.professor_id AND ob.cycle_id = o.cycle_id;
 DROP TABLE demo_history;
 
+-- Completed demo observations need answers, or a committee member who opens one sees "No response" everywhere.
+INSERT INTO observation_response (observation_id, criterion_id, rating, comments)
+SELECT o.observation_id, c.criterion_id,
+    CASE WHEN c.question_type = 'RATING' THEN c.rating_max - MOD(o.observation_id + c.display_order * 2, 3) END,
+    CASE
+        WHEN c.question_type = 'RATING' THEN
+            CASE WHEN c.notes_enabled AND MOD(o.observation_id + c.display_order, 3) = 0 THEN
+                CASE c.display_order
+                    WHEN 1 THEN 'Most students took part in the pair discussion.'
+                    WHEN 2 THEN 'Slides and handouts were ready before class began.'
+                    ELSE 'Questions were taken after each section of the lecture.'
+                END
+            END
+        WHEN c.required THEN
+            CASE MOD(o.observation_id, 4)
+                WHEN 0 THEN 'Clear explanations built around worked examples, and students asked good follow-up questions.'
+                WHEN 1 THEN 'A well-organized lecture that tied the new material back to the previous week.'
+                WHEN 2 THEN 'Steady pacing with frequent checks for understanding.'
+                ELSE 'Live demonstrations kept students involved for the whole class.'
+            END
+        ELSE
+            CASE MOD(o.observation_id, 3)
+                WHEN 1 THEN 'Leave a few more minutes at the end for questions.'
+                WHEN 2 THEN 'Post the slides before class so students can follow along.'
+            END
+    END
+FROM observation o
+JOIN observation_criterion c ON c.template_id = o.template_id AND c.selected = TRUE
+WHERE o.status = 'COMPLETED';
+
 -- Shared email templates; delivery is simulated.
 INSERT INTO message_template (template_type,name,subject,body) VALUES
 ('EVALUATION_DUE','Evaluation due','Faculty Evaluation Due - {{cycleLabel}}','Dear Professor {{lastName}},
