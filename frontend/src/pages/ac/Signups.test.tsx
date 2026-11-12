@@ -372,7 +372,7 @@ test("notifying someone who has not signed up sends the signup reminder and mark
       .value,
   ).toContain("complete your evaluation signup");
   fireEvent.click(within(dialog).getByRole("button", { name: "Send Email" }));
-  await within(dialog).findByRole("heading", { name: "Email Recorded" });
+  await within(dialog).findByRole("heading", { name: "Email Sent" });
   expect(sentEmail?.recipient).toBe("ashgrove@test.edu");
   fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
 

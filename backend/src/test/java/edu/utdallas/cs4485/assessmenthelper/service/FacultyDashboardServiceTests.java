@@ -54,6 +54,7 @@ import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 @Import({
     FacultyDashboardService.class,
     EvaluationEligibilityService.class,
+    DisabledNotificationEmailSender.class,
     EvaluationDeadlineService.class,
     EvaluationPolicyService.class,
     EmailTemplateService.class,

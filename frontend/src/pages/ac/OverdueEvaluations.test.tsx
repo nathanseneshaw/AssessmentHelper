@@ -149,7 +149,7 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
     target: { value: "Please complete your evaluation, Alice." },
   });
   fireEvent.click(screen.getByRole("button", { name: "Send Email" }));
-  await screen.findByRole("heading", { name: "Email Recorded" });
+  await screen.findByRole("heading", { name: "Email Sent" });
   expect(body?.subject).toBe("Personal reminder");
   expect(body?.body).toBe("Please complete your evaluation, Alice.");
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
@@ -196,7 +196,7 @@ test("failed send keeps draft and overdue status", async () => {
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Could not save notification",
   );
-  expect(screen.queryByRole("heading", { name: "Email Recorded" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Email Sent" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(
     screen.getByRole("button", { name: "Notify Alice Nguyen" }),
@@ -265,7 +265,7 @@ test("due overlay personalizes an editable email, saves to the due endpoint, and
     target: { value: "Your evaluation is due" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Send Email" }));
-  await screen.findByRole("heading", { name: "Email Recorded" });
+  await screen.findByRole("heading", { name: "Email Sent" });
   expect(savedUrl).toBe(
     `${API_URL}/api/due-evaluations/1/professors/1/notifications`,
   );
