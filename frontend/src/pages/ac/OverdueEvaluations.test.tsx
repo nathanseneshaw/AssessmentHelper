@@ -52,6 +52,13 @@ function mockFetch(
       });
     }
     if (path.endsWith("/ac-dashboard/metrics")) return Response.json(metrics);
+    if (path.endsWith("/api/missing-observations"))
+      return Response.json({
+        cycleId: 1,
+        cycleLabel: "Fall 2026",
+        observationDeadline: null,
+        signups: [],
+      });
     const response = await handler(input, init);
     const sent = path.match(/professors\/(\d+)\/notifications$/);
     if (sent && init?.method === "POST" && response.ok)

@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { App } from "../../App";
+import type { MissingSignups } from "../../api/acDashboard";
 import type { OverdueQueue } from "../../api/evaluationEligibility";
 import type { AcState } from "../../api/observerEligibility";
 import { metrics } from "../../test/acDashboardFixtures";
@@ -47,13 +48,21 @@ let answerMetrics: () => Response | Promise<Response>;
 let matchingState: AcState;
 let dueQueue: OverdueQueue;
 let overdueQueue: OverdueQueue;
+let missingSignups: MissingSignups;
 
 beforeEach(() => {
   answerMetrics = () => Response.json(metrics);
   matchingState = structuredClone(ac);
   dueQueue = queue;
   overdueQueue = queue;
+  missingSignups = {
+    cycleId: 1,
+    cycleLabel: "Fall 2026",
+    observationDeadline: "2026-11-15",
+    signups: [],
+  };
   fakeBackend({
+    "/api/missing-observations": () => Response.json(missingSignups),
     "/api/due-evaluations": () => Response.json(dueQueue),
     "/api/overdue-evaluations": () => Response.json(overdueQueue),
     "/api/observer-eligibility/ac": () => Response.json(matchingState),
@@ -338,4 +347,43 @@ test("a failed metrics request marks its cards unavailable without an error mess
   expect(screen.queryByText(/Metrics unavailable/)).toBeNull();
   expect(screen.queryByRole("button", { name: /^Retry/ })).toBeNull();
   await waitFor(() => expect(kpi("Overdue Evaluations").value).toBe("1"));
+});
+
+const missingRow = (id: number, observer: string | null = null) => ({
+  signupId: id,
+  observeeId: id,
+  observee: `Observee ${id}`,
+  course: `CS 3345.00${id}`,
+  observer,
+  observationStatus: observer ? "SCHEDULED" : null,
+});
+
+test("missing observations panel says so when nobody is past the deadline", async () => {
+  await openOverview();
+  await screen.findByText("No missing observations.");
+});
+
+test("missing observations panel lists signups and says when no observer accepted", async () => {
+  missingSignups.signups = [missingRow(1), missingRow(2, "Keira Larkspur")];
+  await openOverview();
+  await screen.findByText("2 signup(s) have no completed observation.");
+  expect(screen.getByText("Observee 1")).toBeTruthy();
+  expect(screen.getByText("CS 3345.001")).toBeTruthy();
+  expect(screen.getByText("No observer accepted")).toBeTruthy();
+  expect(screen.getByText("Keira Larkspur, scheduled")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("link", { name: "View Observations" })
+      .getAttribute("href"),
+  ).toBe("/ac/observations");
+});
+
+test("missing observations panel shows five rows and counts the rest", async () => {
+  missingSignups.signups = Array.from({ length: 8 }, (_, i) =>
+    missingRow(i + 1),
+  );
+  await openOverview();
+  await screen.findByText("8 signup(s) have no completed observation.");
+  expect(screen.getAllByText("No observer accepted")).toHaveLength(5);
+  expect(screen.getByText("and 3 more")).toBeTruthy();
 });

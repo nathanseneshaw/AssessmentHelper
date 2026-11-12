@@ -31,6 +31,31 @@ export function getDashboardMetrics(
   return apiFetch<DashboardMetrics>("/api/ac-dashboard/metrics", { signal });
 }
 
+/** A signup past the observation deadline with no completed observation. */
+export interface MissingSignup {
+  signupId: number;
+  observeeId: number;
+  observee: string;
+  course: string;
+  /** Null when no observer ever accepted. */
+  observer: string | null;
+  /** Null when no observer ever accepted. */
+  observationStatus: string | null;
+}
+
+export interface MissingSignups {
+  cycleId: number;
+  cycleLabel: string;
+  observationDeadline: string | null;
+  signups: MissingSignup[];
+}
+
+export function getMissingSignups(
+  signal?: AbortSignal,
+): Promise<MissingSignups> {
+  return apiFetch<MissingSignups>("/api/missing-observations", { signal });
+}
+
 export function rate({ count, total }: Ratio, counted: string, empty: string) {
   return total === 0
     ? { value: "—", note: empty }

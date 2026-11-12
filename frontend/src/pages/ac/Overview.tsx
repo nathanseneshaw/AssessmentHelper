@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import {
   type DashboardMetrics,
   getDashboardMetrics,
+  getMissingSignups,
+  type MissingSignups,
   rate,
   surveyCompletionRate,
   useDashboardRefresh,
@@ -205,6 +207,8 @@ export function AcOverview() {
   const [dueOpen, setDueOpen] = useState(false);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [metricsFailed, setMetricsFailed] = useState(false);
+  const [missing, setMissing] = useState<MissingSignups | null>(null);
+  const [missingError, setMissingError] = useState("");
   // The figures already shown stay until the new ones arrive.
   // biome-ignore lint/correctness/useExhaustiveDependencies: version is the refresh trigger.
   useEffect(() => {
@@ -212,6 +216,17 @@ export function AcOverview() {
     setError("");
     setDueError("");
     setMetricsFailed(false);
+    setMissingError("");
+    getMissingSignups(controller.signal)
+      .then(setMissing)
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setMissingError(
+            cause instanceof Error
+              ? cause.message
+              : "Unable to load missing observations.",
+          );
+      });
     getDueQueue(controller.signal)
       .then(setDueQueue)
       .catch((cause) => {
@@ -405,6 +420,65 @@ export function AcOverview() {
               }
             />
           ))}
+        </ListPanel>
+      </div>
+
+      <div className="mt-5">
+        <ListPanel
+          title="Missing Observations"
+          subtitle={
+            missing?.observationDeadline
+              ? `Past the ${missing.cycleLabel} observation deadline (${missing.observationDeadline}) without a completed observation`
+              : "Signups past the observation deadline without a completed observation"
+          }
+          action={
+            <Link
+              to="/ac/observations"
+              className="min-w-39.5 rounded-lg bg-brand-green px-5 py-3.25 text-center text-white hover:opacity-90"
+            >
+              View Observations
+            </Link>
+          }
+        >
+          {missingError ? (
+            <li role="alert" className="text-sm text-brand-red">
+              {missingError}{" "}
+              <button type="button" className="underline" onClick={refresh}>
+                Retry missing observations
+              </button>
+            </li>
+          ) : !missing ? (
+            <li className="text-sm text-muted">
+              Loading missing observations…
+            </li>
+          ) : missing.signups.length === 0 ? (
+            <li className="text-sm text-muted">No missing observations.</li>
+          ) : (
+            <>
+              <li role="alert" className="font-semibold text-brand-red">
+                {missing.signups.length} signup(s) have no completed
+                observation.
+              </li>
+              {missing.signups.slice(0, 5).map((item) => (
+                <ListRow
+                  key={item.signupId}
+                  cells={[item.observee, item.course]}
+                  status={
+                    <span className="text-brand-orange text-sm">
+                      {item.observer === null
+                        ? "No observer accepted"
+                        : `${item.observer}, ${(item.observationStatus ?? "").toLowerCase()}`}
+                    </span>
+                  }
+                />
+              ))}
+              {missing.signups.length > 5 && (
+                <li className="text-sm text-muted">
+                  and {missing.signups.length - 5} more
+                </li>
+              )}
+            </>
+          )}
         </ListPanel>
       </div>
 
