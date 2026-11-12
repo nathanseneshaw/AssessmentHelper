@@ -5,6 +5,7 @@ import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observationOf;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.principal;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.professor;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.submitted;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
@@ -114,6 +115,16 @@ class ObservationReadIntegrationTests {
         scheduled = observationOf(db, "leander.coldwell@example.edu", "Fall", 2026);
         completed = observationOf(db, "luca.lindenhall@example.edu", "Fall", 2025);
         keirasOwn = observationOf(db, "keira.larkspur@example.edu", "Fall", 2025);
+    }
+
+    @Test
+    void committeeCanReadAbelsEvaluationHistoryAcrossSchools() throws Exception {
+        Integer abelId = professor(db, "abel.blythewood@example.edu").professorId();
+        String path = "/api/professors/" + abelId + "/evaluations";
+        read(kaia, path)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].cycleId").isNumber());
+        read(dario, path).andExpect(status().isForbidden());
     }
 
     @Test
@@ -271,7 +282,7 @@ class ObservationReadIntegrationTests {
     }
 
     @Test
-    void theCommitteeReadsOnlyCompletedFormsInItsOwnSchool() throws Exception {
+    void theCommitteeReadsOnlyCompletedFormsAcrossSchools() throws Exception {
         for (String status : List.of("ACCEPTED", "SCHEDULED", "IN_PROGRESS", "SUBMITTED")) {
             updateObservation(scheduled, o -> withStatus(o, status));
             read(kaia, "/api/observations/" + scheduled).andExpect(status().isForbidden());
@@ -288,9 +299,9 @@ class ObservationReadIntegrationTests {
         read(kaia, "/api/observations/" + completed).andExpect(status().isOk());
         read(kaia, "/api/observations/" + keirasOwn).andExpect(status().isOk());
 
-        // A committee member from another school has no access, and neither does a professor without the role.
+        // Committee access spans schools; an unrelated professor still has no access.
         AccountPrincipal otherSchool = principal(db, "kaia.clearbrook@example.edu", 2, Role.AC, Role.PROFESSOR);
-        read(otherSchool, "/api/observations/" + completed).andExpect(status().isForbidden());
+        read(otherSchool, "/api/observations/" + completed).andExpect(status().isOk());
         read(dario, "/api/observations/" + completed).andExpect(status().isForbidden());
     }
 

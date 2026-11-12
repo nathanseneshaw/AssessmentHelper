@@ -235,7 +235,7 @@ public class ObservationService {
     /**
      * The role {@code principal} sees the observation in, or null if they may not see it now. The observer always may,
      * and the observee once the observer has submitted, so never a draft. A committee member may read only a completed
-     * record, and only for an observee in their own school. Nobody else may.
+     * record across all schools. Nobody else may.
      */
     private static ViewerRole viewerRole(Row o, AccountPrincipal principal) {
         if (isObserver(o, principal)) return ViewerRole.OBSERVER;
@@ -245,11 +245,9 @@ public class ObservationService {
         return null;
     }
 
-    // Committee members read completed records for their own school, the same school limit as professor lists.
+    // Committee members read completed records across all schools.
     private static boolean committeeMayRead(Row o, AccountPrincipal principal) {
-        return principal.isCommitteeMember()
-                && o.status() == Status.COMPLETED
-                && Objects.equals(principal.user().schoolId(), o.schoolId());
+        return principal.isCommitteeMember() && o.status() == Status.COMPLETED;
     }
 
     /**
@@ -401,7 +399,7 @@ public class ObservationService {
         Row o = find(observationId);
         if (!o.locked()) throw new ConflictException("Only a locked record can be forwarded.");
         if (!committeeMayRead(o, principal))
-            throw new AccessDeniedException("You can only forward records from your own school.");
+            throw new AccessDeniedException("Only committee members can forward completed records.");
         if (!professors.existsById(recipientProfessorId)) throw new NotFoundException("Professor not found.");
         log(observationId, AuditEvent.FORWARDED, principal, recipientProfessorId);
         notify(
