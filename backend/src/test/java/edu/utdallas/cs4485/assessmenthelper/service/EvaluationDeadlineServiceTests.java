@@ -227,6 +227,7 @@ class EvaluationDeadlineServiceTests {
                 false,
                 null,
                 null,
-                completedAt));
+                completedAt,
+                null));
     }
 }

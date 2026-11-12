@@ -81,7 +81,7 @@ public class EvaluationSignupService {
             throw new IllegalArgumentException("A valid sectionId is required.");
         }
         var professor = professors
-                .findForSignupUpdate(professorId)
+                .findForUpdateByProfessorId(professorId)
                 .orElseThrow(() -> new NotFoundException("No professor with id " + professorId));
         if (!Boolean.TRUE.equals(professor.activeStatus())) {
             throw new ConflictException("This professor is not active.");

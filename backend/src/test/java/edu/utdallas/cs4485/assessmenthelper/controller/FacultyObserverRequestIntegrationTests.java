@@ -1,10 +1,28 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.matchOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.newObservation;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observerOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.signupOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withExpiration;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observer;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverMatch;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverRequest;
+import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
+import edu.utdallas.cs4485.assessmenthelper.entity.TeachingHistory;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -12,6 +30,7 @@ import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -26,8 +45,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -76,7 +95,13 @@ class FacultyObserverRequestIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private JdbcAggregateTemplate db;
+
+    @Autowired
+    private ObserverRequestRepository requests;
+
+    @Autowired
+    private ObservationRepository observations;
 
     private int signupId;
     private int matchId;
@@ -85,17 +110,10 @@ class FacultyObserverRequestIntegrationTests {
 
     @BeforeEach
     void demoSignup() {
-        signupId = db.queryForObject("""
-                SELECT s.signup_id FROM evaluation_signup s JOIN observee e ON e.observee_id = s.observee_id
-                WHERE e.professor_id = 31 AND e.cycle_id = 1
-                """, Integer.class);
-        keira = observer(41);
-        leander = observer(13);
-        matchId = db.queryForObject(
-                "SELECT match_id FROM observer_match WHERE signup_id = ? AND observer_id = ?",
-                Integer.class,
-                signupId,
-                keira);
+        signupId = signupOf(db, 31);
+        keira = observerOf(db, 41);
+        leander = observerOf(db, 13);
+        matchId = matchOf(db, signupId, 41);
     }
 
     @Test
@@ -128,8 +146,11 @@ class FacultyObserverRequestIntegrationTests {
 
     @Test
     void rejectsMissingOrForeignSignupAndMatchWithoutCreatingRequests() throws Exception {
-        int leandersMatch =
-                db.queryForObject("SELECT MIN(match_id) FROM observer_match WHERE signup_id = 33", Integer.class);
+        int leandersMatch = db.findAll(ObserverMatch.class).stream()
+                .filter(m -> m.signupId() == 33)
+                .mapToInt(ObserverMatch::matchId)
+                .min()
+                .orElseThrow();
         send(HOLLIS, signupId, matchId).andExpect(status().isNotFound());
         send(AVERY, signupId, leandersMatch).andExpect(status().isBadRequest());
         send(AVERY, signupId, 99999).andExpect(status().isNotFound());
@@ -162,27 +183,36 @@ class FacultyObserverRequestIntegrationTests {
 
     @Test
     void legacyEndpointAlsoRequiresAnActiveProposedMatchAndOpenSignup() throws Exception {
-        db.update("UPDATE observer_match SET match_status = 'REJECTED' WHERE match_id = ?", matchId);
+        setMatchStatus("REJECTED");
         send(AVERY, signupId, matchId).andExpect(status().isConflict());
         legacySend(keira).andExpect(status().isConflict());
-        db.update("UPDATE observer_match SET match_status = 'PROPOSED' WHERE match_id = ?", matchId);
-        db.update("UPDATE observer SET active_status = FALSE WHERE observer_id = ?", keira);
+        setMatchStatus("PROPOSED");
+        Observer observer = db.findById(keira, Observer.class);
+        db.update(inactive(observer));
         legacySend(keira).andExpect(status().isConflict());
-        db.update("UPDATE observer SET active_status = TRUE WHERE observer_id = ?", keira);
-        db.update("UPDATE evaluation_cycle SET status = 'CLOSED' WHERE cycle_id = 1");
+        db.update(observer);
+        EvaluationCycle cycle = db.findById(1, EvaluationCycle.class);
+        db.update(new EvaluationCycle(
+                cycle.cycleId(),
+                cycle.semesterId(),
+                cycle.signupDeadline(),
+                cycle.observationDeadline(),
+                cycle.feedbackDeadline(),
+                "CLOSED"));
         send(AVERY, signupId, matchId).andExpect(status().isConflict());
         assertThat(requestCount()).isZero();
     }
 
     @Test
     void rejectsSelfAndDifferentCycleAndInactiveObserverProfessor() throws Exception {
-        db.update("UPDATE observer SET professor_id = 31 WHERE observer_id = ?", keira);
+        Observer observer = db.findById(keira, Observer.class);
+        db.update(new Observer(observer.observerId(), 31, observer.cycleId(), observer.activeStatus()));
         legacySend(keira).andExpect(status().isConflict());
         // Cycle 9 is the closed Spring 2026 cycle.
-        db.update("UPDATE observer SET professor_id = 41, cycle_id = 9 WHERE observer_id = ?", keira);
+        db.update(new Observer(observer.observerId(), 41, 9, observer.activeStatus()));
         legacySend(keira).andExpect(status().isConflict());
-        db.update("UPDATE observer SET cycle_id = 1 WHERE observer_id = ?", keira);
-        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id = 41");
+        db.update(new Observer(observer.observerId(), 41, 1, observer.activeStatus()));
+        db.update(inactive(db.findById(41, Professor.class)));
         legacySend(keira).andExpect(status().isConflict());
         assertThat(requestCount()).isZero();
     }
@@ -194,13 +224,10 @@ class FacultyObserverRequestIntegrationTests {
                         .content("{\"signupId\":" + signupId + ",\"matchId\":" + matchId
                                 + ",\"expirationDate\":\"2026-10-20T10:00:00\"}"))
                 .andExpect(status().isBadRequest());
-        db.update("UPDATE evaluation_signup SET status = 'COMPLETED' WHERE signup_id = ?", signupId);
+        setSignupStatus("COMPLETED");
         send(AVERY, signupId, matchId).andExpect(status().isConflict());
-        db.update("UPDATE evaluation_signup SET status = 'PENDING' WHERE signup_id = ?", signupId);
-        db.update(
-                "INSERT INTO observation (signup_id, observer_id, template_id, status) VALUES (?, ?, 1, 'SCHEDULED')",
-                signupId,
-                keira);
+        setSignupStatus("PENDING");
+        db.insert(newObservation(signupId, keira, 1, "SCHEDULED"));
         send(AVERY, signupId, matchId).andExpect(status().isConflict());
         assertThat(requestCount()).isZero();
     }
@@ -209,9 +236,8 @@ class FacultyObserverRequestIntegrationTests {
     void allowsAnotherCandidateAndKeepsExpiredHistory() throws Exception {
         send(AVERY, signupId, matchId).andExpect(status().isCreated());
         legacySend(leander).andExpect(status().isCreated());
-        db.update(
-                "UPDATE observer_request SET expiration_date = TIMESTAMP '2026-10-20 10:00:00' WHERE signup_id = ?",
-                signupId);
+        for (var request : requests.findBySignupId(signupId))
+            requests.save(withExpiration(request, LocalDateTime.parse("2026-10-20T10:00:00")));
         mvc.perform(as(AVERY, get("/api/professors/31/observer-requests")))
                 .andExpect(jsonPath("$[0].requests[0].request.status").value("EXPIRED"));
         legacySend(leander).andExpect(status().isCreated());
@@ -221,8 +247,7 @@ class FacultyObserverRequestIntegrationTests {
     @Test
     void confirmedRequestRemainsVisibleAndPreventsAnotherRequest() throws Exception {
         send(AVERY, signupId, matchId).andExpect(status().isCreated());
-        int requestId = db.queryForObject(
-                "SELECT request_id FROM observer_request WHERE signup_id = ?", Integer.class, signupId);
+        int requestId = only(requests.findBySignupId(signupId)).requestId();
         mvc.perform(as(
                                 new AccountPrincipal(
                                         new CurrentUser(
@@ -267,18 +292,26 @@ class FacultyObserverRequestIntegrationTests {
         assertThat(service.findById(first.requestId()).status()).isEqualTo("CONFIRMED");
         assertThat(service.findById(third.requestId())).isEqualTo(third);
         assertThat(service.decline(third.requestId()).status()).isEqualTo("DECLINED");
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, signupId))
-                .isEqualTo(2);
+        assertThat(observations.findBySignupIdIn(List.of(signupId))).hasSize(2);
     }
 
     @Test
     void fivePendingRequestsBlockSixthButAllowRetry() throws Exception {
         // Populate four pending requests to exercise the limit independently of generated pool size.
-        db.update("""
-                INSERT INTO observer_request(signup_id,observer_id,request_date,expiration_date,status)
-                SELECT ?,observer_id,TIMESTAMP '2026-10-21 10:00:00',TIMESTAMP '2026-10-28 10:00:00','PENDING'
-                FROM observer WHERE observer_id NOT IN (?,?) ORDER BY observer_id LIMIT 4
-                """, signupId, keira, leander);
+        db.findAll(Observer.class).stream()
+                .map(Observer::observerId)
+                .filter(id -> id != keira && id != leander)
+                .sorted()
+                .limit(4)
+                .forEach(id -> db.insert(new ObserverRequest(
+                        null,
+                        signupId,
+                        id,
+                        LocalDateTime.parse("2026-10-21T10:00:00"),
+                        LocalDateTime.parse("2026-10-28T10:00:00"),
+                        null,
+                        "PENDING",
+                        false)));
         send(AVERY, signupId, matchId).andExpect(status().isCreated());
         send(AVERY, signupId, matchId).andExpect(status().isCreated());
         assertThat(requestCount()).isEqualTo(5);
@@ -302,14 +335,12 @@ class FacultyObserverRequestIntegrationTests {
 
     @Test
     void courseSelectionCannotChangeAfterCandidatesHaveBeenGenerated() throws Exception {
-        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (31, 284)");
+        db.insert(new TeachingHistory(null, 31, 284));
         mvc.perform(as(AVERY, put("/api/professors/31/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sectionId\":284}"))
                 .andExpect(status().isConflict());
-        assertThat(db.queryForObject(
-                        "SELECT section_id FROM evaluation_signup WHERE signup_id = ?", Integer.class, signupId))
-                .isEqualTo(301);
+        assertThat(db.findById(signupId, EvaluationSignup.class).sectionId()).isEqualTo(301);
     }
 
     @Test
@@ -336,16 +367,22 @@ class FacultyObserverRequestIntegrationTests {
             assertThat(requestCount()).isEqualTo(1);
         } finally {
             // This test commits, so remove the request and the notification it sent to keep data.sql's records.
-            db.update("DELETE FROM observer_request WHERE signup_id = ?", signupId);
-            db.update(
-                    "DELETE FROM observer_notification WHERE signup_id = ? AND created_at = TIMESTAMP '2026-10-21 10:00:00'",
-                    signupId);
+            requests.deleteAll(requests.findBySignupId(signupId));
+            db.findAll(ObserverNotification.class).stream()
+                    .filter(n -> n.signupId() == signupId
+                            && n.createdAt().equals(LocalDateTime.parse("2026-10-21T10:00:00")))
+                    .forEach(db::delete);
         }
     }
 
-    private int observer(int professorId) {
-        return db.queryForObject(
-                "SELECT observer_id FROM observer WHERE professor_id = ? AND cycle_id = 1", Integer.class, professorId);
+    private void setMatchStatus(String status) {
+        ObserverMatch match = db.findById(matchId, ObserverMatch.class);
+        db.update(new ObserverMatch(
+                match.matchId(), match.signupId(), match.observerId(), match.generatedDate(), status));
+    }
+
+    private void setSignupStatus(String status) {
+        db.update(withStatus(db.findById(signupId, EvaluationSignup.class), status));
     }
 
     private ResultActions send(AccountPrincipal professor, int signup, int match) throws Exception {
@@ -371,6 +408,6 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     private int requestCount() {
-        return db.queryForObject("SELECT COUNT(*) FROM observer_request WHERE signup_id = ?", Integer.class, signupId);
+        return requests.findBySignupId(signupId).size();
     }
 }

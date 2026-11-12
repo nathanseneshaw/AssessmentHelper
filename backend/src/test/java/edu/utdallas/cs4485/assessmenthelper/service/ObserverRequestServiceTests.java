@@ -15,7 +15,6 @@ import edu.utdallas.cs4485.assessmenthelper.entity.ObserverRequest;
 import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
 import edu.utdallas.cs4485.assessmenthelper.entity.School;
 import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
-import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -29,12 +28,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 @DataJdbcTest
-@Import({
-    ObserverRequestService.class,
-    ObserverEligibilityService.class,
-    ObserverRequestContextRepository.class,
-    ObserverRequestServiceTests.FixedClock.class
-})
+@Import({ObserverRequestService.class, ObserverEligibilityService.class, ObserverRequestServiceTests.FixedClock.class})
 class ObserverRequestServiceTests {
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 20, 12, 0);
@@ -80,7 +74,7 @@ class ObserverRequestServiceTests {
     void acceptingUnmanagedRequestLeavesOtherRequestsUnchanged() {
         var first = service.create(signup.signupId(), observer.observerId(), null);
         var other = db.insert(new ObserverRequest(
-                null, signup.signupId(), observer.observerId(), NOW, NOW.plusDays(7), null, "PENDING"));
+                null, signup.signupId(), observer.observerId(), NOW, NOW.plusDays(7), null, "PENDING", false));
         service.confirm(first.requestId());
         assertThat(service.findById(other.requestId())).isEqualTo(other);
         assertThat(service.confirm(other.requestId()).status()).isEqualTo("CONFIRMED");
@@ -296,7 +290,8 @@ class ObserverRequestServiceTests {
                 NOW.minusDays(8),
                 expiration,
                 "CONFIRMED".equals(status) ? NOW.minusDays(9) : null,
-                status));
+                status,
+                false));
     }
 
     private Professor professor(Department department, String email) {

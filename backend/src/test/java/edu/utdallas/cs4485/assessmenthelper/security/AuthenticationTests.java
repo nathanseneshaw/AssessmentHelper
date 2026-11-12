@@ -9,13 +9,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.UserAccount;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.UserAccountRepository;
 import jakarta.servlet.http.Cookie;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -38,14 +41,19 @@ class AuthenticationTests {
     private MockMvc mockMvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private ProfessorRepository professors;
+
+    @Autowired
+    private UserAccountRepository accounts;
 
     @Test
     void everySeededProfessorHasAnAccountWithTheirEmail() {
-        assertThat(db.queryForObject("""
-                SELECT COUNT(*) FROM professor p LEFT JOIN user_account u ON u.professor_id=p.professor_id
-                WHERE u.user_id IS NULL OR u.email<>p.email
-                """, Integer.class)).isZero();
+        var accountEmails = accounts.findAll().stream()
+                .filter(account -> account.professorId() != null)
+                .collect(Collectors.toMap(UserAccount::professorId, UserAccount::email));
+        assertThat(professors.findAll())
+                .allSatisfy(professor ->
+                        assertThat(accountEmails.get(professor.professorId())).isEqualTo(professor.email()));
     }
 
     @Test

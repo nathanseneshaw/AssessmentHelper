@@ -1,7 +1,26 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observer;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverListState;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverMatch;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverRequest;
+import edu.utdallas.cs4485.assessmenthelper.repository.CourseSectionRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationDeferralRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationTemplateRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverListStateRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverMatchRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.TeachingHistoryRepository;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -9,7 +28,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.*;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,24 +43,64 @@ public class ObserverEligibilityService {
     /** How many candidates a generated observer list is filled up to. */
     public static final int LIST_SIZE = 5;
 
-    private final JdbcTemplate db;
+    private final EvaluationCycleRepository evaluationCycles;
+    private final EvaluationSignupRepository evaluationSignups;
+    private final EvaluationDeferralRepository deferrals;
+    private final ObserveeRepository observees;
+    private final ObserverRepository observers;
+    private final ObserverListStateRepository listStates;
+    private final ObserverMatchRepository matches;
+    private final ObserverRequestRepository observerRequests;
+    private final ObserverNotificationRepository observerNotifications;
+    private final ObservationRepository observations;
+    private final ObservationTemplateRepository templates;
+    private final ProfessorRepository professors;
+    private final TeachingHistoryRepository teachingHistory;
+    private final CourseSectionRepository courseSections;
+    private final SemesterRepository semesters;
     private final Clock clock;
 
-    public ObserverEligibilityService(JdbcTemplate db, Clock clock) {
-        this.db = db;
+    public ObserverEligibilityService(
+            EvaluationCycleRepository evaluationCycles,
+            EvaluationSignupRepository evaluationSignups,
+            EvaluationDeferralRepository deferrals,
+            ObserveeRepository observees,
+            ObserverRepository observers,
+            ObserverListStateRepository listStates,
+            ObserverMatchRepository matches,
+            ObserverRequestRepository observerRequests,
+            ObserverNotificationRepository observerNotifications,
+            ObservationRepository observations,
+            ObservationTemplateRepository templates,
+            ProfessorRepository professors,
+            TeachingHistoryRepository teachingHistory,
+            CourseSectionRepository courseSections,
+            SemesterRepository semesters,
+            Clock clock) {
+        this.evaluationCycles = evaluationCycles;
+        this.evaluationSignups = evaluationSignups;
+        this.deferrals = deferrals;
+        this.observees = observees;
+        this.observers = observers;
+        this.listStates = listStates;
+        this.matches = matches;
+        this.observerRequests = observerRequests;
+        this.observerNotifications = observerNotifications;
+        this.observations = observations;
+        this.templates = templates;
+        this.professors = professors;
+        this.teachingHistory = teachingHistory;
+        this.courseSections = courseSections;
+        this.semesters = semesters;
         this.clock = clock;
     }
 
     public boolean manages(int signupId) {
-        return db.queryForObject("SELECT COUNT(*) FROM observer_list_state WHERE signup_id=?", Integer.class, signupId)
-                > 0;
+        return listStates.existsById(signupId);
     }
 
     public void confirmExistingRequest(int requestId, LocalDate observationDate) {
-        int professorId = db.queryForObject(
-                "SELECT ob.professor_id FROM observer_request r JOIN observer ob ON ob.observer_id=r.observer_id WHERE r.request_id=?",
-                Integer.class,
-                requestId);
+        int professorId = observerRequests.findObserverProfessorId(requestId).orElseThrow();
         respond(professorId, requestId, true, observationDate);
     }
 
@@ -136,22 +195,9 @@ public class ObserverEligibilityService {
     public record Deferral(String reason, String deferredBy, LocalDateTime deferredAt, String targetSemester) {}
 
     public Deferral deferral(int signupId) {
-        return db
-                .query(
-                        """
-                SELECT d.reason,d.deferred_at,p.first_name || ' ' || p.last_name AS actor,
-                s.term || ' ' || s.academic_year AS target FROM evaluation_deferral d
-                JOIN professor p ON p.professor_id=d.deferred_by JOIN semester s ON s.semester_id=d.target_semester_id
-                WHERE d.signup_id=?
-                """,
-                        (r, n) -> new Deferral(
-                                r.getString("reason"),
-                                r.getString("actor"),
-                                r.getObject("deferred_at", LocalDateTime.class),
-                                r.getString("target")),
-                        signupId)
-                .stream()
-                .findFirst()
+        return deferrals
+                .findEligibilityDeferral(signupId)
+                .map(r -> new Deferral(r.reason(), r.actor(), r.deferredAt(), r.target()))
                 .orElse(null);
     }
 
@@ -165,131 +211,92 @@ public class ObserverEligibilityService {
     public record Window(
             LocalDate start, LocalDate latestEnd, LocalDate end, LocalDate signupDeadline, boolean signupOpen) {}
 
-    private static final String CYCLES = """
-            SELECT c.*, s.term, s.academic_year, s.start_date FROM evaluation_cycle c
-            JOIN semester s ON s.semester_id=c.semester_id
-            """;
-
-    private List<Cycle> cycles(String where, Object... args) {
+    private Cycle cycle(EvaluationCycleRepository.EligibilityCycleRow r) {
         LocalDate today = LocalDate.now(clock);
-        return db.query(
-                CYCLES + where,
-                (r, n) -> new Cycle(
-                        r.getInt("cycle_id"),
-                        r.getInt("semester_id"),
-                        r.getString("term") + " " + r.getInt("academic_year"),
-                        date(r, "start_date"),
-                        date(r, "signup_deadline"),
-                        date(r, "observation_deadline"),
-                        date(r, "feedback_deadline"),
-                        "OPEN".equals(r.getString("status"))
-                                && date(r, "signup_deadline") != null
-                                && !today.isAfter(date(r, "signup_deadline")),
-                        "OPEN".equals(r.getString("status"))
-                                && date(r, "observation_deadline") != null
-                                && !today.isAfter(date(r, "observation_deadline")),
-                        "OPEN".equals(r.getString("status"))
-                                && date(r, "signup_deadline") != null
-                                && today.isAfter(date(r, "signup_deadline"))
-                                && date(r, "observation_deadline") != null
-                                && !today.isAfter(date(r, "observation_deadline"))),
-                args);
+        return new Cycle(
+                r.cycleId(),
+                r.semesterId(),
+                r.term() + " " + r.academicYear(),
+                r.startDate(),
+                r.signupDeadline(),
+                r.observationDeadline(),
+                r.feedbackDeadline(),
+                "OPEN".equals(r.status()) && r.signupDeadline() != null && !today.isAfter(r.signupDeadline()),
+                "OPEN".equals(r.status()) && r.observationDeadline() != null && !today.isAfter(r.observationDeadline()),
+                "OPEN".equals(r.status())
+                        && r.signupDeadline() != null
+                        && today.isAfter(r.signupDeadline())
+                        && r.observationDeadline() != null
+                        && !today.isAfter(r.observationDeadline()));
     }
 
     /** The cycle of the semester that contains today, which the faculty and committee screens show. */
     public Cycle cycle() {
         LocalDate today = LocalDate.now(clock);
-        var rows = cycles("WHERE s.start_date<=? AND s.end_date>=?", today, today);
+        var rows = evaluationCycles.findEligibilityCyclesContaining(today);
         if (rows.size() != 1)
             throw new ConflictException("Configure exactly one current semester and evaluation cycle.");
-        return rows.getFirst();
+        return cycle(rows.getFirst());
     }
 
     private Cycle cycle(int cycleId) {
-        return cycles("WHERE c.cycle_id=?", cycleId).stream()
-                .findFirst()
+        return evaluationCycles
+                .findEligibilityCycle(cycleId)
+                .map(this::cycle)
                 .orElseThrow(() -> new NotFoundException("Evaluation cycle not found."));
     }
 
+    private EvaluationSignupRepository.SignupOwnerRow owner(int signupId) {
+        return evaluationSignups.findOwner(signupId).orElseThrow(() -> new NotFoundException("Signup not found."));
+    }
+
     private int cycleIdOf(int signupId) {
-        return db
-                .queryForList(
-                        "SELECT oe.cycle_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE es.signup_id=?",
-                        Integer.class,
-                        signupId)
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> new NotFoundException("Signup not found."));
+        return owner(signupId).cycleId();
     }
 
     // Serializes pool changes and request transitions, including concurrent duplicate submissions.
     private Cycle lockCycle(int cycleId) {
-        db.queryForObject("SELECT cycle_id FROM evaluation_cycle WHERE cycle_id=? FOR UPDATE", Integer.class, cycleId);
+        evaluationCycles.findForUpdateByCycleId(cycleId).orElseThrow();
         return cycle(cycleId);
     }
 
     private Person person(int id) {
-        return db.query("""
-                SELECT p.professor_id, p.first_name || ' ' || p.last_name AS name, d.department_name
-                FROM professor p JOIN department d ON d.department_id=p.department_id
-                WHERE p.active_status=TRUE AND p.professor_id=?
-                """, (r, n) -> new Person(r.getInt(1), r.getString(2), r.getString(3)), id).stream()
-                .findFirst()
+        return professors
+                .findActivePerson(id)
+                .map(r -> new Person(r.professorId(), r.name(), r.departmentName()))
                 .orElseThrow(() -> new NotFoundException("Active professor not found."));
     }
 
     private List<Section> sections(int id, Cycle c) {
-        return db.query("""
-                SELECT DISTINCT s.*, c.course_code, c.course_number, c.course_name
-                FROM teaching_history t JOIN course_section s ON s.section_id=t.section_id
-                JOIN course c ON c.course_id=s.course_id WHERE t.professor_id=? AND s.semester_id=?
-                ORDER BY s.section_id
-                """, (r, n) -> section(r), id, c.semesterId());
+        return teachingHistory.findEligibilitySections(id, c.semesterId()).stream()
+                .map(ObserverEligibilityService::section)
+                .toList();
     }
 
-    private static Section section(ResultSet r) throws SQLException {
+    private static Section section(CourseSectionRepository.EligibilitySectionRow r) {
         return new Section(
-                r.getInt("section_id"),
-                r.getString("course_code") + " " + r.getString("course_number") + "." + r.getString("section_number"),
-                r.getString("course_name"),
-                r.getString("meeting_days"),
-                r.getObject("start_time", LocalTime.class),
-                r.getObject("end_time", LocalTime.class));
+                r.sectionId(),
+                r.courseCode() + " " + r.courseNumber() + "." + r.sectionNumber(),
+                r.courseName(),
+                r.meetingDays(),
+                r.startTime(),
+                r.endTime());
     }
-
-    private static LocalDate date(ResultSet r, String column) throws SQLException {
-        return r.getObject(column, LocalDate.class);
-    }
-
-    private static final String SIGNUPS = """
-            SELECT es.signup_id, p.professor_id, p.first_name || ' ' || p.last_name AS name,
-            d.department_name, s.*, c.course_code, c.course_number, c.course_name,
-            ls.window_start, ls.window_end, ls.released_at, op.first_name || ' ' || op.last_name AS observer_name
-            FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
-            JOIN professor p ON p.professor_id=oe.professor_id
-            JOIN department d ON d.department_id=p.department_id
-            JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
-            JOIN observer_list_state ls ON ls.signup_id=es.signup_id
-            LEFT JOIN observation o ON o.signup_id=es.signup_id LEFT JOIN observer ob ON ob.observer_id=o.observer_id
-            LEFT JOIN professor op ON op.professor_id=ob.professor_id
-            WHERE oe.cycle_id=? AND es.status<>'CANCELLED' ORDER BY es.signup_id
-            """;
 
     private List<Signup> signups(Cycle c, boolean includeCandidates) {
-        return db.query(
-                SIGNUPS,
-                (r, n) -> new Signup(
-                        r.getInt("signup_id"),
-                        r.getInt("professor_id"),
-                        r.getString("name"),
-                        r.getString("department_name"),
-                        section(r),
-                        date(r, "window_start"),
-                        date(r, "window_end"),
-                        r.getTimestamp("released_at") != null,
-                        r.getString("observer_name"),
-                        includeCandidates ? candidates(r.getInt("signup_id")) : List.of()),
-                c.cycleId());
+        return evaluationSignups.findEligibilitySignups(c.cycleId()).stream()
+                .map(r -> new Signup(
+                        r.signupId(),
+                        r.professorId(),
+                        r.name(),
+                        r.departmentName(),
+                        section(r.section()),
+                        r.windowStart(),
+                        r.windowEnd(),
+                        r.releasedAt() != null,
+                        r.observerName(),
+                        includeCandidates ? candidates(r.signupId()) : List.of()))
+                .toList();
     }
 
     private List<Candidate> candidates(int signupId) {
@@ -297,73 +304,37 @@ public class ObserverEligibilityService {
     }
 
     private List<Candidate> candidates(int signupId, String matchStatus) {
-        return db.query("""
-                SELECT ob.observer_id, p.professor_id, p.first_name || ' ' || p.last_name AS name,
-                d.department_name, c.course_number FROM observer_match m
-                JOIN observer ob ON ob.observer_id=m.observer_id JOIN professor p ON p.professor_id=ob.professor_id
-                JOIN department d ON d.department_id=p.department_id
-                JOIN evaluation_signup es ON es.signup_id=m.signup_id
-                JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
-                WHERE m.signup_id=? AND m.match_status=? ORDER BY m.match_id
-                """, (r, n) -> candidate(r, signupId), signupId, matchStatus);
+        return matches.findEligibilityCandidates(signupId, matchStatus).stream()
+                .map(r -> candidate(r, signupId))
+                .toList();
     }
 
-    private Candidate candidate(ResultSet r, int signupId) throws SQLException {
+    private Candidate candidate(ObserverRepository.EligibilityCandidateRow r, int signupId) {
         return new Candidate(
-                r.getInt(1),
-                r.getInt(2),
-                r.getString(3),
-                r.getString(4),
-                level(r.getString(5)) + "-level",
-                qualifyingCourses(r.getInt(2), signupId));
+                r.observerId(),
+                r.professorId(),
+                r.name(),
+                r.departmentName(),
+                level(r.courseNumber()) + "-level",
+                qualifyingCourses(r.professorId(), signupId));
     }
 
     /** Everyone who passes the eligibility rules for this signup, including those not drawn for its list. */
     public List<Candidate> eligibleObservers(int signupId) {
         Cycle c = cycle(cycleIdOf(signupId));
         return eligible(managedSignup(signupId, c), c).stream()
-                .map(observerId -> db.queryForObject("""
-                        SELECT ob.observer_id, p.professor_id, p.first_name || ' ' || p.last_name AS name,
-                        d.department_name, c.course_number FROM observer ob
-                        JOIN professor p ON p.professor_id=ob.professor_id
-                        JOIN department d ON d.department_id=p.department_id
-                        JOIN evaluation_signup es ON es.signup_id=?
-                        JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
-                        WHERE ob.observer_id=?
-                        """, (r, n) -> candidate(r, signupId), signupId, observerId))
+                .map(observerId -> candidate(
+                        observers.findEligibilityCandidate(signupId, observerId).orElseThrow(), signupId))
                 .sorted(Comparator.comparing(Candidate::name))
                 .toList();
     }
 
     private List<String> qualifyingCourses(int professorId, int signupId) {
-        return db
-                .query(
-                        """
-                SELECT DISTINCT c.course_code, c.course_number, s.section_number,
-                    taught_sem.term, taught_sem.academic_year, taught_sem.start_date,
-                    target_course.course_number AS target_number
-                FROM evaluation_signup es
-                JOIN observee oe ON oe.observee_id=es.observee_id
-                JOIN professor target_prof ON target_prof.professor_id=oe.professor_id
-                JOIN course_section target_section ON target_section.section_id=es.section_id
-                JOIN course target_course ON target_course.course_id=target_section.course_id
-                JOIN teaching_history t ON t.professor_id=?
-                JOIN course_section s ON s.section_id=t.section_id
-                JOIN semester taught_sem ON taught_sem.semester_id=s.semester_id
-                JOIN semester target_sem ON target_sem.semester_id=target_section.semester_id
-                JOIN course c ON c.course_id=s.course_id AND c.department_id=target_prof.department_id
-                WHERE es.signup_id=? AND taught_sem.start_date<=target_sem.start_date
-                    AND taught_sem.end_date>=DATEADD('YEAR', -2, target_sem.start_date)
-                ORDER BY c.course_code, c.course_number, s.section_number, taught_sem.start_date
-                """,
-                        (r, n) -> level(r.getString("course_number")) == level(r.getString("target_number"))
-                                ? r.getString("course_code") + " " + r.getString("course_number") + "."
-                                        + r.getString("section_number") + " - " + r.getString("term")
-                                        + " " + r.getInt("academic_year")
-                                : null,
-                        professorId,
-                        signupId)
-                .stream()
+        return evaluationSignups.findQualifyingCourses(professorId, signupId).stream()
+                .map(r -> level(r.courseNumber()) == level(r.targetNumber())
+                        ? r.courseCode() + " " + r.courseNumber() + "." + r.sectionNumber() + " - " + r.term() + " "
+                                + r.academicYear()
+                        : null)
                 .filter(Objects::nonNull)
                 .toList();
     }
@@ -387,27 +358,21 @@ public class ObserverEligibilityService {
                     false,
                     signup.observerName(),
                     List.of());
-        var notifications = db.query(
-                """
-                SELECT n.* FROM observer_notification n JOIN observer_list_state ls ON ls.signup_id=n.signup_id
-                JOIN evaluation_signup es ON es.signup_id=n.signup_id JOIN observee oe ON oe.observee_id=es.observee_id
-                WHERE n.professor_id=? AND oe.cycle_id=? ORDER BY n.notification_id DESC
-                """,
-                (r, n) -> new Notification(
-                        r.getInt("notification_id"),
-                        r.getString("message"),
-                        r.getObject("created_at", LocalDateTime.class)
-                                .atZone(clock.getZone())
-                                .toOffsetDateTime()),
-                id,
-                c.cycleId());
+        var notifications = observerNotifications.findListNotificationsInCycle(id, c.cycleId()).stream()
+                .map(n -> new Notification(
+                        n.notificationId(),
+                        n.message(),
+                        n.createdAt().atZone(clock.getZone()).toOffsetDateTime()))
+                .toList();
         List<Request> requests = requests(c);
         return new FacultyState(
                 c,
                 p,
                 signup,
                 requests.stream().filter(r -> r.professorId() == id).toList(),
-                requests.stream().filter(r -> signupOwner(r.signupId()) == id).toList(),
+                requests.stream()
+                        .filter(r -> signupOwner(r.signupId()).professorId() == id)
+                        .toList(),
                 notifications);
     }
 
@@ -422,32 +387,22 @@ public class ObserverEligibilityService {
         List<Signup> rows = List.copyOf(distinctSignups.values());
         LocalDateTime now = LocalDateTime.now(clock);
         Map<Integer, List<Invitation>> invitations = new HashMap<>();
-        db.query(
-                """
-                SELECT r.*, p.first_name || ' ' || p.last_name AS observer_name
-                FROM observer_request r JOIN observer ob ON ob.observer_id=r.observer_id
-                JOIN professor p ON p.professor_id=ob.professor_id
-                JOIN evaluation_signup es ON es.signup_id=r.signup_id
-                JOIN observee oe ON oe.observee_id=es.observee_id
-                WHERE oe.cycle_id=? ORDER BY r.request_date DESC, r.request_id DESC
-                """,
-                (org.springframework.jdbc.core.RowCallbackHandler) r -> {
-                    LocalDateTime expires = r.getObject("expiration_date", LocalDateTime.class);
-                    String status = r.getString("status");
-                    if ("CONFIRMED".equals(status) && r.getBoolean("assigned_by_ac")) status = "ASSIGNED";
-                    if ("PENDING".equals(status) && expires != null && !expires.isAfter(now)) status = "EXPIRED";
-                    invitations
-                            .computeIfAbsent(r.getInt("signup_id"), ignored -> new ArrayList<>())
-                            .add(new Invitation(
-                                    r.getInt("request_id"),
-                                    r.getInt("observer_id"),
-                                    r.getString("observer_name"),
-                                    status,
-                                    r.getObject("request_date", LocalDateTime.class),
-                                    expires,
-                                    r.getObject("response_date", LocalDateTime.class)));
-                },
-                c.cycleId());
+        observerRequests.findEligibilityInvitations(c.cycleId()).forEach(r -> {
+            LocalDateTime expires = r.expirationDate();
+            String status = r.status();
+            if ("CONFIRMED".equals(status) && r.assignedByAc()) status = "ASSIGNED";
+            if ("PENDING".equals(status) && expires != null && !expires.isAfter(now)) status = "EXPIRED";
+            invitations
+                    .computeIfAbsent(r.signupId(), ignored -> new ArrayList<>())
+                    .add(new Invitation(
+                            r.requestId(),
+                            r.observerId(),
+                            r.observerName(),
+                            status,
+                            r.requestDate(),
+                            expires,
+                            r.responseDate()));
+        });
         List<MatchingCase> cases = rows.stream()
                 .map(s -> {
                     List<Invitation> history = invitations.getOrDefault(s.signupId(), List.of());
@@ -545,46 +500,28 @@ public class ObserverEligibilityService {
                 || !dates.feedbackDeadline().isAfter(dates.observationDeadline()))
             throw new IllegalArgumentException(
                     "Signup must be on or after semester start, observation must be after signup, and feedback must be after observation.");
-        int scheduledOutside =
-                db.queryForObject("""
-                SELECT COUNT(*) FROM observation o
-                JOIN evaluation_signup es ON es.signup_id=o.signup_id
-                JOIN observee oe ON oe.observee_id=es.observee_id
-                WHERE oe.cycle_id=? AND o.observation_date IS NOT NULL
-                    AND (o.observation_date<=? OR o.observation_date>?)
-                """, Integer.class, cycleId, dates.signupDeadline(), dates.observationDeadline());
+        int scheduledOutside = observations.countScheduledOutsideDeadlines(
+                cycleId, dates.signupDeadline(), dates.observationDeadline());
         if (scheduledOutside > 0)
             throw new ConflictException(
                     "These deadlines would exclude an existing observation date. Reschedule the observation before changing these deadlines.");
         LocalDate start = dates.signupDeadline().plusDays(1);
-        var windows = db.query("""
-                SELECT ls.signup_id, ls.window_end FROM observer_list_state ls
-                JOIN evaluation_signup es ON es.signup_id=ls.signup_id
-                JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.cycle_id=?
-                """, (r, n) -> Map.entry(r.getInt("signup_id"), date(r, "window_end")), cycleId);
+        var windows = listStates.findWindowsInCycle(cycleId);
         var revisedWindows = new ArrayList<Map.Entry<Integer, LocalDate>>();
         for (var window : windows) {
-            LocalDate end = window.getValue();
+            LocalDate end = window.windowEnd();
             if (Objects.equals(end, previous.observationDeadline())) end = dates.observationDeadline();
             else if (end.isAfter(dates.observationDeadline())) end = dates.observationDeadline();
             if (end.isBefore(start))
                 throw new ConflictException(
                         "The signup deadline would leave an existing signup without an observation window.");
-            revisedWindows.add(Map.entry(window.getKey(), end));
+            revisedWindows.add(Map.entry(window.signupId(), end));
         }
         for (var window : revisedWindows) {
-            db.update(
-                    "UPDATE observer_list_state SET window_start=?, window_end=? WHERE signup_id=?",
-                    start,
-                    window.getValue(),
-                    window.getKey());
+            listStates.updateWindow(window.getKey(), start, window.getValue());
         }
-        db.update(
-                "UPDATE evaluation_cycle SET signup_deadline=?, observation_deadline=?, feedback_deadline=? WHERE cycle_id=?",
-                dates.signupDeadline(),
-                dates.observationDeadline(),
-                dates.feedbackDeadline(),
-                cycleId);
+        evaluationCycles.updateDeadlines(
+                cycleId, dates.signupDeadline(), dates.observationDeadline(), dates.feedbackDeadline());
         return cycle(cycleId);
     }
 
@@ -604,14 +541,7 @@ public class ObserverEligibilityService {
     }
 
     public LocalDate windowEnd(int signupId) {
-        return db
-                .query(
-                        "SELECT window_end FROM observer_list_state WHERE signup_id=?",
-                        (r, n) -> date(r, "window_end"),
-                        signupId)
-                .stream()
-                .findFirst()
-                .orElse(null);
+        return listStates.findById(signupId).map(ObserverListState::windowEnd).orElse(null);
     }
 
     /**
@@ -620,16 +550,12 @@ public class ObserverEligibilityService {
      * through the observation deadline.
      */
     public void signedUp(int signupId, LocalDate end) {
-        Cycle c = lockCycle(cycleIdOf(signupId));
+        var signup = owner(signupId);
+        Cycle c = lockCycle(signup.cycleId());
         if (!c.signupOpen()) throw new ConflictException("The signup deadline has passed or this cycle is closed.");
-        var signup = db.queryForMap(
-                "SELECT oe.professor_id, es.section_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE es.signup_id=?",
-                signupId);
-        int professorId = ((Number) signup.get("PROFESSOR_ID")).intValue();
-        Section section = db.queryForObject("""
-                SELECT s.*, c.course_code, c.course_number, c.course_name
-                FROM course_section s JOIN course c ON c.course_id=s.course_id WHERE s.section_id=?
-                """, (r, n) -> section(r), signup.get("SECTION_ID"));
+        int professorId = signup.professorId();
+        Section section = section(
+                courseSections.findEligibilitySection(signup.sectionId()).orElseThrow());
         requireSchedule(section);
         LocalDate saved = windowEnd(signupId);
         LocalDate start = windowStart(c);
@@ -643,33 +569,11 @@ public class ObserverEligibilityService {
                     "The observation window must start the day after the signup deadline and end by the observation deadline.");
         if (!hasMeeting(section, start, end, Set.of()))
             throw new IllegalArgumentException("The window contains no class meetings.");
-        if (saved == null)
-            db.update(
-                    "INSERT INTO observer_list_state(signup_id,window_start,window_end) VALUES (?,?,?)",
-                    signupId,
-                    start,
-                    end);
-        else
-            db.update(
-                    "UPDATE observer_list_state SET window_start=?,window_end=? WHERE signup_id=?",
-                    start,
-                    end,
-                    signupId);
-        var observers = db.queryForList(
-                "SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=?",
-                Integer.class,
-                professorId,
-                c.cycleId());
-        if (observers.isEmpty())
-            db.update(
-                    "INSERT INTO observer(professor_id,cycle_id,active_status) VALUES (?,?,TRUE)",
-                    professorId,
-                    c.cycleId());
-        else
-            db.update(
-                    "UPDATE observer SET active_status=TRUE WHERE professor_id=? AND cycle_id=?",
-                    professorId,
-                    c.cycleId());
+        if (saved == null) listStates.insertWindow(signupId, start, end);
+        else listStates.updateWindow(signupId, start, end);
+        if (observers.findByProfessorIdAndCycleId(professorId, c.cycleId()).isEmpty())
+            observers.save(new Observer(null, professorId, c.cycleId(), true));
+        else observers.activate(professorId, c.cycleId());
         refresh(c);
     }
 
@@ -683,15 +587,11 @@ public class ObserverEligibilityService {
     /** Draws a fresh list only after every current recommendation was declined or expired. */
     public AcState regenerate(int signupId) {
         requireNotDeferred(signupId);
-        int cycleId = cycleIdOf(signupId);
+        var owner = owner(signupId);
         // Serialize against invitation sends, assignments and observer responses.
-        db.queryForObject(
-                "SELECT professor_id FROM professor WHERE professor_id=? FOR UPDATE",
-                Integer.class,
-                signupOwner(signupId));
-        db.queryForObject(
-                "SELECT signup_id FROM evaluation_signup WHERE signup_id=? FOR UPDATE", Integer.class, signupId);
-        Cycle c = lockCycle(cycleId);
+        professors.findForUpdateByProfessorId(owner.professorId()).orElseThrow();
+        evaluationSignups.findForUpdateBySignupId(signupId).orElseThrow();
+        Cycle c = lockCycle(owner.cycleId());
         if (!c.requestsOpen()) throw new ConflictException("The observation period is closed.");
         Signup signup = managedSignup(signupId, c);
         if (signup.windowEnd().isBefore(LocalDate.now(clock)))
@@ -709,24 +609,17 @@ public class ObserverEligibilityService {
         if (pool.isEmpty())
             throw new ConflictException("No additional eligible observers remain. This case still needs AC review.");
         Collections.shuffle(pool);
-        db.update(
-                "UPDATE observer_match SET match_status='SUPERSEDED' WHERE signup_id=? AND match_status='PROPOSED'",
-                signupId);
-        for (int observerId : pool.stream().limit(LIST_SIZE).toList())
-            db.update(
-                    "INSERT INTO observer_match(signup_id,observer_id,generated_date,match_status) VALUES (?,?,?,'PROPOSED')",
-                    signupId,
-                    observerId,
-                    LocalDate.now(clock));
-        db.update("UPDATE observer_list_state SET released_at=NULL WHERE signup_id=?", signupId);
+        matches.supersedeProposed(signupId);
+        matches.saveAll(pool.stream()
+                .limit(LIST_SIZE)
+                .map(observerId -> proposal(signupId, observerId))
+                .toList());
+        listStates.clearReleasedAt(signupId);
         return acState(c);
     }
 
     private List<Integer> unusedEligible(Signup signup, Cycle c) {
-        Set<Integer> used = new HashSet<>(db.queryForList("""
-                SELECT observer_id FROM observer_match WHERE signup_id=?
-                UNION SELECT observer_id FROM observer_request WHERE signup_id=?
-                """, Integer.class, signup.signupId(), signup.signupId()));
+        Set<Integer> used = new HashSet<>(matches.findMatchedOrRequestedObserverIds(signup.signupId()));
         return eligible(signup, c).stream().filter(id -> !used.contains(id)).toList();
     }
 
@@ -736,14 +629,15 @@ public class ObserverEligibilityService {
             if (deferral(s.signupId()) != null || s.released() || s.candidates().size() >= LIST_SIZE) continue;
             var eligible = new ArrayList<>(unusedEligible(s, c));
             Collections.shuffle(eligible);
-            for (int observerId :
-                    eligible.stream().limit(LIST_SIZE - s.candidates().size()).toList())
-                db.update(
-                        "INSERT INTO observer_match(signup_id,observer_id,generated_date,match_status) VALUES (?,?,?,'PROPOSED')",
-                        s.signupId(),
-                        observerId,
-                        LocalDate.now(clock));
+            matches.saveAll(eligible.stream()
+                    .limit(LIST_SIZE - s.candidates().size())
+                    .map(observerId -> proposal(s.signupId(), observerId))
+                    .toList());
         }
+    }
+
+    private ObserverMatch proposal(int signupId, int observerId) {
+        return new ObserverMatch(null, signupId, observerId, LocalDate.now(clock), "PROPOSED");
     }
 
     static int level(String number) {
@@ -756,37 +650,18 @@ public class ObserverEligibilityService {
     }
 
     private List<Integer> eligible(Signup signup, Cycle c, boolean remainingDatesOnly) {
-        var target = db.queryForMap("""
-                SELECT p.department_id, co.course_number FROM professor p, course_section s
-                JOIN course co ON co.course_id=s.course_id WHERE p.professor_id=? AND s.section_id=?
-                """, signup.professorId(), signup.section().sectionId());
-        int targetLevel = level((String) target.get("COURSE_NUMBER"));
+        var target = professors
+                .findEligibilityTarget(signup.professorId(), signup.section().sectionId())
+                .orElseThrow();
+        int targetLevel = level(target.courseNumber());
         if (targetLevel < 0) return List.of();
-        var pool = db.queryForList("""
-                SELECT DISTINCT ob.observer_id, p.professor_id FROM observer ob
-                JOIN professor p ON p.professor_id=ob.professor_id
-                JOIN observee oe ON oe.professor_id=p.professor_id AND oe.cycle_id=ob.cycle_id
-                JOIN evaluation_signup es ON es.observee_id=oe.observee_id
-                WHERE ob.cycle_id=? AND ob.active_status=TRUE AND p.active_status=TRUE
-                AND p.department_id=? AND p.professor_id<>? AND es.status<>'CANCELLED'
-                """, c.cycleId(), target.get("DEPARTMENT_ID"), signup.professorId());
+        var pool = observers.findEligibilityPool(c.cycleId(), target.departmentId(), signup.professorId());
         List<Integer> result = new ArrayList<>();
         for (var row : pool) {
-            int id = ((Number) row.get("PROFESSOR_ID")).intValue();
+            int id = row.professorId();
             var assignments = sections(id, c);
-            boolean teachesLevel = db
-                    .queryForList(
-                            """
-                    SELECT co.course_number FROM teaching_history t JOIN course_section s ON s.section_id=t.section_id
-                    JOIN course co ON co.course_id=s.course_id
-                    JOIN semester taught_sem ON taught_sem.semester_id=s.semester_id
-                    WHERE t.professor_id=? AND taught_sem.start_date<=? AND taught_sem.end_date>=? AND co.department_id=?
-                    """,
-                            String.class,
-                            id,
-                            c.startDate(),
-                            c.startDate().minusYears(2),
-                            target.get("DEPARTMENT_ID"))
+            boolean teachesLevel = teachingHistory
+                    .findCourseNumbersTaught(id, c.startDate(), c.startDate().minusYears(2), target.departmentId())
                     .stream()
                     .anyMatch(n -> level(n) == targetLevel);
             if (!teachesLevel) continue;
@@ -808,7 +683,7 @@ public class ObserverEligibilityService {
                                     ? LocalDate.now(clock)
                                     : signup.windowStart(),
                             signup.windowEnd(),
-                            blocked)) result.add(((Number) row.get("OBSERVER_ID")).intValue());
+                            blocked)) result.add(row.observerId());
         }
         return result;
     }
@@ -863,7 +738,7 @@ public class ObserverEligibilityService {
         if (s.candidates().stream().anyMatch(p -> !eligible.contains(p.observerId())))
             throw new ConflictException(
                     "A candidate is no longer eligible. Review the teaching schedule before release.");
-        db.update("UPDATE observer_list_state SET released_at=? WHERE signup_id=?", LocalDateTime.now(clock), signupId);
+        listStates.markReleased(signupId, LocalDateTime.now(clock));
         boolean replacement = !candidates(signupId, "SUPERSEDED").isEmpty();
         notify(
                 s.professorId(),
@@ -878,15 +753,11 @@ public class ObserverEligibilityService {
      * observation an accepted request would, without the observee asking or the observer responding.
      */
     public void assign(int signupId, int observerId) {
-        int cycleId = cycleIdOf(signupId);
+        var owner = owner(signupId);
         // Same lock order as course selection and request sends: professor, signup, then cycle.
-        db.queryForObject(
-                "SELECT professor_id FROM professor WHERE professor_id=? FOR UPDATE",
-                Integer.class,
-                signupOwner(signupId));
-        db.queryForObject(
-                "SELECT signup_id FROM evaluation_signup WHERE signup_id=? FOR UPDATE", Integer.class, signupId);
-        Cycle c = lockCycle(cycleId);
+        professors.findForUpdateByProfessorId(owner.professorId()).orElseThrow();
+        evaluationSignups.findForUpdateBySignupId(signupId).orElseThrow();
+        Cycle c = lockCycle(owner.cycleId());
         if (!c.requestsOpen()) throw new ConflictException("The observation period is closed.");
         Signup s = managedSignup(signupId, c);
         requireNotDeferred(signupId);
@@ -907,25 +778,20 @@ public class ObserverEligibilityService {
         if (!matching.canAssign())
             throw new ConflictException(
                     "Every generated invitation must be declined or expired and no additional eligible observers can remain before manual assignment.");
-        var templates = db.queryForList(
-                "SELECT template_id FROM observation_template WHERE active_status=TRUE ORDER BY version DESC,template_id DESC",
-                Integer.class);
-        if (templates.isEmpty()) throw new ConflictException("Configure an active observation template first.");
+        var template = templates.findFirstByActiveStatusTrueOrderByVersionDescTemplateIdDesc();
+        if (template.isEmpty()) throw new ConflictException("Configure an active observation template first.");
         LocalDateTime now = LocalDateTime.now(clock);
-        db.update(
-                "INSERT INTO observer_request(signup_id,observer_id,request_date,expiration_date,response_date,status,assigned_by_ac) VALUES (?,?,?,?,?,'CONFIRMED',TRUE)",
+        observerRequests.save(new ObserverRequest(
+                null,
                 signupId,
                 observerId,
                 now,
                 now.plus(ObserverRequestService.DEFAULT_RESPONSE_WINDOW),
-                now);
-        db.update(
-                "INSERT INTO observation(signup_id,observer_id,template_id,status) VALUES (?,?,?,'ACCEPTED')",
-                signupId,
-                observerId,
-                templates.getFirst());
-        Person observer = person(
-                db.queryForObject("SELECT professor_id FROM observer WHERE observer_id=?", Integer.class, observerId));
+                now,
+                "CONFIRMED",
+                true));
+        observations.save(observation(signupId, observerId, template.get().templateId(), null, null, "ACCEPTED"));
+        Person observer = person(observers.findById(observerId).orElseThrow().professorId());
         notify(
                 s.professorId(),
                 signupId,
@@ -943,13 +809,10 @@ public class ObserverEligibilityService {
     public void defer(int signupId, int actorProfessorId, String reason) {
         if (reason == null || reason.isBlank() || reason.trim().length() > 1000)
             throw new IllegalArgumentException("Provide a reason of 1 to 1000 characters.");
-        db.queryForObject(
-                "SELECT professor_id FROM professor WHERE professor_id=? FOR UPDATE",
-                Integer.class,
-                signupOwner(signupId));
-        db.queryForObject(
-                "SELECT signup_id FROM evaluation_signup WHERE signup_id=? FOR UPDATE", Integer.class, signupId);
-        Cycle c = lockCycle(cycleIdOf(signupId));
+        var owner = signupOwner(signupId);
+        professors.findForUpdateByProfessorId(owner.professorId()).orElseThrow();
+        evaluationSignups.findForUpdateBySignupId(signupId).orElseThrow();
+        Cycle c = lockCycle(owner.cycleId());
         MatchingCase matching = acState(c).matchingCases().stream()
                 .filter(row -> row.signupId() == signupId)
                 .findFirst()
@@ -957,27 +820,16 @@ public class ObserverEligibilityService {
         if (!matching.canDefer())
             throw new ConflictException(
                     "Only an unmatched faculty member with no eligible observers can be deferred after signup closes.");
-        var next = db.queryForList("""
-                SELECT s.semester_id FROM semester s WHERE s.start_date >
-                (SELECT current_sem.end_date FROM semester current_sem WHERE current_sem.semester_id=?)
-                ORDER BY s.start_date,s.semester_id FETCH FIRST 1 ROW ONLY
-                """, Integer.class, c.semesterId());
-        if (next.isEmpty())
-            throw new ConflictException("Configure the next semester before deferring this evaluation.");
-        db.update(
-                "INSERT INTO evaluation_deferral(signup_id,professor_id,target_semester_id,reason,deferred_by,deferred_at) VALUES (?,?,?,?,?,?)",
-                signupId,
-                signupOwner(signupId),
-                next.getFirst(),
-                reason.trim(),
-                actorProfessorId,
-                LocalDateTime.now(clock));
-        db.update("UPDATE evaluation_signup SET status='DEFERRED' WHERE signup_id=?", signupId);
-        db.update(
-                "UPDATE observee SET status='DEFERRED' WHERE observee_id=(SELECT observee_id FROM evaluation_signup WHERE signup_id=?)",
-                signupId);
+        int next = semesters
+                .findNextSemesterId(c.semesterId())
+                .orElseThrow(
+                        () -> new ConflictException("Configure the next semester before deferring this evaluation."));
+        deferrals.insertDeferral(
+                signupId, owner.professorId(), next, reason.trim(), actorProfessorId, LocalDateTime.now(clock));
+        evaluationSignups.markDeferred(signupId);
+        observees.markDeferredBySignupId(signupId);
         notify(
-                signupOwner(signupId),
+                owner.professorId(),
                 signupId,
                 "The Assessment Committee marked your evaluation Due next semester ("
                         + deferral(signupId).targetSemester() + "). Reason: " + reason.trim());
@@ -990,19 +842,12 @@ public class ObserverEligibilityService {
                 .orElseThrow(() -> new NotFoundException("Signup not found."));
     }
 
-    private int signupOwner(int id) {
-        return db.queryForObject(
-                "SELECT oe.professor_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE es.signup_id=?",
-                Integer.class,
-                id);
+    private EvaluationSignupRepository.SignupOwnerRow signupOwner(int id) {
+        return evaluationSignups.findOwner(id).orElseThrow(() -> new EmptyResultDataAccessException(1));
     }
 
     private boolean released(int signupId) {
-        return db.queryForObject(
-                        "SELECT COUNT(*) FROM observer_list_state WHERE signup_id=? AND released_at IS NOT NULL",
-                        Integer.class,
-                        signupId)
-                > 0;
+        return listStates.existsBySignupIdAndReleasedAtIsNotNull(signupId);
     }
 
     /** Why the observee cannot request an observer for this signup yet, or null if nothing here prevents it. */
@@ -1029,8 +874,7 @@ public class ObserverEligibilityService {
     public void requestSent(int signupId, int observerId) {
         if (!manages(signupId)) return;
         Signup s = managedSignup(signupId, cycle(cycleIdOf(signupId)));
-        int recipient =
-                db.queryForObject("SELECT professor_id FROM observer WHERE observer_id=?", Integer.class, observerId);
+        int recipient = observers.findById(observerId).orElseThrow().professorId();
         notify(
                 recipient,
                 signupId,
@@ -1040,35 +884,21 @@ public class ObserverEligibilityService {
     }
 
     private List<Request> requests(Cycle c) {
-        db.update("""
-                UPDATE observer_request SET status='EXPIRED' WHERE status='PENDING' AND expiration_date<=?
-                AND signup_id IN (SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.cycle_id=?)
-                """, LocalDateTime.now(clock), c.cycleId());
-        return db.query(
-                """
-                SELECT r.request_id, r.signup_id, ob.professor_id, p.first_name || ' ' || p.last_name AS observee_name,
-                op.first_name || ' ' || op.last_name AS observer_name, r.status, s.*, co.course_code, co.course_number,
-                co.course_name, ls.window_start, ls.window_end, r.assigned_by_ac, o.observation_date FROM observer_request r
-                JOIN observer ob ON ob.observer_id=r.observer_id JOIN professor op ON op.professor_id=ob.professor_id
-                JOIN evaluation_signup es ON es.signup_id=r.signup_id JOIN observee oe ON oe.observee_id=es.observee_id
-                JOIN professor p ON p.professor_id=oe.professor_id JOIN course_section s ON s.section_id=es.section_id
-                JOIN course co ON co.course_id=s.course_id JOIN observer_list_state ls ON ls.signup_id=es.signup_id
-                LEFT JOIN observation o ON o.signup_id=r.signup_id AND o.observer_id=r.observer_id
-                WHERE oe.cycle_id=? ORDER BY r.request_id DESC
-                """,
-                (r, n) -> new Request(
-                        r.getInt("request_id"),
-                        r.getInt("signup_id"),
-                        r.getInt("professor_id"),
-                        r.getString("observee_name"),
-                        r.getString("observer_name"),
-                        section(r),
-                        date(r, "window_start"),
-                        date(r, "window_end"),
-                        r.getString("status"),
-                        date(r, "observation_date"),
-                        r.getBoolean("assigned_by_ac")),
-                c.cycleId());
+        observerRequests.expirePendingInCycle(LocalDateTime.now(clock), c.cycleId());
+        return observerRequests.findEligibilityRequests(c.cycleId()).stream()
+                .map(r -> new Request(
+                        r.requestId(),
+                        r.signupId(),
+                        r.professorId(),
+                        r.observeeName(),
+                        r.observerName(),
+                        section(r.section()),
+                        r.windowStart(),
+                        r.windowEnd(),
+                        r.status(),
+                        r.observationDate(),
+                        r.assignedByAc()))
+                .toList();
     }
 
     /** Each acceptance records that observer's observation without changing other requests. */
@@ -1077,11 +907,10 @@ public class ObserverEligibilityService {
     }
 
     public void respond(int professorId, int requestId, boolean accept, LocalDate observationDate) {
-        int signupId = db
-                .queryForList("SELECT signup_id FROM observer_request WHERE request_id=?", Integer.class, requestId)
-                .stream()
-                .findFirst()
+        var request = observerRequests
+                .findById(requestId)
                 .orElseThrow(() -> new NotFoundException("Observation request not found."));
+        int signupId = request.signupId();
         Cycle c = lockCycle(cycleIdOf(signupId));
         Request r = requests(c).stream()
                 .filter(x -> x.requestId() == requestId && x.professorId() == professorId)
@@ -1089,50 +918,45 @@ public class ObserverEligibilityService {
                 .orElseThrow(() -> new NotFoundException("Observation request not found."));
         if (!c.requestsOpen() || !"PENDING".equals(r.status()))
             throw new ConflictException("This request is no longer pending or the observation period is closed.");
-        int observer = db.queryForObject(
-                "SELECT observer_id FROM observer_request WHERE request_id=?", Integer.class, requestId);
+        int observer = request.observerId();
         if (accept) {
             if (!eligible(managedSignup(signupId, c), c).contains(observer))
                 throw new ConflictException("You are no longer eligible for this observation.");
-            if (db.queryForObject(
-                            "SELECT COUNT(*) FROM observation WHERE signup_id=? AND observer_id=?",
-                            Integer.class,
-                            signupId,
-                            observer)
-                    > 0) throw new ConflictException("This observer already has an observation for this signup.");
+            if (observations.findBySignupIdAndObserverId(signupId, observer).isPresent())
+                throw new ConflictException("This observer already has an observation for this signup.");
         }
-        var templates = db.queryForList(
-                "SELECT template_id FROM observation_template WHERE active_status=TRUE ORDER BY version DESC,template_id DESC",
-                Integer.class);
+        var template = templates.findFirstByActiveStatusTrueOrderByVersionDescTemplateIdDesc();
         if (accept && !availableDates(professorId, requestId).contains(observationDate))
             throw new IllegalArgumentException("Choose an available class date within the observation window.");
-        if (accept && templates.isEmpty())
+        if (accept && template.isEmpty())
             throw new ConflictException("Configure an active observation template first.");
-        db.update(
-                "UPDATE observer_request SET status=?,response_date=? WHERE request_id=?",
-                accept ? "CONFIRMED" : "DECLINED",
-                LocalDateTime.now(clock),
-                requestId);
+        observerRequests.updateStatusAndResponseDate(
+                requestId, accept ? "CONFIRMED" : "DECLINED", LocalDateTime.now(clock));
         if (accept)
-            db.update(
-                    "INSERT INTO observation(signup_id,observer_id,template_id,status,observation_date,start_time) VALUES (?,?,?,'SCHEDULED',?,?)",
+            observations.save(observation(
                     signupId,
                     observer,
-                    templates.getFirst(),
+                    template.get().templateId(),
                     observationDate,
-                    r.section().startTime());
+                    r.section().startTime(),
+                    "SCHEDULED"));
         notify(
-                signupOwner(signupId),
+                signupOwner(signupId).professorId(),
                 signupId,
                 r.observerName() + (accept ? " accepted" : " declined") + " your observation request for "
                         + r.section().label() + ".");
     }
 
+    private static Observation observation(
+            int signupId, int observerId, int templateId, LocalDate date, LocalTime startTime, String status) {
+        return new Observation(
+                null, signupId, observerId, templateId, date, startTime, status, false, false, null, null, null, null);
+    }
+
     private Request schedulingRequest(int professorId, int requestId) {
-        int signupId = db
-                .queryForList("SELECT signup_id FROM observer_request WHERE request_id=?", Integer.class, requestId)
-                .stream()
-                .findFirst()
+        int signupId = observerRequests
+                .findById(requestId)
+                .map(ObserverRequest::signupId)
                 .orElseThrow(() -> new NotFoundException("Observation request not found."));
         Cycle c = lockCycle(cycleIdOf(signupId));
         Request r = requests(c).stream()
@@ -1161,14 +985,7 @@ public class ObserverEligibilityService {
                             || (days(t.meetingDays()).contains(day)
                                     && t.startTime().isBefore(r.section().endTime())
                                     && r.section().startTime().isBefore(t.endTime())))) continue;
-            int conflicts = db.queryForObject(
-                    """
-                    SELECT COUNT(*) FROM observation o JOIN observer ob ON ob.observer_id=o.observer_id
-                    JOIN evaluation_signup es ON es.signup_id=o.signup_id JOIN course_section cs ON cs.section_id=es.section_id
-                    WHERE ob.professor_id=? AND o.signup_id<>? AND o.observation_date=?
-                    AND o.start_time<? AND cs.end_time>?
-                    """,
-                    Integer.class,
+            int conflicts = observations.countObserverTimeConflicts(
                     professorId,
                     r.signupId(),
                     d,
@@ -1184,24 +1001,17 @@ public class ObserverEligibilityService {
         if (!"CONFIRMED".equals(r.status())) throw new ConflictException("Accept the request before scheduling it.");
         if (!availableDates(professorId, requestId).contains(observationDate))
             throw new IllegalArgumentException("Choose an available class date within the observation window.");
-        int changed = db.update("""
-                UPDATE observation SET observation_date=?,start_time=?,status='SCHEDULED'
-                WHERE signup_id=? AND observer_id=(SELECT observer_id FROM observer_request WHERE request_id=?)
-                AND observation_date IS NULL AND status='ACCEPTED'
-                """, observationDate, r.section().startTime(), r.signupId(), requestId);
+        int changed = observations.scheduleAcceptedObservation(
+                r.signupId(), requestId, observationDate, r.section().startTime());
         if (changed != 1) throw new ConflictException("This observation has already been scheduled or started.");
         notify(
-                signupOwner(r.signupId()),
+                signupOwner(r.signupId()).professorId(),
                 r.signupId(),
                 r.observerName() + " scheduled your observation for " + observationDate + ".");
     }
 
     private void notify(int professorId, int signupId, String message) {
-        db.update(
-                "INSERT INTO observer_notification(professor_id,signup_id,message,created_at) VALUES (?,?,?,?)",
-                professorId,
-                signupId,
-                message,
-                LocalDateTime.now(clock));
+        observerNotifications.save(
+                new ObserverNotification(null, professorId, signupId, message, LocalDateTime.now(clock)));
     }
 }

@@ -1,5 +1,16 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.completed;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.newFeedback;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observerOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.signupOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withFeedbackDeadline;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withObservationDeadline;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withReleasedAt;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
+import static java.util.Comparator.comparing;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.everyItem;
@@ -12,6 +23,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverListState;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverMatch;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -19,8 +40,11 @@ import edu.utdallas.cs4485.assessmenthelper.service.ObserverEligibilityService;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +54,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -102,7 +126,16 @@ class AcDashboardIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private JdbcAggregateTemplate db;
+
+    @Autowired
+    private ObserveeRepository observees;
+
+    @Autowired
+    private ObservationRepository observations;
+
+    @Autowired
+    private ObserverNotificationRepository notifications;
 
     @Autowired
     private MovableClock clock;
@@ -143,7 +176,8 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath("$.surveyCompletion.total").value(8));
 
         // A deferred observee is not offered the survey, so neither their answer nor their place counts.
-        db.update("UPDATE observee SET status = 'DEFERRED' WHERE professor_id = ? AND cycle_id = 1", ARLO);
+        Observee arlo = only(observees.findByProfessorId(ARLO), o -> o.cycleId() == 1);
+        db.update(new Observee(arlo.observeeId(), arlo.professorId(), arlo.cycleId(), "DEFERRED"));
         // Feedback from someone who is not an observee this cycle is not counted either.
         submitFeedback(HOLLIS);
         metrics()
@@ -155,15 +189,12 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath("$.surveyStatus").value("CLOSED"))
                 .andExpect(jsonPath("$.surveyCompletion.count").value(1));
 
-        db.update("UPDATE evaluation_cycle SET feedback_deadline = NULL WHERE cycle_id = 1");
+        updateCycle(c -> withFeedbackDeadline(c, null));
         metrics().andExpect(jsonPath("$.surveyStatus").value("UNCONFIGURED"));
     }
 
     private void submitFeedback(int professorId) {
-        db.update("""
-                INSERT INTO process_feedback (cycle_id, professor_id, overall_rating, submitted_date)
-                VALUES (1, ?, 4, DATE '2026-11-16')
-                """, professorId);
+        db.insert(newFeedback(1, professorId, null, 4, LocalDate.parse("2026-11-16")));
     }
 
     @Test
@@ -175,18 +206,14 @@ class AcDashboardIntegrationTests {
     @Test
     void participationCountsDueFacultyWhoseSignupIsNotCancelled() throws Exception {
         // Hollis is due. His new signup has no generated list yet, so it is not one of the cycle's matched signups.
-        db.update("INSERT INTO observee (professor_id, cycle_id, status) VALUES (?, 1, 'ACTIVE')", HOLLIS);
-        db.update("""
-                INSERT INTO evaluation_signup (observee_id, section_id, signup_date, status)
-                VALUES ((SELECT observee_id FROM observee WHERE professor_id = ? AND cycle_id = 1), 284,
-                    DATE '2026-10-26', 'PENDING')
-                """, HOLLIS);
+        Observee hollis = db.insert(new Observee(null, HOLLIS, 1, "ACTIVE"));
+        db.insert(new EvaluationSignup(null, hollis.observeeId(), 284, LocalDate.parse("2026-10-26"), "PENDING"));
         metrics()
                 .andExpect(jsonPath("$.participation.count").value(6))
                 .andExpect(jsonPath("$.participation.total").value(13))
                 .andExpect(jsonPath("$.observerUtilization.total").value(8));
 
-        db.update("UPDATE evaluation_signup SET status = 'CANCELLED' WHERE signup_id = ?", signupOf(ARLO));
+        cancelSignup(ARLO);
         metrics()
                 .andExpect(jsonPath("$.participation.count").value(5))
                 .andExpect(jsonPath("$.observerUtilization.total").value(7))
@@ -200,7 +227,7 @@ class AcDashboardIntegrationTests {
         expectMissing(0); // The scheduled date alone does not make anything missing.
         clock.set("2026-11-15T15:00:00Z");
         expectMissing(0);
-        db.update("UPDATE observation SET status='SUBMITTED' WHERE signup_id=?", signupOf(LEANDER));
+        setObservationStatus(LEANDER, "SUBMITTED");
         String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
         observations().andExpect(jsonPath(leander + ".status").value("PENDING_SIGN_OFF"));
         clock.set("2026-11-16T15:00:00Z");
@@ -210,15 +237,15 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath(leander + ".missingReason").value("Not signed"))
                 .andExpect(jsonPath("$.observations[?(@.observeeId == " + AVERY + ")].missingReason")
                         .value("Not scheduled - awaiting observer"));
-        db.update("UPDATE observation SET status='Completed' WHERE signup_id=?", signupOf(LEANDER));
+        setObservationStatus(LEANDER, "Completed");
         expectMissing(7);
-        db.update("UPDATE evaluation_cycle SET observation_deadline=NULL WHERE cycle_id=1");
+        updateCycle(c -> withObservationDeadline(c, null));
         expectMissing(0);
     }
 
     @Test
     void submittedFormsRemindOnlyTheObserveeBeforeAndAfterTheDeadline() throws Exception {
-        db.update("UPDATE observation SET status='SUBMITTED' WHERE signup_id=?", signupOf(LEANDER));
+        setObservationStatus(LEANDER, "SUBMITTED");
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(2));
         assertThat(remindersFor(KEIRA)).isEmpty();
         assertThat(remindersFor(LEANDER)).singleElement().asString().contains("review and sign");
@@ -226,24 +253,22 @@ class AcDashboardIntegrationTests {
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(2));
         assertThat(remindersFor(LEANDER)).hasSize(2);
         assertThat(remindersFor(KEIRA)).isEmpty();
-        db.update("UPDATE observation SET status='COMPLETED' WHERE signup_id=?", signupOf(LEANDER));
+        setObservationStatus(LEANDER, "COMPLETED");
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(1));
         assertThat(remindersFor(LEANDER)).hasSize(2);
     }
 
     @Test
     void listSufficiencyCountsListsFilledToTheListSize() throws Exception {
-        int leander = signupOf(LEANDER);
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observer_match WHERE signup_id = ?", Integer.class, leander))
-                .isEqualTo(ObserverEligibilityService.LIST_SIZE - 1);
+        int leander = signupOf(db, LEANDER);
+        assertThat(db.findAll(ObserverMatch.class))
+                .filteredOn(match -> match.signupId() == leander)
+                .hasSize(ObserverEligibilityService.LIST_SIZE - 1);
         metrics()
                 .andExpect(jsonPath("$.listSize").value(ObserverEligibilityService.LIST_SIZE))
                 .andExpect(jsonPath("$.listSufficiency.count").value(0));
 
-        db.update(
-                "INSERT INTO observer_match (signup_id, observer_id, generated_date, match_status) VALUES (?, ?, DATE '2026-10-26', 'PROPOSED')",
-                leander,
-                observerOf(ARLO));
+        db.insert(new ObserverMatch(null, leander, observerOf(db, ARLO), LocalDate.parse("2026-10-26"), "PROPOSED"));
         metrics()
                 .andExpect(jsonPath("$.listSufficiency.count").value(1))
                 .andExpect(jsonPath("$.listSufficiency.total").value(8));
@@ -262,10 +287,8 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath(leander + ".observer").value("Keira Larkspur"))
                 .andExpect(jsonPath(leander + ".observerId").value(KEIRA))
                 .andExpect(jsonPath(leander + ".observationId")
-                        .value(db.queryForObject(
-                                "SELECT o.observation_id FROM observation o JOIN evaluation_signup es ON es.signup_id=o.signup_id JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=? AND oe.cycle_id=1",
-                                Integer.class,
-                                LEANDER)))
+                        .value(only(observations.findBySignupIdIn(List.of(signupOf(db, LEANDER))))
+                                .observationId()))
                 .andExpect(jsonPath(leander + ".course").value("CS 3345.001"))
                 .andExpect(jsonPath(leander + ".date").value("2026-11-04"))
                 .andExpect(jsonPath(leander + ".startTime").value("08:30:00"))
@@ -285,9 +308,7 @@ class AcDashboardIntegrationTests {
         clock.set("2026-11-16T15:00:00Z");
         observations().andExpect(jsonPath(leander).value("MISSING"));
 
-        db.update(
-                "UPDATE observation SET status = 'COMPLETED', observee_signed = TRUE, completed_at = TIMESTAMP '2026-11-04 10:00:00' WHERE signup_id = ?",
-                signupOf(LEANDER));
+        updateObservations(LEANDER, o -> completed(o, LocalDateTime.parse("2026-11-04T10:00:00")));
         observations()
                 .andExpect(jsonPath(leander).value("COMPLETED"))
                 .andExpect(jsonPath("$.observations[?(@.observeeId == " + LEANDER + ")].observeeSigned")
@@ -298,7 +319,7 @@ class AcDashboardIntegrationTests {
                         .value("2026-11-04T10:00:00"));
 
         // A cancelled signup leaves the list, as it leaves the dashboard's counts.
-        db.update("UPDATE evaluation_signup SET status = 'CANCELLED' WHERE signup_id = ?", signupOf(ARLO));
+        cancelSignup(ARLO);
         observations().andExpect(jsonPath("$.observations.length()").value(7));
     }
 
@@ -330,24 +351,22 @@ class AcDashboardIntegrationTests {
                 .containsExactly(
                         "Reminder from the Assessment Committee: complete and submit your observation of Leander Coldwell's CS 3345.001 by the observation deadline, Nov 15.");
 
-        db.update("UPDATE observation SET status = 'COMPLETED' WHERE signup_id = ?", signupOf(LEANDER));
+        setObservationStatus(LEANDER, "COMPLETED");
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(1));
         assertThat(remindersFor(KEIRA)).hasSize(1);
     }
 
     @Test
     void anUndatedObservationIsAskedToBeScheduled() throws Exception {
-        db.update(
-                "UPDATE observation SET observation_date = NULL, start_time = NULL WHERE signup_id = ?",
-                signupOf(LEANDER));
+        updateObservations(LEANDER, o -> withPlan(o, null, null));
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
         assertThat(remindersFor(KEIRA)).singleElement().asString().contains("schedule the observation and submit");
     }
 
     @Test
     void remindersLeaveOutATimeOrDeadlineThatIsNotSet() throws Exception {
-        db.update("UPDATE observation SET start_time = NULL WHERE signup_id = ?", signupOf(LEANDER));
-        db.update("UPDATE evaluation_cycle SET observation_deadline = NULL WHERE cycle_id = 1");
+        updateObservations(LEANDER, o -> withPlan(o, o.observationDate(), null));
+        updateCycle(c -> withObservationDeadline(c, null));
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
         assertThat(remindersFor(KEIRA))
                 .containsExactly(
@@ -384,9 +403,11 @@ class AcDashboardIntegrationTests {
     }
 
     private List<String> remindersFor(int professorId) {
-        return db.queryForList(
-                "SELECT message FROM observer_notification WHERE professor_id = ? AND message LIKE 'Reminder%' ORDER BY notification_id",
-                String.class, professorId);
+        return notifications.findByProfessorId(professorId).stream()
+                .sorted(comparing(ObserverNotification::notificationId))
+                .map(ObserverNotification::message)
+                .filter(message -> message.startsWith("Reminder"))
+                .toList();
     }
 
     private ResultActions expectMissing(int count) throws Exception {
@@ -395,22 +416,26 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath("$.missingObservations").value(count));
     }
 
-    private int signupOf(int professorId) {
-        return db.queryForObject("""
-                SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id = es.observee_id
-                WHERE oe.professor_id = ? AND oe.cycle_id = 1
-                """, Integer.class, professorId);
+    private void cancelSignup(int professorId) {
+        db.update(withStatus(db.findById(signupOf(db, professorId), EvaluationSignup.class), "CANCELLED"));
     }
 
-    private int observerOf(int professorId) {
-        return db.queryForObject(
-                "SELECT observer_id FROM observer WHERE professor_id = ? AND cycle_id = 1", Integer.class, professorId);
+    private void updateCycle(UnaryOperator<EvaluationCycle> change) {
+        db.update(change.apply(db.findById(1, EvaluationCycle.class)));
+    }
+
+    private void setObservationStatus(int professorId, String status) {
+        updateObservations(professorId, o -> withStatus(o, status));
+    }
+
+    private void updateObservations(int professorId, UnaryOperator<Observation> change) {
+        observations.findBySignupIdIn(List.of(signupOf(db, professorId))).forEach(o -> db.update(change.apply(o)));
     }
 
     @Test
     void deferredCasesAreTrackedSeparatelySkippedByRemindersAndVisibleInHistory() throws Exception {
         clock.set("2026-11-02T15:00:00Z");
-        int signup = signupOf(27);
+        int signup = signupOf(db, 27);
         matching.defer(signup, 12, "No graduate-level observers available");
         observations()
                 .andExpect(
@@ -423,12 +448,11 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath("$.observerUtilization.total").value(7))
                 .andExpect(jsonPath("$.observerUtilization.count").value(1))
                 .andExpect(jsonPath("$.listSufficiency.total").value(7));
-        db.update("UPDATE observer_list_state SET released_at='2026-11-02T09:00:00' WHERE signup_id=?", signup);
-        int before =
-                db.queryForObject("SELECT COUNT(*) FROM observer_notification WHERE professor_id=27", Integer.class);
+        db.update(withReleasedAt(
+                db.findById(signup, ObserverListState.class), LocalDateTime.parse("2026-11-02T09:00:00")));
+        int before = notifications.findByProfessorId(27).size();
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observer_notification WHERE professor_id=27", Integer.class))
-                .isEqualTo(before);
+        assertThat(notifications.findByProfessorId(27)).hasSize(before);
         clock.set("2027-01-20T15:00:00Z");
         mvc.perform(get("/api/professors/27/evaluations").with(user(KAIA)))
                 .andExpect(status().isOk())

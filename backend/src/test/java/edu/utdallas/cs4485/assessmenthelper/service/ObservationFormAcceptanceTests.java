@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService.Answer;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService.Status;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationService.ViewerRole;
@@ -12,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.access.AccessDeniedException;
@@ -25,6 +28,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Import(AcceptanceSupport.Time.class)
 @Transactional
 class ObservationFormAcceptanceTests extends AcceptanceSupport {
+    @Autowired
+    private ObservationRepository observationRecords;
+
+    @Autowired
+    private ObserverNotificationRepository notifications;
 
     // ---------- US29: the form ----------
 
@@ -32,8 +40,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     void us29_theFormShowsTheTemplateTheObservationWasCreatedWith() {
         int obs = observationId();
         var detail = observations.detail(obs, keira());
-        int templateId =
-                db.queryForObject("SELECT template_id FROM observation WHERE observation_id = ?", Integer.class, obs);
+        int templateId = observationRecords.findById(obs).orElseThrow().templateId();
 
         assertThat(detail.template().templateId()).isEqualTo(templateId);
         assertThat(detail.template().templateName()).isEqualTo("Standard Classroom Observation");
@@ -364,10 +371,10 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
         keiraSubmits(obs);
 
         assertThat(notificationCount(LEANDER)).isEqualTo(before + 1);
-        String latest = db.queryForObject(
-                "SELECT message FROM observer_notification WHERE professor_id = ? ORDER BY notification_id DESC LIMIT 1",
-                String.class,
-                LEANDER);
+        String latest = notifications
+                .findByProfessorIdOrderByNotificationIdDesc(LEANDER)
+                .getFirst()
+                .message();
         assertThat(latest).contains("submitted the observation").contains("sign off");
     }
 

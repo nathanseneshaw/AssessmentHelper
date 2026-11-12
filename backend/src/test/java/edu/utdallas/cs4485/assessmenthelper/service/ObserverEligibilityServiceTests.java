@@ -1,17 +1,48 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.cycleOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.firstTemplateId;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.newObservation;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observerOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.professor;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.signupOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withDepartment;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withObservationDeadline;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withReleasedAt;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withSignupDeadline;
 import static org.assertj.core.api.Assertions.*;
 
-import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository;
+import edu.utdallas.cs4485.assessmenthelper.entity.CourseSection;
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObservationTemplate;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observer;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverListState;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverMatch;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverRequest;
+import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
+import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
+import edu.utdallas.cs4485.assessmenthelper.entity.TeachingHistory;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverMatchRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.TeachingHistoryRepository;
 import java.time.*;
 import java.util.*;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 /**
  * Runs on data.sql's Fall 2026 demo. Dario (34) teaches CS 3345.005 (section 298, TR 13:00-14:15) and has not signed
@@ -24,7 +55,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
     ObserverEligibilityService.class,
     EvaluationSignupService.class,
     ObserverRequestService.class,
-    ObserverRequestContextRepository.class,
     ObserverEligibilityServiceTests.Time.class
 })
 class ObserverEligibilityServiceTests {
@@ -50,7 +80,22 @@ class ObserverEligibilityServiceTests {
     ObserverRequestService requests;
 
     @Autowired
-    JdbcTemplate db;
+    JdbcAggregateTemplate db;
+
+    @Autowired
+    ObserverRepository observers;
+
+    @Autowired
+    ObserverMatchRepository matches;
+
+    @Autowired
+    ObserverRequestRepository observerRequests;
+
+    @Autowired
+    ObservationRepository observations;
+
+    @Autowired
+    TeachingHistoryRepository teaching;
 
     int signup(int professorId, int sectionId) {
         return signups.save(professorId, FALL_2026, sectionId, null).signupId();
@@ -95,33 +140,90 @@ class ObserverEligibilityServiceTests {
     }
 
     void invitation(int signupId, int professorId, String status, LocalDateTime expires) {
-        int observerId = db.queryForObject(
-                "SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1", Integer.class, professorId);
-        db.update(
-                "INSERT INTO observer_request(signup_id,observer_id,request_date,expiration_date,status) VALUES (?,?,?, ?,?)",
+        db.insert(new ObserverRequest(
+                null,
                 signupId,
-                observerId,
+                observerOf(db, professorId),
                 LocalDateTime.parse("2026-10-20T10:00:00"),
                 expires,
-                status);
+                null,
+                status,
+                false));
+    }
+
+    void signupDeadline(String date) {
+        db.update(withSignupDeadline(db.findById(1, EvaluationCycle.class), LocalDate.parse(date)));
+    }
+
+    void deactivateObservers() {
+        observers.findByCycleId(1).forEach(o -> db.update(inactive(o)));
+    }
+
+    void moveToDepartment(int professorId, int departmentId) {
+        db.update(withDepartment(db.findById(professorId, Professor.class), departmentId));
+    }
+
+    void releasedAt(int signupId, LocalDateTime releasedAt) {
+        db.update(withReleasedAt(db.findById(signupId, ObserverListState.class), releasedAt));
+    }
+
+    void deactivateTemplates() {
+        db.findAll(ObservationTemplate.class).forEach(t -> db.update(inactive(t)));
+    }
+
+    List<Observation> observationsOf(int signupId) {
+        return observations.findBySignupIdIn(List.of(signupId));
+    }
+
+    void updateSection(int sectionId, UnaryOperator<CourseSection> change) {
+        db.update(change.apply(db.findById(sectionId, CourseSection.class)));
+    }
+
+    void updateFall2026Sections(int professorId, UnaryOperator<CourseSection> change) {
+        for (var t : teaching.findByProfessorId(professorId))
+            if (db.findById(t.sectionId(), CourseSection.class).semesterId() == FALL_2026)
+                updateSection(t.sectionId(), change);
+    }
+
+    static CourseSection withSchedule(CourseSection s, String meetingDays, LocalTime startTime, LocalTime endTime) {
+        return new CourseSection(
+                s.sectionId(),
+                s.courseId(),
+                s.semesterId(),
+                s.sectionNumber(),
+                meetingDays,
+                startTime,
+                endTime,
+                s.location());
+    }
+
+    void setStatus(ObserverRequest r, String status) {
+        db.update(new ObserverRequest(
+                r.requestId(),
+                r.signupId(),
+                r.observerId(),
+                r.requestDate(),
+                r.expirationDate(),
+                r.responseDate(),
+                status,
+                r.assignedByAc()));
     }
 
     @Test
     void matchingUsesTheFullEligiblePoolInsteadOfTheStoredRecommendationCount() {
         int target = darioSignsUp();
-        db.update("DELETE FROM observer_match WHERE signup_id=?", target);
+        matches.deleteAll(matches.findBySignupId(target));
         var state = matching(target);
         assertThat(state.status()).isEqualTo("AWAITING_INVITATION");
         assertThat(state.reason()).isNull();
         assertThat(state.eligibleObserverCount()).isEqualTo(4);
-        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        deactivateObservers();
         assertThat(matching(target).reason()).isEqualTo("NO_ELIGIBLE_OBSERVERS");
     }
 
     @Test
     void sixEligibleObserversLeaveOneUnusedForKeirasReplacementList() {
-        int rowan = db.queryForObject(
-                "SELECT professor_id FROM professor WHERE email='rowan.cedarvale@example.edu'", Integer.class);
+        int rowan = professor(db, "rowan.cedarvale@example.edu").professorId();
         var eligible = service.eligibleObservers(KEIRA_SIGNUP).stream()
                 .map(ObserverEligibilityService.Candidate::professorId)
                 .toList();
@@ -146,7 +248,7 @@ class ObserverEligibilityServiceTests {
     @Test
     void staleRecommendationsDoNotHideTheAbsenceOfEligibleObservers() {
         int target = darioSignsUp();
-        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        deactivateObservers();
         assertThat(list(target).candidates()).isNotEmpty();
         assertThat(matching(target).status()).isEqualTo("UNMATCHED");
         assertThat(matching(target).reason()).isEqualTo("NO_ELIGIBLE_OBSERVERS");
@@ -192,7 +294,7 @@ class ObserverEligibilityServiceTests {
         invitation(target, LEANDER, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
         invitation(target, ARLO, "PENDING", LocalDateTime.parse("2026-10-21T10:00:01"));
         assertThat(matching(target).status()).isEqualTo("AWAITING_RESPONSE");
-        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        deactivateObservers();
         assertThat(matching(target).status()).isEqualTo("AWAITING_RESPONSE");
         invitation(target, KEIRA, "CONFIRMED", LocalDateTime.parse("2026-10-22T10:00:00"));
         assertThat(matching(target).status()).isEqualTo("MATCHED");
@@ -213,10 +315,7 @@ class ObserverEligibilityServiceTests {
                 .filter(id -> id != observerId)
                 .findFirst()
                 .orElseThrow();
-        db.update(
-                "INSERT INTO observation(signup_id,observer_id,template_id,status) VALUES (?,?,(SELECT MIN(template_id) FROM observation_template),'ACCEPTED')",
-                target,
-                another);
+        db.insert(newObservation(target, another, firstTemplateId(db), "ACCEPTED"));
         assertThat(service.acState().signups().stream().filter(s -> s.signupId() == target))
                 .hasSize(1);
         assertThat(service.acState().matchingCases().stream().filter(s -> s.signupId() == target))
@@ -224,9 +323,9 @@ class ObserverEligibilityServiceTests {
     }
 
     void releaseAfterDeadline(int signupId) {
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        signupDeadline("2026-10-20");
         service.release(signupId);
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-31' WHERE cycle_id=1");
+        signupDeadline("2026-10-31");
     }
 
     int exhaustedReleasedList() {
@@ -240,12 +339,17 @@ class ObserverEligibilityServiceTests {
     void addUnusedObservers(int count) {
         for (int i = 0; i < count; i++) {
             String email = "replacement-" + i + "@test.edu";
-            db.update("""
-                    INSERT INTO professor(department_id,professor_rank,first_name,last_name,email,hire_date,active_status)
-                    SELECT department_id,'FULL','Fresh',?,?,'2020-01-01',TRUE FROM professor WHERE professor_id=?
-                    """, "Observer" + i, email, DARIO);
-            int professor = db.queryForObject("SELECT professor_id FROM professor WHERE email=?", Integer.class, email);
-            db.update("INSERT INTO teaching_history(professor_id,section_id) VALUES (?,300)", professor);
+            int professor = db.insert(new Professor(
+                            null,
+                            db.findById(DARIO, Professor.class).departmentId(),
+                            "FULL",
+                            "Fresh",
+                            "Observer" + i,
+                            email,
+                            LocalDate.parse("2020-01-01"),
+                            true))
+                    .professorId();
+            db.insert(new TeachingHistory(null, professor, 300));
             signup(professor, 300);
         }
     }
@@ -254,8 +358,10 @@ class ObserverEligibilityServiceTests {
     void replacementBatchesAreCappedReviewedReleasedAndNeverReusePreviousRecommendations() {
         int target = exhaustedReleasedList();
         var original = candidateIds(target);
-        int originalMatch =
-                db.queryForObject("SELECT MIN(match_id) FROM observer_match WHERE signup_id=?", Integer.class, target);
+        int originalMatch = matches.findBySignupId(target).stream()
+                .mapToInt(ObserverMatch::matchId)
+                .min()
+                .orElseThrow();
         int notifications = notificationCount(DARIO);
         addUnusedObservers(7);
         service.regenerate(target);
@@ -337,7 +443,7 @@ class ObserverEligibilityServiceTests {
         exhaustForAssignment(target);
         service.assign(target, observer);
         assertThatThrownBy(() -> service.regenerate(target)).isInstanceOf(ConflictException.class);
-        db.update("UPDATE evaluation_cycle SET observation_deadline='2026-10-20' WHERE cycle_id=1");
+        observationDeadline("2026-10-20");
         assertThatThrownBy(() -> service.regenerate(target))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("observation period is closed");
@@ -351,7 +457,7 @@ class ObserverEligibilityServiceTests {
         int notifications = notificationCount(DARIO);
         service.regenerate(target);
         int replacement = candidateIds(target).getFirst();
-        db.update("UPDATE observer SET active_status=FALSE WHERE observer_id=?", replacement);
+        db.update(inactive(db.findById(replacement, Observer.class)));
         assertThatThrownBy(() -> releaseAfterDeadline(target))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("no longer eligible");
@@ -359,25 +465,12 @@ class ObserverEligibilityServiceTests {
         assertThat(notificationCount(DARIO)).isEqualTo(notifications);
     }
 
-    int signupOf(int professorId) {
-        return db.queryForObject("""
-                SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id
-                WHERE oe.professor_id=? AND oe.cycle_id=1
-                """, Integer.class, professorId);
-    }
-
-    int observerOf(int professorId) {
-        return db.queryForObject(
-                "SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1", Integer.class, professorId);
-    }
-
     int departmentOf(int professorId) {
-        return db.queryForObject(
-                "SELECT department_id FROM professor WHERE professor_id=?", Integer.class, professorId);
+        return db.findById(professorId, Professor.class).departmentId();
     }
 
     void observationDeadline(String date) {
-        db.update("UPDATE evaluation_cycle SET observation_deadline=? WHERE cycle_id=1", LocalDate.parse(date));
+        db.update(withObservationDeadline(db.findById(1, EvaluationCycle.class), LocalDate.parse(date)));
     }
 
     static ObserverEligibilityService.Deadlines deadlines(String signup, String observation, String feedback) {
@@ -392,37 +485,30 @@ class ObserverEligibilityServiceTests {
         assertThatThrownBy(() -> service.release(target))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("after the signup deadline");
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-21' WHERE cycle_id=1");
+        signupDeadline("2026-10-21");
         assertThat(service.cycle().candidateListsOpen()).isFalse();
         assertThatThrownBy(() -> service.release(target)).isInstanceOf(ConflictException.class);
         assertThat(list(target).released()).isFalse();
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        signupDeadline("2026-10-20");
         assertThat(service.cycle().candidateListsOpen()).isTrue();
         service.release(target);
         assertThat(list(target).released()).isTrue();
     }
 
     void historicalCourse(int professorId, LocalDate start, LocalDate end) {
-        db.update(
-                "INSERT INTO semester (term, academic_year, start_date, end_date) VALUES ('History test', ?, ?, ?)",
-                start.getYear(),
-                start,
-                end);
-        int semester = db.queryForObject("SELECT MAX(semester_id) FROM semester", Integer.class);
-        int course = db.queryForObject("SELECT course_id FROM course_section WHERE section_id=298", Integer.class);
-        db.update(
-                "INSERT INTO course_section (course_id, semester_id, section_number, meeting_days, start_time, end_time) VALUES (?, ?, 'HIST', 'TR', '13:00:00', '14:15:00')",
-                course,
-                semester);
-        int section = db.queryForObject("SELECT MAX(section_id) FROM course_section", Integer.class);
-        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (?, ?)", professorId, section);
+        int semester = db.insert(new Semester(null, "History test", start.getYear(), start, end))
+                .semesterId();
+        int course = db.findById(298, CourseSection.class).courseId();
+        int section = db.insert(new CourseSection(
+                        null, course, semester, "HIST", "TR", LocalTime.of(13, 0), LocalTime.of(14, 15), null))
+                .sectionId();
+        db.insert(new TeachingHistory(null, professorId, section));
     }
 
     void clearPriorTeaching(int professorId) {
-        db.update(
-                "DELETE FROM teaching_history WHERE professor_id=? AND section_id IN (SELECT section_id FROM course_section WHERE semester_id<>?)",
-                professorId,
-                FALL_2026);
+        teaching.deleteAll(teaching.findByProfessorId(professorId).stream()
+                .filter(t -> db.findById(t.sectionId(), CourseSection.class).semesterId() != FALL_2026)
+                .toList());
     }
 
     @Test
@@ -499,10 +585,7 @@ class ObserverEligibilityServiceTests {
         // Fall 2026 starts on Aug 24.
         assertThatThrownBy(() -> service.updateDeadlines(1, deadlines("2026-08-23", "2026-11-20", "2026-12-05")))
                 .isInstanceOf(IllegalArgumentException.class);
-        int fall2025 = db.queryForObject("""
-                SELECT c.cycle_id FROM evaluation_cycle c JOIN semester s ON s.semester_id=c.semester_id
-                WHERE s.term='Fall' AND s.academic_year=2025
-                """, Integer.class);
+        int fall2025 = cycleOf(db, "Fall", 2025);
         assertThatThrownBy(() -> service.updateDeadlines(fall2025, deadlines("2025-10-31", "2025-11-15", "2025-12-01")))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("current evaluation cycle");
@@ -530,18 +613,18 @@ class ObserverEligibilityServiceTests {
     void releaseSkipsASentListAndRefusesStaleClosedOrAssignedOnes() {
         // Leander's list went out in data.sql, so sending it again changes nothing.
         int before = notificationCount(LEANDER);
-        service.release(signupOf(LEANDER));
+        service.release(signupOf(db, LEANDER));
         assertThat(notificationCount(LEANDER)).isEqualTo(before);
 
         int dario = darioSignsUp();
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        signupDeadline("2026-10-20");
         // Arlo moves to another department after the list was generated.
         int department = departmentOf(ARLO);
-        db.update("UPDATE professor SET department_id = 2 WHERE professor_id = ?", ARLO);
+        moveToDepartment(ARLO, 2);
         assertThatThrownBy(() -> service.release(dario))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("no longer eligible");
-        db.update("UPDATE professor SET department_id = ? WHERE professor_id = ?", department, ARLO);
+        moveToDepartment(ARLO, department);
 
         observationDeadline("2026-10-20");
         assertThatThrownBy(() -> service.release(dario))
@@ -550,9 +633,9 @@ class ObserverEligibilityServiceTests {
         observationDeadline("2026-11-15");
 
         exhaustForAssignment(dario);
-        service.assign(dario, observerOf(ARLO));
+        service.assign(dario, observerOf(db, ARLO));
         // An assigned observation cannot release a stale, unreleased list.
-        db.update("UPDATE observer_list_state SET released_at=NULL WHERE signup_id=?", dario);
+        releasedAt(dario, null);
         assertThatThrownBy(() -> service.release(dario))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("already assigned");
@@ -561,10 +644,10 @@ class ObserverEligibilityServiceTests {
 
     @Test
     void aSignupWithNoEligibleObserversCannotBeReleased() {
-        db.update("UPDATE observer SET active_status = FALSE WHERE cycle_id = 1");
+        deactivateObservers();
         int dario = darioSignsUp();
         assertThat(list(dario).candidates()).isEmpty();
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        signupDeadline("2026-10-20");
         assertThatThrownBy(() -> service.release(dario))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("No eligible observers");
@@ -575,32 +658,31 @@ class ObserverEligibilityServiceTests {
     void assignRefusesWithoutAFormOrOnceThePeriodCloses() {
         int dario = darioSignsUp();
         exhaustForAssignment(dario);
-        db.update("UPDATE observation_template SET active_status = FALSE");
-        assertThatThrownBy(() -> service.assign(dario, observerOf(LEANDER)))
+        deactivateTemplates();
+        assertThatThrownBy(() -> service.assign(dario, observerOf(db, LEANDER)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("active observation template");
         observationDeadline("2026-10-20");
-        assertThatThrownBy(() -> service.assign(dario, observerOf(LEANDER)))
+        assertThatThrownBy(() -> service.assign(dario, observerOf(db, LEANDER)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("observation period is closed");
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, dario))
-                .isZero();
+        assertThat(observationsOf(dario)).isEmpty();
     }
 
     @Test
     void acceptingRechecksEligibilityAndTheFormButDecliningDoesNot() {
         int target = darioSignsUp();
         releaseAfterDeadline(target);
-        var request = requests.create(target, observerOf(ARLO), null);
+        var request = requests.create(target, observerOf(db, ARLO), null);
 
         int department = departmentOf(ARLO);
-        db.update("UPDATE professor SET department_id = 2 WHERE professor_id = ?", ARLO);
+        moveToDepartment(ARLO, 2);
         assertThatThrownBy(() -> service.respond(ARLO, request.requestId(), true, LocalDate.of(2026, 11, 3)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("no longer eligible");
-        db.update("UPDATE professor SET department_id = ? WHERE professor_id = ?", department, ARLO);
+        moveToDepartment(ARLO, department);
 
-        db.update("UPDATE observation_template SET active_status = FALSE");
+        deactivateTemplates();
         assertThatThrownBy(() -> service.respond(ARLO, request.requestId(), true, LocalDate.of(2026, 11, 3)))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("active observation template");
@@ -613,20 +695,15 @@ class ObserverEligibilityServiceTests {
 
         // Declining creates no observation, so it needs no form.
         service.respond(ARLO, request.requestId(), false);
-        assertThat(db.queryForObject(
-                        "SELECT status FROM observer_request WHERE request_id=?", String.class, request.requestId()))
+        assertThat(db.findById(request.requestId(), ObserverRequest.class).status())
                 .isEqualTo("DECLINED");
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, target))
-                .isZero();
+        assertThat(observationsOf(target)).isEmpty();
     }
 
     @Test
     void anObserverWithAnIncompleteTeachingScheduleIsNotACandidate() {
         // Leander's own Fall 2026 class loses its meeting days, so nobody can tell when he is free.
-        db.update("""
-                UPDATE course_section SET meeting_days = NULL WHERE semester_id = ?
-                    AND section_id IN (SELECT section_id FROM teaching_history WHERE professor_id = ?)
-                """, FALL_2026, LEANDER);
+        updateFall2026Sections(LEANDER, s -> withSchedule(s, null, s.startTime(), s.endTime()));
         assertThat(candidateProfessors(darioSignsUp())).doesNotContain(LEANDER).contains(ARLO);
     }
 
@@ -649,7 +726,7 @@ class ObserverEligibilityServiceTests {
         releaseAfterDeadline(dario);
         assertThat(service.facultyState(DARIO).signup().candidates()).hasSize(4);
         // Hollis becomes eligible by teaching a CS 3345 section (TR 17:30), but Dario's list has been sent.
-        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (?, 300)", HOLLIS);
+        db.insert(new TeachingHistory(null, HOLLIS, 300));
         signup(HOLLIS, 284);
         assertThat(candidateIds(dario)).containsExactlyElementsOf(darioIds);
     }
@@ -657,12 +734,12 @@ class ObserverEligibilityServiceTests {
     @Test
     void filtersDepartmentLevelActivitySemesterAndTeachingOverlap() {
         clearPriorTeaching(HOLLIS);
-        db.update("UPDATE professor SET department_id = 2 WHERE professor_id = ?", ARLO);
-        db.update("UPDATE professor SET active_status = FALSE WHERE professor_id = ?", AVERY);
-        db.update("UPDATE observer SET active_status = FALSE WHERE professor_id = ? AND cycle_id = 1", KEIRA);
+        moveToDepartment(ARLO, 2);
+        db.update(inactive(db.findById(AVERY, Professor.class)));
+        observers.findByProfessorIdAndCycleId(KEIRA, 1).forEach(o -> db.update(inactive(o)));
         // Hollis teaches only 2000-level courses; Ansel's CS 3345 section is in Spring 2027.
         signup(HOLLIS, 284);
-        db.update("INSERT INTO teaching_history (professor_id, section_id) VALUES (?, 322)", ANSEL);
+        db.insert(new TeachingHistory(null, ANSEL, 322));
         signup(ANSEL, 290);
         int dario = darioSignsUp();
         assertThat(candidateProfessors(dario)).containsExactly(LEANDER);
@@ -700,8 +777,7 @@ class ObserverEligibilityServiceTests {
         service.respond(firstProfessor, request.requestId(), false);
         assertThat(requests.create(target, second, null).requestId()).isEqualTo(next.requestId());
         service.respond(secondProfessor, next.requestId(), true, dateFor(next.requestId()));
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, target))
-                .isEqualTo(1);
+        assertThat(observationsOf(target)).hasSize(1);
         assertThat(options(DARIO).unavailableReason())
                 .isEqualTo("An observation is already scheduled for this signup.");
         assertThatThrownBy(() -> requests.create(target, candidates.get(2).observerId(), null))
@@ -721,8 +797,7 @@ class ObserverEligibilityServiceTests {
         assertThat(requests.confirm(request.requestId(), dateFor(request.requestId()))
                         .status())
                 .isEqualTo("CONFIRMED");
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, target))
-                .isEqualTo(1);
+        assertThat(observationsOf(target)).hasSize(1);
         assertThatThrownBy(() -> requests.confirm(request.requestId())).isInstanceOf(ConflictException.class);
     }
 
@@ -739,7 +814,7 @@ class ObserverEligibilityServiceTests {
         assertThatThrownBy(() -> signups.save(DARIO, FALL_2026, 298, LocalDate.of(2026, 11, 1)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no class meetings");
-        db.update("UPDATE course_section SET meeting_days = NULL WHERE section_id = 284");
+        updateSection(284, s -> withSchedule(s, null, s.startTime(), s.endTime()));
         assertThatThrownBy(() -> signup(HOLLIS, 284))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("incomplete meeting schedule");
@@ -754,18 +829,19 @@ class ObserverEligibilityServiceTests {
         assertThatThrownBy(() -> signups.save(DARIO, FALL_2026, 298, LocalDate.of(2026, 11, 10)))
                 .isInstanceOf(ConflictException.class);
         releaseAfterDeadline(target);
-        int self = db.queryForObject(
-                "SELECT observer_id FROM observer WHERE professor_id = ? AND cycle_id = 1", Integer.class, DARIO);
+        int self = observerOf(db, DARIO);
         assertThatThrownBy(() -> requests.create(target, self, null)).isInstanceOf(ConflictException.class);
 
-        db.update("UPDATE evaluation_cycle SET signup_deadline = '2026-10-20' WHERE cycle_id = 1");
+        signupDeadline("2026-10-20");
         assertThatThrownBy(() -> signup(HOLLIS, 288)).isInstanceOf(ConflictException.class);
         // Lists can still be released and requests sent after signup closes.
         int candidate = list(target).candidates().getFirst().observerId();
         requests.create(target, candidate, null);
-        db.update("DELETE FROM observer_notification WHERE signup_id = ?", target);
-        db.update("DELETE FROM observer_request WHERE signup_id = ?", target);
-        db.update("UPDATE evaluation_cycle SET observation_deadline = '2026-10-20' WHERE cycle_id = 1");
+        db.deleteAll(db.findAll(ObserverNotification.class).stream()
+                .filter(n -> n.signupId() == target)
+                .toList());
+        observerRequests.deleteAll(observerRequests.findBySignupId(target));
+        observationDeadline("2026-10-20");
         assertThatThrownBy(() -> requests.create(target, candidate, null))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("observation period is closed");
@@ -794,7 +870,7 @@ class ObserverEligibilityServiceTests {
         assertThat(ObserverEligibilityService.level("3345L")).isEqualTo(-1);
         assertThat(ObserverEligibilityService.level("6301")).isEqualTo(6000);
         // Perrin's class now ends at 13:00, exactly when Dario's starts, so it no longer blocks him.
-        db.update("UPDATE course_section SET start_time = '11:45', end_time = '13:00' WHERE section_id = 299");
+        updateSection(299, s -> withSchedule(s, s.meetingDays(), LocalTime.of(11, 45), LocalTime.of(13, 0)));
         int dario = darioSignsUp();
         assertThat(candidateProfessors(dario)).contains(PERRIN).doesNotContain(XIOMARA);
         assertThat(list(dario).candidates().stream()
@@ -826,10 +902,8 @@ class ObserverEligibilityServiceTests {
                     .isInstanceOf(IllegalArgumentException.class);
         assertThat(requests.findById(request.requestId()).status()).isEqualTo("PENDING");
         service.respond(professor, request.requestId(), true, LocalDate.of(2026, 11, 3));
-        assertThat(db.queryForObject("SELECT status FROM observation WHERE signup_id=?", String.class, target))
-                .isEqualTo("SCHEDULED");
-        assertThat(db.queryForObject("SELECT start_time FROM observation WHERE signup_id=?", LocalTime.class, target))
-                .isEqualTo(LocalTime.of(13, 0));
+        assertThat(only(observationsOf(target)).status()).isEqualTo("SCHEDULED");
+        assertThat(only(observationsOf(target)).startTime()).isEqualTo(LocalTime.of(13, 0));
         assertThat(service.facultyState(professor).incoming().getFirst().observationDate())
                 .isEqualTo(LocalDate.of(2026, 11, 3));
     }
@@ -864,12 +938,11 @@ class ObserverEligibilityServiceTests {
         exhaustForAssignment(target);
         service.assign(target, candidate.observerId());
         var request = service.facultyState(candidate.professorId()).incoming().getFirst();
-        db.update("UPDATE evaluation_cycle SET observation_deadline='2026-11-05' WHERE cycle_id=1");
+        observationDeadline("2026-11-05");
         assertThat(service.availableDates(candidate.professorId(), request.requestId()))
                 .containsExactly(LocalDate.of(2026, 11, 3), LocalDate.of(2026, 11, 5));
-        db.update(
-                "UPDATE course_section SET meeting_days='T',start_time='13:30:00',end_time='14:30:00' WHERE section_id IN (SELECT section_id FROM teaching_history WHERE professor_id=?) AND semester_id=13",
-                candidate.professorId());
+        updateFall2026Sections(
+                candidate.professorId(), s -> withSchedule(s, "T", LocalTime.of(13, 30), LocalTime.of(14, 30)));
         assertThat(service.availableDates(candidate.professorId(), request.requestId()))
                 .containsExactly(LocalDate.of(2026, 11, 5));
         assertThatThrownBy(() -> service.scheduleObservation(
@@ -884,15 +957,18 @@ class ObserverEligibilityServiceTests {
         exhaustForAssignment(target);
         service.assign(target, candidate.observerId());
         var request = service.facultyState(candidate.professorId()).incoming().getFirst();
-        int otherSignup = db.queryForObject(
-                "SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=? AND oe.cycle_id=1",
-                Integer.class,
-                XIOMARA);
-        db.update("UPDATE evaluation_signup SET section_id=298 WHERE signup_id=?", otherSignup);
-        db.update(
-                "INSERT INTO observation(signup_id,observer_id,template_id,status,observation_date,start_time) VALUES (?,?,(SELECT template_id FROM observation_template WHERE active_status=TRUE FETCH FIRST 1 ROW ONLY),'SCHEDULED','2026-11-03','13:00:00')",
-                otherSignup,
-                candidate.observerId());
+        int otherSignup = signupOf(db, XIOMARA);
+        var other = db.findById(otherSignup, EvaluationSignup.class);
+        db.update(new EvaluationSignup(other.signupId(), other.observeeId(), 298, other.signupDate(), other.status()));
+        int template = db.findAll(ObservationTemplate.class).stream()
+                .filter(t -> Boolean.TRUE.equals(t.activeStatus()))
+                .findFirst()
+                .orElseThrow()
+                .templateId();
+        db.insert(withPlan(
+                newObservation(otherSignup, candidate.observerId(), template, "SCHEDULED"),
+                LocalDate.of(2026, 11, 3),
+                LocalTime.of(13, 0)));
         assertThat(service.availableDates(candidate.professorId(), request.requestId()))
                 .doesNotContain(LocalDate.of(2026, 11, 3))
                 .contains(LocalDate.of(2026, 11, 5));
@@ -912,9 +988,9 @@ class ObserverEligibilityServiceTests {
         assertThat(matching(target).canDefer()).isFalse();
         assertThatThrownBy(() -> service.defer(target, 12, "No matching observers"))
                 .isInstanceOf(ConflictException.class);
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-31' WHERE cycle_id=1");
+        signupDeadline("2026-10-31");
         addUnusedObservers(1);
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        signupDeadline("2026-10-20");
         assertThat(matching(target).canAssign()).isFalse();
         assertThatThrownBy(() -> service.assign(target, observer)).isInstanceOf(ConflictException.class);
         service.regenerate(target);
@@ -926,11 +1002,12 @@ class ObserverEligibilityServiceTests {
         int target = darioSignsUp();
         int observer = candidateIds(target).getFirst();
         exhaustForAssignment(target);
-        int request = db.queryForObject(
-                "SELECT MIN(request_id) FROM observer_request WHERE signup_id=?", Integer.class, target);
-        db.update("UPDATE observer_request SET status='EXPIRED' WHERE request_id=?", request);
+        var request = observerRequests.findBySignupId(target).stream()
+                .min(Comparator.comparing(ObserverRequest::requestId))
+                .orElseThrow();
+        setStatus(request, "EXPIRED");
         assertThat(matching(target).canAssign()).isTrue();
-        db.update("DELETE FROM observer_request WHERE request_id=?", request);
+        observerRequests.deleteById(request.requestId());
         assertThat(matching(target).canAssign()).isFalse();
         assertThatThrownBy(() -> service.assign(target, observer)).isInstanceOf(ConflictException.class);
     }
@@ -940,8 +1017,8 @@ class ObserverEligibilityServiceTests {
         int target = darioSignsUp();
         assertThatThrownBy(() -> service.defer(target, 12, "No matching observers"))
                 .isInstanceOf(ConflictException.class);
-        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        deactivateObservers();
+        signupDeadline("2026-10-20");
         assertThat(matching(target).canDefer()).isTrue();
         assertThat(matching(target).canAssign()).isFalse();
         assertThatThrownBy(() -> service.defer(target, 12, " ")).isInstanceOf(IllegalArgumentException.class);
@@ -965,30 +1042,29 @@ class ObserverEligibilityServiceTests {
 
     @Test
     void demoBiancaCanBeDeferredWithoutChangingExistingObservationDates() {
-        int signup = db.queryForObject(
-                "SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id=es.observee_id WHERE oe.professor_id=27 AND oe.cycle_id=1",
-                Integer.class);
+        int signup = signupOf(db, 27);
         assertThat(matching(signup).eligibleObserverCount()).isZero();
         assertThat(matching(signup).reason()).isEqualTo("NO_ELIGIBLE_OBSERVERS");
         assertThat(service.eligibleObservers(signup)).isEmpty();
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        signupDeadline("2026-10-20");
         assertThat(matching(signup).canDefer()).isTrue();
         assertThat(matching(signup).canAssign()).isFalse();
-        int before = db.queryForObject("SELECT COUNT(*) FROM observation", Integer.class);
+        long before = db.count(Observation.class);
         service.defer(signup, 12, "No matching observers");
         assertThat(matching(signup).status()).isEqualTo("DEFERRED");
         assertThat(matching(signup).deferral().targetSemester()).isEqualTo("Spring 2027");
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation", Integer.class))
-                .isEqualTo(before);
+        assertThat(db.count(Observation.class)).isEqualTo(before);
     }
 
     @Test
     void expiredEarlierBatchesDoNotBlockAssignmentAfterTheFinalBatchIsExhausted() {
         int target = exhaustedReleasedList();
         int original = candidateIds(target).getFirst();
-        db.update("UPDATE observer_request SET status='EXPIRED' WHERE signup_id=? AND observer_id=?", target, original);
+        observerRequests.findBySignupId(target).stream()
+                .filter(r -> r.observerId() == original)
+                .forEach(r -> setStatus(r, "EXPIRED"));
         addUnusedObservers(1);
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
+        signupDeadline("2026-10-20");
         service.regenerate(target);
         service.release(target);
         int replacement = candidateProfessors(target).getFirst();
@@ -1000,25 +1076,18 @@ class ObserverEligibilityServiceTests {
     }
 
     void exhaustForAssignment(int target) {
-        db.update("UPDATE evaluation_cycle SET signup_deadline='2026-10-20' WHERE cycle_id=1");
-        db.update("UPDATE observer_list_state SET released_at='2026-10-21T10:00:00' WHERE signup_id=?", target);
+        signupDeadline("2026-10-20");
+        releasedAt(target, LocalDateTime.parse("2026-10-21T10:00:00"));
         for (int professor : candidateProfessors(target)) {
-            int observer = db.queryForObject(
-                    "SELECT observer_id FROM observer WHERE professor_id=? AND cycle_id=1", Integer.class, professor);
-            if (db.queryForObject(
-                            "SELECT COUNT(*) FROM observer_request WHERE signup_id=? AND observer_id=?",
-                            Integer.class,
-                            target,
-                            observer)
-                    == 0) invitation(target, professor, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
+            int observer = observerOf(db, professor);
+            if (observerRequests.findBySignupId(target).stream().noneMatch(r -> r.observerId() == observer))
+                invitation(target, professor, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
         }
     }
 
     private LocalDate dateFor(int requestId) {
-        int professor = db.queryForObject(
-                "SELECT ob.professor_id FROM observer_request r JOIN observer ob ON ob.observer_id=r.observer_id WHERE request_id=?",
-                Integer.class,
-                requestId);
+        int observer = db.findById(requestId, ObserverRequest.class).observerId();
+        int professor = db.findById(observer, Observer.class).professorId();
         return service.availableDates(professor, requestId).getFirst();
     }
 }

@@ -1,5 +1,7 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observationOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.principal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -9,9 +11,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObservationAuditLog;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObservationCriterion;
+import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
 import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationAuditLogRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObservationCriterionRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
@@ -22,7 +31,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,8 +40,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -66,10 +74,10 @@ class ObservationLockingIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
-    private JdbcTemplate db;
+    private JsonMapper json;
 
     @Autowired
-    private JsonMapper json;
+    private JdbcAggregateTemplate db;
 
     @Autowired
     private ObservationRepository observations;
@@ -79,6 +87,15 @@ class ObservationLockingIntegrationTests {
 
     @Autowired
     private ObserveeRepository observees;
+
+    @Autowired
+    private ObservationCriterionRepository criteria;
+
+    @Autowired
+    private ObservationAuditLogRepository auditLog;
+
+    @Autowired
+    private ObserverNotificationRepository notifications;
 
     // From data.sql: Keira observes Leander's CS 3345.001 and has not started. Kaia is on the Assessment Committee;
     // Dario has no part in this observation.
@@ -91,21 +108,17 @@ class ObservationLockingIntegrationTests {
 
     @BeforeEach
     void scheduledObservation() {
-        keira = principal("keira.larkspur@example.edu", Role.PROFESSOR);
-        leander = principal("leander.coldwell@example.edu", Role.PROFESSOR);
-        kaia = principal("kaia.clearbrook@example.edu", Role.AC, Role.PROFESSOR);
-        dario = principal("dario.hollowell@example.edu", Role.PROFESSOR);
-        observation = db.queryForObject("""
-                SELECT o.observation_id FROM observation o
-                JOIN evaluation_signup es ON es.signup_id = o.signup_id JOIN observee oe ON oe.observee_id = es.observee_id
-                JOIN professor p ON p.professor_id = oe.professor_id
-                JOIN evaluation_cycle c ON c.cycle_id = oe.cycle_id JOIN semester s ON s.semester_id = c.semester_id
-                WHERE p.email = 'leander.coldwell@example.edu' AND s.term = 'Fall' AND s.academic_year = 2026
-                """, Integer.class);
-        questions = db.queryForList("""
-                SELECT q.criterion_id FROM observation_criterion q JOIN observation o ON o.template_id = q.template_id
-                WHERE o.observation_id = ? AND q.selected=TRUE ORDER BY q.display_order
-                """, Integer.class, observation);
+        keira = principal(db, "keira.larkspur@example.edu", 1, Role.PROFESSOR);
+        leander = principal(db, "leander.coldwell@example.edu", 1, Role.PROFESSOR);
+        kaia = principal(db, "kaia.clearbrook@example.edu", 1, Role.AC, Role.PROFESSOR);
+        dario = principal(db, "dario.hollowell@example.edu", 1, Role.PROFESSOR);
+        observation = observationOf(db, "leander.coldwell@example.edu", "Fall", 2026);
+        questions = criteria
+                .findByTemplateIdOrderByDisplayOrderAscCriterionIdAsc(current().templateId())
+                .stream()
+                .filter(ObservationCriterion::selected)
+                .map(ObservationCriterion::criterionId)
+                .toList();
     }
 
     @Test
@@ -119,10 +132,10 @@ class ObservationLockingIntegrationTests {
                 .andExpect(jsonPath("$.canStart").value(false))
                 .andExpect(jsonPath("$.canSign").value(false));
 
-        assertThat(events()).extracting(e -> e.get("EVENT_TYPE")).containsExactly("STARTED", "SUBMITTED");
+        assertThat(events()).extracting(ObservationAuditLog::eventType).containsExactly("STARTED", "SUBMITTED");
         assertThat(events()).allSatisfy(e -> {
-            assertThat(e.get("ACTOR_PROFESSOR_ID")).isEqualTo(id(keira));
-            assertThat(e.get("RECIPIENT_PROFESSOR_ID")).isNull();
+            assertThat(e.actorProfessorId()).isEqualTo(id(keira));
+            assertThat(e.recipientProfessorId()).isNull();
         });
         assertThat(eventsAtNow()).isEqualTo(2);
         // The observer's answers cannot change, and a submitted record is not logged when it is read.
@@ -150,28 +163,20 @@ class ObservationLockingIntegrationTests {
                 .andExpect(jsonPath("$.responses.length()").value(6));
         assertThat(observeeStatus()).isEqualTo("COMPLETED");
 
-        Map<String, Object> row = db.queryForMap(
-                "SELECT observer_signed, observee_signed FROM observation WHERE observation_id = ?", observation);
-        assertThat(row).containsEntry("OBSERVER_SIGNED", true).containsEntry("OBSERVEE_SIGNED", true);
-        for (String column : List.of("observee_signed_at", "completed_at"))
-            assertThat(db.queryForObject(
-                            "SELECT " + column + " FROM observation WHERE observation_id = ?",
-                            LocalDateTime.class,
-                            observation))
-                    .isEqualTo(LocalDateTime.parse(NOW));
+        Observation row = current();
+        assertThat(row.observerSigned()).isTrue();
+        assertThat(row.observeeSigned()).isTrue();
+        assertThat(row.observeeSignedAt()).isEqualTo(LocalDateTime.parse(NOW));
+        assertThat(row.completedAt()).isEqualTo(LocalDateTime.parse(NOW));
 
         assertThat(events())
-                .extracting(e -> e.get("EVENT_TYPE"))
+                .extracting(ObservationAuditLog::eventType)
                 .containsExactly("STARTED", "SUBMITTED", "OBSERVEE_COMMENTED", "OBSERVEE_SIGNED", "LOCKED");
         assertThat(events().subList(2, 5))
-                .allSatisfy(e -> assertThat(e.get("ACTOR_PROFESSOR_ID")).isEqualTo(id(leander)));
+                .allSatisfy(e -> assertThat(e.actorProfessorId()).isEqualTo(id(leander)));
         assertThat(eventsAtNow()).isEqualTo(5);
         // The observer is told the observation is complete.
-        assertThat(db.queryForList(
-                        "SELECT message FROM observer_notification WHERE professor_id = ? AND created_at = ?",
-                        String.class,
-                        id(keira),
-                        LocalDateTime.parse(NOW)))
+        assertThat(notificationsTo(keira))
                 .containsExactly("Leander Coldwell signed off on the observation of CS 3345.001. It is complete now.");
     }
 
@@ -185,7 +190,7 @@ class ObservationLockingIntegrationTests {
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.observeeComments").value(nullValue()));
         assertThat(events())
-                .extracting(e -> e.get("EVENT_TYPE"))
+                .extracting(ObservationAuditLog::eventType)
                 .containsExactly("STARTED", "SUBMITTED", "OBSERVEE_SIGNED", "LOCKED");
     }
 
@@ -207,12 +212,8 @@ class ObservationLockingIntegrationTests {
         sign(leander, "Again.")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("This observation has already been signed off."));
-        assertThat(db.queryForObject(
-                        "SELECT observee_comments FROM observation WHERE observation_id = ?",
-                        String.class,
-                        observation))
-                .isEqualTo("Fine.");
-        assertThat(events()).extracting(e -> e.get("EVENT_TYPE")).containsOnlyOnce("OBSERVEE_SIGNED", "LOCKED");
+        assertThat(current().observeeComments()).isEqualTo("Fine.");
+        assertThat(events()).extracting(ObservationAuditLog::eventType).containsOnlyOnce("OBSERVEE_SIGNED", "LOCKED");
     }
 
     @Test
@@ -220,14 +221,14 @@ class ObservationLockingIntegrationTests {
         start(keira).andExpect(status().isOk());
         read(keira).andExpect(status().isOk()).andExpect(jsonPath("$.locked").value(false));
         read(leander).andExpect(status().isForbidden());
-        assertThat(events()).extracting(e -> e.get("EVENT_TYPE")).containsExactly("STARTED");
+        assertThat(events()).extracting(ObservationAuditLog::eventType).containsExactly("STARTED");
     }
 
     @Test
     void startingAndSavingAreLogged() throws Exception {
         start(keira).andExpect(status().isOk());
         save(keira, List.of()).andExpect(status().isOk());
-        assertThat(events()).extracting(e -> e.get("EVENT_TYPE")).containsExactly("STARTED", "EDITED");
+        assertThat(events()).extracting(ObservationAuditLog::eventType).containsExactly("STARTED", "EDITED");
         read(keira)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.submittedAt").value(nullValue()));
@@ -236,7 +237,8 @@ class ObservationLockingIntegrationTests {
     @Test
     void aCompletedRecordRejectsEveryChangeAndLogsNothingMore() throws Exception {
         complete(null);
-        List<Object> before = events().stream().map(e -> e.get("EVENT_TYPE")).toList();
+        List<String> before =
+                events().stream().map(ObservationAuditLog::eventType).toList();
         assertThat(before).containsExactly("STARTED", "SUBMITTED", "OBSERVEE_SIGNED", "LOCKED");
 
         start(keira)
@@ -253,7 +255,8 @@ class ObservationLockingIntegrationTests {
             save(other, List.of(answer(1, 1, null))).andExpect(status().isForbidden());
             submit(other, complete()).andExpect(status().isForbidden());
         }
-        assertThat(events().stream().map(e -> e.get("EVENT_TYPE")).toList()).isEqualTo(before);
+        assertThat(events().stream().map(ObservationAuditLog::eventType).toList())
+                .isEqualTo(before);
     }
 
     @Test
@@ -262,7 +265,7 @@ class ObservationLockingIntegrationTests {
         submit(keira, complete()).andExpect(status().isOk());
         read(leander).andExpect(status().isOk());
         read(kaia).andExpect(status().isForbidden());
-        assertThat(events()).extracting(e -> e.get("EVENT_TYPE")).doesNotContain("VIEWED");
+        assertThat(events()).extracting(ObservationAuditLog::eventType).doesNotContain("VIEWED");
 
         sign(leander, null).andExpect(status().isOk());
         read(keira).andExpect(status().isOk()).andExpect(jsonPath("$.locked").value(true));
@@ -270,13 +273,12 @@ class ObservationLockingIntegrationTests {
         read(kaia).andExpect(status().isOk());
         read(dario).andExpect(status().isForbidden());
 
-        var views = events().stream()
-                .filter(e -> "VIEWED".equals(e.get("EVENT_TYPE")))
-                .toList();
+        var views =
+                events().stream().filter(e -> "VIEWED".equals(e.eventType())).toList();
         assertThat(views)
-                .extracting(e -> e.get("ACTOR_PROFESSOR_ID"))
+                .extracting(ObservationAuditLog::actorProfessorId)
                 .containsExactly(id(keira), id(leander), id(kaia));
-        assertThat(views).extracting(e -> e.get("RECIPIENT_PROFESSOR_ID")).containsOnlyNulls();
+        assertThat(views).extracting(ObservationAuditLog::recipientProfessorId).containsOnlyNulls();
     }
 
     @Test
@@ -313,19 +315,13 @@ class ObservationLockingIntegrationTests {
 
         forward(kaia, id(dario)).andExpect(status().isNoContent());
 
-        var forwarded = events().stream()
-                .filter(e -> "FORWARDED".equals(e.get("EVENT_TYPE")))
-                .toList();
+        var forwarded =
+                events().stream().filter(e -> "FORWARDED".equals(e.eventType())).toList();
         assertThat(forwarded).hasSize(1);
-        assertThat(forwarded.get(0).get("ACTOR_PROFESSOR_ID")).isEqualTo(id(kaia));
-        assertThat(forwarded.get(0).get("RECIPIENT_PROFESSOR_ID")).isEqualTo(id(dario));
+        assertThat(forwarded.get(0).actorProfessorId()).isEqualTo(id(kaia));
+        assertThat(forwarded.get(0).recipientProfessorId()).isEqualTo(id(dario));
         assertThat(eventsAtNow()).isEqualTo(events().size());
-        assertThat(db.queryForList(
-                        "SELECT message FROM observer_notification WHERE professor_id = ? AND created_at = ?",
-                        String.class,
-                        id(dario),
-                        LocalDateTime.parse(NOW)))
-                .hasSize(1);
+        assertThat(notificationsTo(dario)).hasSize(1);
         // Forwarding is not access: Dario still cannot open the record.
         read(dario).andExpect(status().isForbidden());
     }
@@ -343,7 +339,7 @@ class ObservationLockingIntegrationTests {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{}"))
                 .andExpect(status().isBadRequest());
-        assertThat(events()).extracting(e -> e.get("EVENT_TYPE")).doesNotContain("FORWARDED");
+        assertThat(events()).extracting(ObservationAuditLog::eventType).doesNotContain("FORWARDED");
         forward(otherSchoolCommittee(), id(dario)).andExpect(status().isNoContent());
     }
 
@@ -370,18 +366,22 @@ class ObservationLockingIntegrationTests {
     }
 
     // Every write in these tests happens at the fixed time, so every log entry should carry it.
-    private int eventsAtNow() {
-        return db.queryForObject(
-                "SELECT COUNT(*) FROM observation_audit_log WHERE observation_id = ? AND occurred_at = ?",
-                Integer.class,
-                observation,
-                LocalDateTime.parse(NOW));
+    private long eventsAtNow() {
+        return events().stream()
+                .filter(e -> e.occurredAt().equals(LocalDateTime.parse(NOW)))
+                .count();
     }
 
-    private List<Map<String, Object>> events() {
-        return db.queryForList(
-                "SELECT event_type, actor_professor_id, recipient_professor_id, occurred_at FROM observation_audit_log WHERE observation_id = ? ORDER BY log_id",
-                observation);
+    private List<ObservationAuditLog> events() {
+        return auditLog.findByObservationIdOrderByLogIdAsc(observation);
+    }
+
+    // The notifications sent at the test's fixed time; the seeded ones are all older.
+    private List<String> notificationsTo(AccountPrincipal principal) {
+        return notifications.findByProfessorId(id(principal)).stream()
+                .filter(n -> n.createdAt().equals(LocalDateTime.parse(NOW)))
+                .map(ObserverNotification::message)
+                .toList();
     }
 
     private ResultActions read(AccountPrincipal principal) throws Exception {
@@ -425,8 +425,12 @@ class ObservationLockingIntegrationTests {
                 .status();
     }
 
+    private Observation current() {
+        return observations.findById(observation).orElseThrow();
+    }
+
     private String statusOf() {
-        return db.queryForObject("SELECT status FROM observation WHERE observation_id = ?", String.class, observation);
+        return current().status();
     }
 
     private ResultActions forward(AccountPrincipal principal, int recipientProfessorId) throws Exception {
@@ -459,20 +463,5 @@ class ObservationLockingIntegrationTests {
 
     private static Integer id(AccountPrincipal principal) {
         return principal.user().professorId();
-    }
-
-    private AccountPrincipal principal(String email, Role... roles) {
-        Map<String, Object> professor = db.queryForMap(
-                "SELECT professor_id, first_name || ' ' || last_name AS name FROM professor WHERE email = ?", email);
-        return new AccountPrincipal(
-                new CurrentUser(
-                        null,
-                        ((Number) professor.get("PROFESSOR_ID")).intValue(),
-                        1,
-                        (String) professor.get("NAME"),
-                        email,
-                        List.of(roles)),
-                null,
-                true);
     }
 }

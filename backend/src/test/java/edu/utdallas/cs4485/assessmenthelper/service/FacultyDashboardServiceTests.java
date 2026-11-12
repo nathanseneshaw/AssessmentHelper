@@ -1,10 +1,25 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.completed;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.firstTemplateId;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.newFeedback;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.newObservation;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observerOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.signupOf;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.submitted;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
+import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
-import edu.utdallas.cs4485.assessmenthelper.repository.ObserverRequestContextRepository;
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationPolicy;
+import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
+import edu.utdallas.cs4485.assessmenthelper.entity.Observer;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.Dashboard;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.EvaluationStatus;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.ObservationItem;
@@ -20,6 +35,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +43,7 @@ import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 /**
  * Runs on data.sql's Fall 2026 demo (evaluation cycle 1, semester 13; signups close 2026-10-31 and feedback is due
@@ -44,7 +60,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
     EvaluationRecordService.class,
     ObserverEligibilityService.class,
     EvaluationSignupService.class,
-    ObserverRequestContextRepository.class,
     FacultyDashboardServiceTests.Time.class
 })
 class FacultyDashboardServiceTests {
@@ -95,7 +110,7 @@ class FacultyDashboardServiceTests {
     MovableClock clock;
 
     @Autowired
-    JdbcTemplate db;
+    JdbcAggregateTemplate db;
 
     @Autowired
     ObserverEligibilityService matching;
@@ -132,7 +147,7 @@ class FacultyDashboardServiceTests {
 
         // Arlo starts the form; for Dario it is still the observation he is waiting on.
         clock.set("2026-11-10");
-        db.update("UPDATE observation SET status = 'IN_PROGRESS' WHERE observation_id = ?", observation);
+        updateObservation(observation, o -> withStatus(o, "IN_PROGRESS"));
         var started = service.dashboard(DARIO);
         assertThat(started.evaluation().status()).isEqualTo(EvaluationStatus.SCHEDULED);
         assertThat(started.upcoming().getFirst().status()).isEqualTo(ObservationStatus.IN_PROGRESS);
@@ -213,10 +228,7 @@ class FacultyDashboardServiceTests {
             assertThat(feedback.course()).isEqualTo("CS 3345.001");
         }
 
-        db.update("""
-                INSERT INTO process_feedback (cycle_id, professor_id, signup_id, submitted_date)
-                VALUES (1, ?, (SELECT signup_id FROM observation WHERE observation_id = ?), DATE '2026-12-01')
-                """, LEANDER, observationOf(LEANDER));
+        db.insert(newFeedback(1, LEANDER, signupOf(db, LEANDER), null, LocalDate.parse("2026-12-01")));
         assertThat(types(service.dashboard(LEANDER))).doesNotContain(UpcomingType.FEEDBACK);
 
         clock.set("2026-12-02");
@@ -230,7 +242,7 @@ class FacultyDashboardServiceTests {
     @Test
     void undatedObservationsListFirstButComeLastInUpcoming() {
         // Keira's own observation by Arlo has no date yet; her observation of Leander is on 2026-11-04.
-        observe(signupOf(KEIRA), ARLO, null);
+        observe(signupOf(db, KEIRA), ARLO, null);
         var keira = service.dashboard(KEIRA);
 
         assertThat(keira.observationsForMe())
@@ -245,7 +257,7 @@ class FacultyDashboardServiceTests {
 
     @Test
     void aCancelledSignupsObservationLeavesBothDashboards() {
-        db.update("UPDATE evaluation_signup SET status = 'CANCELLED' WHERE signup_id = ?", signupOf(LEANDER));
+        db.update(withStatus(db.findById(signupOf(db, LEANDER), EvaluationSignup.class), "CANCELLED"));
 
         var keira = service.dashboard(KEIRA);
         assertThat(keira.observationsForOthers()).isEmpty();
@@ -256,7 +268,14 @@ class FacultyDashboardServiceTests {
 
     @Test
     void aRankWithoutAnActivePolicyHasNoSchedule() {
-        db.update("UPDATE evaluation_policy SET active_status = FALSE WHERE professor_rank = 'FULL'");
+        EvaluationPolicy full = db.findById("FULL", EvaluationPolicy.class);
+        db.update(new EvaluationPolicy(
+                full.professorRank(),
+                full.evaluationIntervalYears(),
+                false,
+                full.madeDate(),
+                full.effectiveDate(),
+                full.version()));
         var kaia = service.dashboard(KAIA);
 
         assertThat(kaia.schedule()).isEqualTo(new Schedule(null, null, null, null, null));
@@ -290,47 +309,43 @@ class FacultyDashboardServiceTests {
     }
 
     private int observe(int signupId, int observerProfessorId, String date) {
-        db.update("""
-                INSERT INTO observation (signup_id, observer_id, template_id, observation_date, status)
-                VALUES (?, (SELECT observer_id FROM observer WHERE professor_id = ? AND cycle_id = 1),
-                    (SELECT MIN(template_id) FROM observation_template), ?, 'ACCEPTED')
-                """, signupId, observerProfessorId, date == null ? null : LocalDate.parse(date));
-        return db.queryForObject("SELECT observation_id FROM observation WHERE signup_id = ?", Integer.class, signupId);
+        var accepted = newObservation(signupId, observerOf(db, observerProfessorId), firstTemplateId(db), "ACCEPTED");
+        db.insert(withPlan(accepted, date == null ? null : LocalDate.parse(date), null));
+        return observationOn(signupId);
     }
 
     /** What the observation form's Submit does: the observer's part is over. */
     private void submit(int observationId) {
-        db.update(
-                "UPDATE observation SET status = 'SUBMITTED', observer_signed = TRUE, observer_signed_at = ? WHERE observation_id = ?",
-                LocalDateTime.now(clock),
-                observationId);
+        LocalDateTime now = LocalDateTime.now(clock);
+        updateObservation(observationId, o -> submitted(o, now));
     }
 
     private void complete(int observationId, String completedAt) {
-        db.update(
-                "UPDATE observation SET status = 'COMPLETED', completed_at = ? WHERE observation_id = ?",
-                LocalDateTime.parse(completedAt),
-                observationId);
+        updateObservation(observationId, o -> completed(o, LocalDateTime.parse(completedAt)));
     }
 
-    private int signupOf(int professorId) {
-        return db.queryForObject("""
-                SELECT es.signup_id FROM evaluation_signup es JOIN observee oe ON oe.observee_id = es.observee_id
-                WHERE oe.professor_id = ? AND oe.cycle_id = 1
-                """, Integer.class, professorId);
+    private void updateObservation(int observationId, UnaryOperator<Observation> change) {
+        db.update(change.apply(db.findById(observationId, Observation.class)));
     }
 
     private int observationOf(int observeeProfessorId) {
-        return db.queryForObject(
-                "SELECT observation_id FROM observation WHERE signup_id = ?",
-                Integer.class,
-                signupOf(observeeProfessorId));
+        return observationOn(signupOf(db, observeeProfessorId));
+    }
+
+    private List<Observation> observationsOn(int signupId) {
+        return db.findAll(Observation.class).stream()
+                .filter(o -> o.signupId() == signupId)
+                .toList();
+    }
+
+    private int observationOn(int signupId) {
+        return only(observationsOn(signupId)).observationId();
     }
 
     @Test
     void deferredFacultyAreDueNextSemesterWithoutPretendingTheyCompletedAnEvaluation() {
         int signup = signups.save(DARIO, FALL_2026, 298, null).signupId();
-        db.update("UPDATE observer SET active_status=FALSE WHERE cycle_id=1");
+        db.findAll(Observer.class).stream().filter(o -> o.cycleId() == 1).forEach(o -> db.update(inactive(o)));
         clock.set("2026-11-16");
         matching.defer(signup, KAIA, "No matching observers");
         var current = service.dashboard(DARIO);
@@ -341,11 +356,15 @@ class FacultyDashboardServiceTests {
         assertThat(eligibility.findOverdue().faculty()).noneMatch(f -> f.professorId() == DARIO);
         assertThat(deadlines.findByProfessor(DARIO).nextDueDate()).isEqualTo(LocalDate.of(2027, 1, 19));
         assertThat(deadlines.findByProfessor(DARIO).overdue()).isFalse();
-        assertThat(db.queryForObject("SELECT COUNT(*) FROM observation WHERE signup_id=?", Integer.class, signup))
-                .isZero();
+        assertThat(observationsOn(signup)).isEmpty();
         assertThat(records.findByProfessor(DARIO).getFirst().status()).isEqualTo("DEFERRED");
-        db.update(
-                "INSERT INTO evaluation_cycle(semester_id,signup_deadline,observation_deadline,feedback_deadline,status) VALUES(14,'2027-02-01','2027-04-15','2027-05-01','OPEN')");
+        db.insert(new EvaluationCycle(
+                null,
+                14,
+                LocalDate.parse("2027-02-01"),
+                LocalDate.parse("2027-04-15"),
+                LocalDate.parse("2027-05-01"),
+                "OPEN"));
         clock.set("2027-01-20");
         assertThat(eligibility.findDue().faculty()).anyMatch(f -> f.professorId() == DARIO);
         assertThat(eligibility.findOverdue().faculty()).noneMatch(f -> f.professorId() == DARIO);
