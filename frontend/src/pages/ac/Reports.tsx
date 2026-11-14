@@ -4,6 +4,9 @@ import {
   getDashboardMetrics,
   getObservations,
   type ObservationTracking,
+  eligibilityAccuracy,
+  listSufficiency,
+  participationRate,
   rate,
   surveyCompletionRate,
   useDashboardRefresh,
@@ -52,35 +55,30 @@ function buildReport({
   const completed = tracking.observations.filter(
     (o) => o.status === "COMPLETED",
   ).length;
-  const missing = tracking.observations.filter(
-    (o) => o.status === "MISSING",
-  ).length;
+  // Same definition as the dashboard card: approved appointments that did not complete.
+  const missing = metrics.missingObservations;
   return {
     cycleLabel: metrics.cycleLabel,
     kpis: [
       {
+        label: "Evaluation Eligibility Accuracy",
+        ...eligibilityAccuracy(metrics),
+      },
+      {
         label: "Assessment Participation Rate",
-        ...rate(
-          metrics.participation,
-          "due faculty signed up",
-          "No faculty are due this cycle",
-        ),
+        ...participationRate(metrics),
       },
       {
         label: "Observer Utilization Rate",
         ...rate(
           metrics.observerUtilization,
-          "signups have an observer",
+          "signed-up professors took the observer role",
           "No signups this cycle",
         ),
       },
       {
         label: "List Sufficiency",
-        ...rate(
-          metrics.listSufficiency,
-          `signups have a full list of ${metrics.listSize}`,
-          "No signups this cycle",
-        ),
+        ...listSufficiency(metrics),
       },
       { label: "Survey Completion", ...surveyCompletionRate(metrics) },
     ],

@@ -13,9 +13,17 @@ public interface ObserveeRepository extends ListCrudRepository<Observee, Integer
 
     public record SurveyCompletionCounts(Integer offered, Integer submitted) {}
 
+    /**
+     * offered = professors with an active (non-cancelled, non-deferred) signup; submitted = those who also had an
+     * observation completed and submitted the survey, i.e. went through the whole process.
+     */
     @Query("""
-            SELECT COUNT(DISTINCT oe.professor_id) AS offered, COUNT(DISTINCT f.professor_id) AS submitted
+            SELECT COUNT(DISTINCT oe.professor_id) AS offered,
+            COUNT(DISTINCT CASE WHEN f.professor_id IS NOT NULL AND EXISTS (
+                SELECT 1 FROM observation o WHERE o.signup_id=es.signup_id AND UPPER(o.status)='COMPLETED')
+                THEN oe.professor_id END) AS submitted
             FROM observee oe
+            JOIN evaluation_signup es ON es.observee_id=oe.observee_id AND es.status NOT IN ('CANCELLED', 'DEFERRED')
             LEFT JOIN process_feedback f ON f.cycle_id=oe.cycle_id AND f.professor_id=oe.professor_id
             WHERE oe.cycle_id=:cycleId AND oe.status IN ('ACTIVE', 'COMPLETED')
             """)

@@ -169,7 +169,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
         clock.set(AFTER_THE_OBSERVATION_DEADLINE);
 
         long inList = dashboard.observations().observations().stream()
-                .filter(o -> o.status() == Status.MISSING)
+                .filter(o -> o.status() == Status.MISSING && o.observerId() != null)
                 .count();
 
         assertThat(dashboard.metrics().missingObservations()).isEqualTo((int) inList);
