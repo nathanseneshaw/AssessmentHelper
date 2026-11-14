@@ -181,15 +181,15 @@ test("metric cards show live values, with rates rounded to whole percents", asyn
   );
   expect(kpi("Participation Rate")).toEqual({
     value: "15%",
-    note: "2 of 13 due faculty signed up",
+    note: "2 signed up / 13 due",
   });
   expect(kpi("Observer Utilization")).toEqual({
     value: "17%",
-    note: "1 of 6 signups have an observer",
+    note: "1 of 6 signed-up professors took the observer role",
   });
   expect(kpi("List Sufficiency Rate")).toEqual({
-    value: "33%",
-    note: "2 of 6 signups have a full list of 5",
+    value: "0.3",
+    note: "2 matches across 6 signups",
   });
   expect(kpi("Survey Completion Rate")).toEqual({
     value: "44%",
@@ -234,7 +234,7 @@ test("saving new deadlines refreshes the metrics and overdue evaluations", async
   await waitFor(() =>
     expect(kpi("Participation Rate")).toEqual({
       value: "23%",
-      note: "3 of 13 due faculty signed up",
+      note: "3 signed up / 13 due",
     }),
   );
   await waitFor(() => expect(kpi("Overdue Evaluations").value).toBe("0"));
@@ -271,7 +271,7 @@ test("coming back to the window refreshes the metrics and due list, keeping the 
   await waitFor(() => expect(kpi("Faculty Due This Cycle").value).toBe("14"));
 });
 
-test("Faculty Due This Cycle takes the place of Eligibility Accuracy", async () => {
+test("the faculty evaluation group shows due, eligibility accuracy and overdue", async () => {
   await openOverview();
   const group = screen
     .getByRole("heading", { name: "Faculty evaluation" })
@@ -279,7 +279,13 @@ test("Faculty Due This Cycle takes the place of Eligibility Accuracy", async () 
   if (!group) throw new Error("Missing faculty evaluation group");
   expect(within(group).getByText("Faculty Due This Cycle")).toBeDefined();
   expect(within(group).getByText("Overdue Evaluations")).toBeDefined();
-  expect(screen.queryByText("Evaluation Eligibility Accuracy")).toBeNull();
+  expect(
+    within(group).getByText("Evaluation Eligibility Accuracy"),
+  ).toBeDefined();
+  expect(kpi("Evaluation Eligibility Accuracy")).toEqual({
+    value: "88%",
+    note: "1 incorrect of 8 (same prof 0, other dept 0, different level 1, schedule 0)",
+  });
 });
 
 test("cards outside the metrics keep their own data", async () => {
@@ -298,6 +304,7 @@ test("a rate with nothing to count shows a dash", async () => {
       participation: none,
       observerUtilization: none,
       listSufficiency: none,
+      eligibilityAccuracy: { ...metrics.eligibilityAccuracy, incorrect: none },
       missingObservations: 0,
       surveyCompletion: none,
     });

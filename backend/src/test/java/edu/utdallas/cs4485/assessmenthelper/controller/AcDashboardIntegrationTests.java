@@ -152,9 +152,11 @@ class AcDashboardIntegrationTests {
     void committeeSeesTheSeededCycleMetrics() throws Exception {
         metrics().andExpect(status().isOk()).andExpect(content().json("""
                         {"cycleId":1,"cycleLabel":"Fall 2026","facultyDue":13,"listSize":5,
-                        "participation":{"count":5,"total":13},"observerUtilization":{"count":1,"total":8},
-                        "listSufficiency":{"count":0,"total":8},"missingObservations":0,
-                        "surveyCompletion":{"count":0,"total":8},"surveyStatus":"NOT_OPEN"}
+                        "participation":{"count":8,"total":13},"observerUtilization":{"count":1,"total":8},
+                        "listSufficiency":{"count":8,"total":8},"missingObservations":0,
+                        "surveyCompletion":{"count":0,"total":8},"surveyStatus":"NOT_OPEN",
+                        "eligibilityAccuracy":{"incorrect":{"count":0,"total":1},"samePerson":0,
+                        "otherDepartment":0,"differentLevel":0,"scheduleConflict":0}}
                         """, JsonCompareMode.STRICT));
     }
 
@@ -169,10 +171,12 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath("$.surveyCompletion.count").value(0))
                 .andExpect(jsonPath("$.surveyCompletion.total").value(8));
 
+        // Only an observee whose observation was completed counts as having gone through the whole process.
+        setObservationStatus(LEANDER, "COMPLETED");
         submitFeedback(LEANDER);
         submitFeedback(ARLO);
         metrics()
-                .andExpect(jsonPath("$.surveyCompletion.count").value(2))
+                .andExpect(jsonPath("$.surveyCompletion.count").value(1))
                 .andExpect(jsonPath("$.surveyCompletion.total").value(8));
 
         // A deferred observee is not offered the survey, so neither their answer nor their place counts.
@@ -204,18 +208,18 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void participationCountsDueFacultyWhoseSignupIsNotCancelled() throws Exception {
+    void participationCountsEveryProfessorWhoseSignupIsNotCancelled() throws Exception {
         // Hollis is due. His new signup has no generated list yet, so it is not one of the cycle's matched signups.
         Observee hollis = db.insert(new Observee(null, HOLLIS, 1, "ACTIVE"));
         db.insert(new EvaluationSignup(null, hollis.observeeId(), 284, LocalDate.parse("2026-10-26"), "PENDING"));
         metrics()
-                .andExpect(jsonPath("$.participation.count").value(6))
+                .andExpect(jsonPath("$.participation.count").value(9))
                 .andExpect(jsonPath("$.participation.total").value(13))
                 .andExpect(jsonPath("$.observerUtilization.total").value(8));
 
         cancelSignup(ARLO);
         metrics()
-                .andExpect(jsonPath("$.participation.count").value(5))
+                .andExpect(jsonPath("$.participation.count").value(8))
                 .andExpect(jsonPath("$.observerUtilization.total").value(7))
                 .andExpect(jsonPath("$.listSufficiency.total").value(7));
     }
@@ -231,14 +235,14 @@ class AcDashboardIntegrationTests {
         String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
         observations().andExpect(jsonPath(leander + ".status").value("PENDING_SIGN_OFF"));
         clock.set("2026-11-16T15:00:00Z");
-        expectMissing(8).andExpect(jsonPath("$.observerUtilization.count").value(1));
+        expectMissing(1).andExpect(jsonPath("$.observerUtilization.count").value(1));
         observations()
                 .andExpect(jsonPath(leander + ".status").value("MISSING"))
                 .andExpect(jsonPath(leander + ".missingReason").value("Not signed"))
                 .andExpect(jsonPath("$.observations[?(@.observeeId == " + AVERY + ")].missingReason")
                         .value("Not scheduled - awaiting observer"));
         setObservationStatus(LEANDER, "Completed");
-        expectMissing(7);
+        expectMissing(0);
         updateCycle(c -> withObservationDeadline(c, null));
         expectMissing(0);
     }
@@ -259,18 +263,18 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void listSufficiencyCountsListsFilledToTheListSize() throws Exception {
+    void listSufficiencyCountsEveryObserverMatch() throws Exception {
         int leander = signupOf(db, LEANDER);
         assertThat(db.findAll(ObserverMatch.class))
                 .filteredOn(match -> match.signupId() == leander)
                 .hasSize(ObserverEligibilityService.LIST_SIZE - 1);
         metrics()
                 .andExpect(jsonPath("$.listSize").value(ObserverEligibilityService.LIST_SIZE))
-                .andExpect(jsonPath("$.listSufficiency.count").value(0));
+                .andExpect(jsonPath("$.listSufficiency.count").value(8));
 
         db.insert(new ObserverMatch(null, leander, observerOf(db, ARLO), LocalDate.parse("2026-10-26"), "PROPOSED"));
         metrics()
-                .andExpect(jsonPath("$.listSufficiency.count").value(1))
+                .andExpect(jsonPath("$.listSufficiency.count").value(9))
                 .andExpect(jsonPath("$.listSufficiency.total").value(8));
     }
 

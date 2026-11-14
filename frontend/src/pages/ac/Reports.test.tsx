@@ -28,6 +28,13 @@ const metrics: DashboardMetrics = {
   missingObservations: 1,
   surveyCompletion: { count: 2, total: 6 },
   surveyStatus: "CLOSED",
+  eligibilityAccuracy: {
+    incorrect: { count: 1, total: 8 },
+    samePerson: 0,
+    otherDepartment: 0,
+    differentLevel: 1,
+    scheduleConflict: 0,
+  },
 };
 
 const overdue: OverdueQueue = {
@@ -144,19 +151,20 @@ describe("Reports & KPIs", () => {
     await renderLoadedReports();
 
     expect(screen.getByText("38%")).toBeDefined();
-    expect(screen.getByText("5 of 13 due faculty signed up")).toBeDefined();
+    expect(screen.getByText("5 signed up / 13 due")).toBeDefined();
     expect(screen.getByText("50%")).toBeDefined();
-    expect(screen.getByText("3 of 6 signups have an observer")).toBeDefined();
-    expect(screen.getByText("17%")).toBeDefined();
     expect(
-      screen.getByText("1 of 6 signups have a full list of 5"),
+      screen.getByText("3 of 6 signed-up professors took the observer role"),
     ).toBeDefined();
+    expect(screen.getByText("0.2")).toBeDefined();
+    expect(screen.getByText("1 matches across 6 signups")).toBeDefined();
+    expect(screen.getByText("88%")).toBeDefined();
     expect(screen.getByText("33%")).toBeDefined();
     expect(
       screen.getByText("2 of 6 observees submitted feedback"),
     ).toBeDefined();
     expect(screen.queryByText("Not tracked yet")).toBeNull();
-    expect(screen.queryByText("Eligibility Accuracy")).toBeNull();
+    expect(screen.getByText("Evaluation Eligibility Accuracy")).toBeDefined();
     expect(screen.queryByText("78%")).toBeNull();
 
     const terms = screen.getAllByRole("term").map((el) => el.textContent);
@@ -207,9 +215,10 @@ describe("Reports & KPIs", () => {
     expect(lines).toEqual([
       '"Section","Metric","Value","Note"',
       '"Cycle","Evaluation cycle","Fall 2026",""',
-      '"KPI","Assessment Participation Rate","38%","5 of 13 due faculty signed up"',
-      '"KPI","Observer Utilization Rate","50%","3 of 6 signups have an observer"',
-      '"KPI","List Sufficiency","17%","1 of 6 signups have a full list of 5"',
+      '"KPI","Evaluation Eligibility Accuracy","88%","1 incorrect of 8 (same prof 0, other dept 0, different level 1, schedule 0)"',
+      '"KPI","Assessment Participation Rate","38%","5 signed up / 13 due"',
+      '"KPI","Observer Utilization Rate","50%","3 of 6 signed-up professors took the observer role"',
+      '"KPI","List Sufficiency","0.2","1 matches across 6 signups"',
       '"KPI","Survey Completion","33%","2 of 6 observees submitted feedback"',
       '"Executive dashboard","Faculty due for evaluation","13",""',
       '"Executive dashboard","Missing observation count","1",""',
