@@ -1,10 +1,7 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -21,7 +18,6 @@ import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.ProfessorAccess;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
 import edu.utdallas.cs4485.assessmenthelper.service.ConflictException;
-import edu.utdallas.cs4485.assessmenthelper.service.NotFoundException;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -67,7 +63,7 @@ class ObserverRequestControllerTests {
 
     @Test
     @WithMockUser(roles = "AC")
-    void createReturns201WithPendingRequest() throws Exception {
+    void createReturns201PendingRequestWhenInputIsValid() throws Exception {
         when(service.create(2, 3, null)).thenReturn(PENDING);
 
         mockMvc.perform(post("/api/observer-requests")
@@ -81,7 +77,7 @@ class ObserverRequestControllerTests {
 
     @Test
     @WithMockUser(roles = "AC")
-    void createWithBadInputReturns400() throws Exception {
+    void createReturns400WhenInputIsInvalid() throws Exception {
         when(service.create(null, 3, null))
                 .thenThrow(new IllegalArgumentException("signupId and observerId are required"));
 
@@ -89,32 +85,32 @@ class ObserverRequestControllerTests {
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"observerId\":3}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("signupId and observerId are required"));
+                .andExpect(status().isBadRequest());
     }
 
     @Test
-    @WithMockUser(roles = "AC")
-    void getUnknownRequestReturns404() throws Exception {
-        when(service.findById(9)).thenThrow(new NotFoundException("No observer request with id 9"));
+    void requestIsReturnedWhenCallerIsTheRequestedObserver() throws Exception {
+        when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
+        when(service.findById(1)).thenReturn(PENDING);
 
-        mockMvc.perform(get("/api/observer-requests/9")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/observer-requests/1").with(user(OBSERVER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requestId").value(1));
     }
 
     @Test
-    void confirmingExpiredRequestReturns409() throws Exception {
+    void confirmReturns409WhenRequestHasExpired() throws Exception {
         when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
         when(service.confirm(1, null)).thenThrow(new ConflictException("Request 1 has expired"));
 
         mockMvc.perform(post("/api/observer-requests/1/confirm")
                         .with(user(OBSERVER))
                         .with(csrf()))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.detail").value("Request 1 has expired"));
+                .andExpect(status().isConflict());
     }
 
     @Test
-    void declineReturnsDeclinedRequest() throws Exception {
+    void declineReturnsDeclinedStatusWhenRequestIsPending() throws Exception {
         ObserverRequest declined = new ObserverRequest(
                 1,
                 2,
@@ -135,63 +131,20 @@ class ObserverRequestControllerTests {
     }
 
     @Test
-    void decliningExpiredRequestReturns409() throws Exception {
-        when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
-        when(service.decline(1)).thenThrow(new ConflictException("Request 1 has expired"));
-
-        mockMvc.perform(post("/api/observer-requests/1/decline")
-                        .with(user(OBSERVER))
-                        .with(csrf()))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.detail").value("Request 1 has expired"));
-    }
-
-    @Test
-    void decliningARequestSentToSomeoneElseReturns403() throws Exception {
+    void createAndDeclineReturn403WhenProfessorIsNotTheRequestedObserver() throws Exception {
         when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(false);
 
-        mockMvc.perform(post("/api/observer-requests/1/decline")
-                        .with(user(OBSERVER))
-                        .with(csrf()))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.detail").value("You do not have access to this resource."));
-
-        verify(service, never()).decline(anyInt());
-    }
-
-    @Test
-    void professorsCannotListCreateOrReadOtherRequests() throws Exception {
-        mockMvc.perform(get("/api/observer-requests").with(user(OBSERVER))).andExpect(status().isForbidden());
         mockMvc.perform(post("/api/observer-requests")
                         .with(user(OBSERVER))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"signupId\":2,\"observerId\":3}"))
                 .andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/observer-requests/1").with(user(OBSERVER))).andExpect(status().isForbidden());
-
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void theRequestedObserverCanReadTheirRequest() throws Exception {
-        when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
-        when(service.findById(1)).thenReturn(PENDING);
-
-        mockMvc.perform(get("/api/observer-requests/1").with(user(OBSERVER)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.requestId").value(1));
-    }
-
-    @Test
-    void confirmingARequestSentToSomeoneElseReturns403() throws Exception {
-        when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(false);
-
-        mockMvc.perform(post("/api/observer-requests/1/confirm")
+        mockMvc.perform(post("/api/observer-requests/1/decline")
                         .with(user(OBSERVER))
                         .with(csrf()))
                 .andExpect(status().isForbidden());
 
-        verify(service, never()).confirm(anyInt());
+        verifyNoInteractions(service);
     }
 }

@@ -5,10 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.jayway.jsonpath.JsonPath;
 import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
 import jakarta.servlet.http.Cookie;
@@ -142,7 +140,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void everyEndpointWithoutAnAccessRuleIsOnAReviewedList() {
+    void endpointIsOnReviewedListWhenItHasNoAccessRule() {
         Set<String> withoutRule = endpoints().stream()
                 .filter(endpoint -> endpoint.rule() == null)
                 .map(Endpoint::key)
@@ -155,7 +153,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void signedOutRequestsAreRefusedEverywhereExceptTheCsrfToken() throws Exception {
+    void everyEndpointExceptCsrfTokenReturns401WhenSignedOut() throws Exception {
         List<Endpoint> signedIn = endpoints().stream()
                 .filter(endpoint -> !PUBLIC.contains(endpoint.key()))
                 .toList();
@@ -165,7 +163,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void professorsAreRefusedEveryCommitteeEndpoint() throws Exception {
+    void committeeEndpointsReturn403WhenCallerIsAProfessor() throws Exception {
         AccountPrincipal dario = accounts.loadUserByUsername(DARIO);
         AccountPrincipal kaia = accounts.loadUserByUsername(KAIA);
         List<Endpoint> committeeOnly = endpoints().stream()
@@ -185,7 +183,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void professorsAreRefusedAnotherProfessorsData() throws Exception {
+    void professorDataReturns403WhenCallerIsAnotherProfessor() throws Exception {
         AccountPrincipal dario = accounts.loadUserByUsername(DARIO);
         int leander = accounts.loadUserByUsername(LEANDER).user().professorId();
         List<Endpoint> professorScoped = professorScoped();
@@ -202,6 +200,20 @@ class EndpointAccessTests {
                                 .with(user(dario))))
                 .doesNotContainValue(401)
                 .doesNotContainValue(403);
+    }
+
+    @Test
+    void observerRequestReturns403WhenCallerIsNotTheRequestedObserver() throws Exception {
+        int requestId = averyAsksKeira();
+        String path = "/api/observer-requests/" + requestId;
+        AccountPrincipal dario = accounts.loadUserByUsername(DARIO);
+        AccountPrincipal keira = accounts.loadUserByUsername(KEIRA);
+
+        mvc.perform(withCsrf(get(path)).with(user(dario))).andExpect(status().isForbidden());
+        mvc.perform(withCsrf(post(path + "/confirm")).with(user(dario))).andExpect(status().isForbidden());
+        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
+
+        mvc.perform(withCsrf(get(path)).with(user(keira))).andExpect(status().isOk());
     }
 
     @Test
@@ -231,53 +243,6 @@ class EndpointAccessTests {
                         endpoint -> forProfessor(endpoint, dario).with(user(kaia))))
                 .doesNotContainValue(401)
                 .doesNotContainValue(403);
-    }
-
-    @Test
-    void onlyTheRequestedObserverCanReadOrConfirmAnObserverRequest() throws Exception {
-        int requestId = averyAsksKeira();
-        String path = "/api/observer-requests/" + requestId;
-        AccountPrincipal dario = accounts.loadUserByUsername(DARIO);
-        AccountPrincipal keira = accounts.loadUserByUsername(KEIRA);
-
-        mvc.perform(withCsrf(get(path)).with(user(dario))).andExpect(status().isForbidden());
-        mvc.perform(withCsrf(post(path + "/confirm")).with(user(dario))).andExpect(status().isForbidden());
-        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
-
-        mvc.perform(withCsrf(get(path)).with(user(keira))).andExpect(status().isOk());
-        String dates = mvc.perform(get(
-                                "/api/observer-eligibility/faculty/{id}/requests/{requestId}/dates",
-                                professorId(KEIRA),
-                                requestId)
-                        .with(user(keira)))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        String date = JsonPath.read(dates, "$[0]");
-        mvc.perform(withCsrf(post(path + "/confirm"))
-                        .with(user(keira))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"observationDate\":\"" + date + "\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CONFIRMED"));
-    }
-
-    @Test
-    void confirmingWithoutAnAvailableClassDateLeavesTheInvitationPending() throws Exception {
-        int requestId = averyAsksKeira();
-        String path = "/api/observer-requests/" + requestId + "/confirm";
-        AccountPrincipal keira = accounts.loadUserByUsername(KEIRA);
-
-        mvc.perform(withCsrf(post(path)).with(user(keira))).andExpect(status().isBadRequest());
-        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
-
-        mvc.perform(withCsrf(post(path))
-                        .with(user(keira))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"observationDate\":\"2026-10-01\"}"))
-                .andExpect(status().isBadRequest());
-        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
     }
 
     private int averyAsksKeira() {

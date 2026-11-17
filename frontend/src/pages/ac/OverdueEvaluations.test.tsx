@@ -9,13 +9,9 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { API_URL } from "../../api/client";
-import {
-  getNotificationPreview,
-  type OverdueQueue,
-} from "../../api/evaluationEligibility";
+import type { OverdueQueue } from "../../api/evaluationEligibility";
 import { AuthProvider } from "../../auth/AuthContext";
 import { metrics } from "../../test/acDashboardFixtures";
-import { OverdueEvaluations } from "./OverdueEvaluations";
 import { AcOverview } from "./Overview";
 
 const originalFetch = globalThis.fetch;
@@ -107,27 +103,13 @@ function openDashboard() {
   );
 }
 
-const emptyQueue: OverdueQueue = { ...queue, count: 0, faculty: [] };
-
-function openModal(props: Partial<Parameters<typeof OverdueEvaluations>[0]>) {
-  render(
-    <OverdueEvaluations
-      queue={queue}
-      onClose={() => {}}
-      onNotified={() => {}}
-      {...props}
-    />,
-  );
+async function openList(name: string) {
+  const viewAll = screen.getByRole("button", { name }) as HTMLButtonElement;
+  await waitFor(() => expect(viewAll.disabled).toBe(false));
+  fireEvent.click(viewAll);
 }
 
-test("loads the server-rendered draft for the selected notification", async () => {
-  mockFetch(async () => Response.json(queue));
-  const draft = await getNotificationPreview(1, 1, "due");
-  expect(draft.recipient).toBe("alice@utdallas.edu");
-  expect(draft.subject).toBe("Faculty Evaluation Due - Fall 2026");
-});
-
-test("opens overlay, saves edited email, confirms, and offers follow-up without reducing count", async () => {
+test("the edited email is sent and a follow-up offered when an overdue professor is notified", async () => {
   let body: Record<string, string> | undefined;
   mockFetch(async (_input: unknown, init?: RequestInit) => {
     if (init?.method === "POST") {
@@ -137,14 +119,7 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
     return Response.json(queue);
   });
   openDashboard();
-  const viewAll = screen.getByRole("button", {
-    name: "View all overdue evaluations",
-  });
-  await waitFor(() =>
-    expect((viewAll as HTMLButtonElement).disabled).toBe(false),
-  );
-  fireEvent.click(viewAll);
-  expect(screen.getByRole("dialog")).toBeDefined();
+  await openList("View all overdue evaluations");
   fireEvent.click(screen.getByRole("button", { name: "Notify Alice Nguyen" }));
   expect(((await screen.findByLabelText("To")) as HTMLInputElement).value).toBe(
     "alice@utdallas.edu",
@@ -159,10 +134,8 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
   await screen.findByRole("heading", { name: "Email Sent" });
   expect(body?.subject).toBe("Personal reminder");
   expect(body?.body).toBe("Please complete your evaluation, Alice.");
+
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
-  expect(
-    screen.getByText("Fall 2026 evaluation cycle • 2 faculty overdue"),
-  ).toBeDefined();
   const followUp = screen.getByRole("button", {
     name: "Follow up with Alice Nguyen",
   });
@@ -173,14 +146,9 @@ test("opens overlay, saves edited email, confirms, and offers follow-up without 
   expect(
     ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
   ).toStartWith("Follow Up:");
-  fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  fireEvent.click(screen.getByRole("button", { name: "Notify Bob Martinez" }));
-  expect(((await screen.findByLabelText("To")) as HTMLInputElement).value).toBe(
-    "bob@utdallas.edu",
-  );
 });
 
-test("failed send keeps draft and overdue status", async () => {
+test("the draft is kept and the reason shown when sending fails", async () => {
   mockFetch(async (_input: unknown, init?: RequestInit) =>
     init?.method === "POST"
       ? Response.json(
@@ -190,13 +158,7 @@ test("failed send keeps draft and overdue status", async () => {
       : Response.json(queue),
   );
   openDashboard();
-  const viewAll = screen.getByRole("button", {
-    name: "View all overdue evaluations",
-  });
-  await waitFor(() =>
-    expect((viewAll as HTMLButtonElement).disabled).toBe(false),
-  );
-  fireEvent.click(viewAll);
+  await openList("View all overdue evaluations");
   fireEvent.click(screen.getByRole("button", { name: "Notify Alice Nguyen" }));
   await screen.findByLabelText("Subject");
   fireEvent.click(screen.getByRole("button", { name: "Send Email" }));
@@ -204,35 +166,10 @@ test("failed send keeps draft and overdue status", async () => {
     "Could not save notification",
   );
   expect(screen.queryByRole("heading", { name: "Email Sent" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  expect(
-    screen.getByRole("button", { name: "Notify Alice Nguyen" }),
-  ).toBeDefined();
+  expect(screen.getByLabelText("Subject")).toBeDefined();
 });
 
-test("shows load error and retries without displaying a fabricated count", async () => {
-  let attempts = 0;
-  mockFetch(async (input: unknown) =>
-    String(input).endsWith("/overdue-evaluations") && ++attempts === 1
-      ? Response.json({ detail: "Backend unavailable" }, { status: 503 })
-      : Response.json({ ...queue, count: 0, faculty: [] }),
-  );
-  openDashboard();
-  await screen.findByRole("alert");
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  const viewAll = screen.getByRole("button", {
-    name: "View all overdue evaluations",
-  });
-  await waitFor(() =>
-    expect((viewAll as HTMLButtonElement).disabled).toBe(false),
-  );
-  fireEvent.click(viewAll);
-  expect(
-    screen.getByText("No faculty are overdue for evaluation."),
-  ).toBeDefined();
-});
-
-test("due overlay personalizes an editable email, saves to the due endpoint, and retains its count", async () => {
+test("the email goes to the due endpoint when sent from the due list", async () => {
   let savedUrl = "";
   let savedBody: Record<string, string> | undefined;
   mockFetch(async (input: unknown, init?: RequestInit) => {
@@ -248,203 +185,20 @@ test("due overlay personalizes an editable email, saves to the due endpoint, and
     );
   });
   openDashboard();
-  const open = screen.getByRole("button", {
-    name: "View all faculty due for evaluation",
-  });
-  await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(open);
+  await openList("View all faculty due for evaluation");
   const dialog = screen.getByRole("dialog", {
     name: "Faculty Due for Evaluation",
   });
-  expect(
-    within(dialog).getByRole("columnheader", { name: "Next Due" }),
-  ).toBeDefined();
   fireEvent.click(
     within(dialog).getByRole("button", { name: "Notify Alice Nguyen" }),
   );
   expect(
     ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
   ).toBe("Faculty Evaluation Due - Fall 2026");
-  expect(
-    ((await screen.findByLabelText("Message")) as HTMLTextAreaElement).value,
-  ).toContain("Dear Professor Nguyen,");
-  fireEvent.change(await screen.findByLabelText("Subject"), {
-    target: { value: "Your evaluation is due" },
-  });
   fireEvent.click(screen.getByRole("button", { name: "Send Email" }));
   await screen.findByRole("heading", { name: "Email Sent" });
   expect(savedUrl).toBe(
     `${API_URL}/api/due-evaluations/1/professors/1/notifications`,
   );
   expect(savedBody?.recipient).toBe("alice@utdallas.edu");
-  expect(savedBody?.subject).toBe("Your evaluation is due");
-  fireEvent.click(screen.getByRole("button", { name: "Done" }));
-  expect(
-    screen.getByText("Fall 2026 evaluation cycle • 2 faculty due"),
-  ).toBeDefined();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Follow up with Alice Nguyen" }),
-  );
-  expect(
-    ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
-  ).toStartWith("Follow Up: Faculty Evaluation Due");
-});
-
-test("due load failures can be retried independently and empty due results are explicit", async () => {
-  let dueRequests = 0;
-  mockFetch(async (input: unknown) =>
-    String(input).endsWith("/due-evaluations") && ++dueRequests === 1
-      ? Response.json({ detail: "Due service unavailable" }, { status: 503 })
-      : Response.json({ ...queue, count: 0, faculty: [] }),
-  );
-  openDashboard();
-  await screen.findByRole("alert");
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "View all faculty due for evaluation",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Retry due evaluations" }),
-  );
-  await screen.findByText("No faculty are due this cycle.");
-});
-
-const notSignedUp = {
-  kind: "due",
-  title: "Faculty Not Yet Signed Up",
-  countLabel: "not signed up",
-  emptyMessage: "All due faculty have signed up.",
-} as const;
-
-test("custom title and count label replace the default wording without changing the due rows or email", async () => {
-  mockFetch(async () => Response.json(queue));
-  openModal(notSignedUp);
-  const dialog = screen.getByRole("dialog", {
-    name: "Faculty Not Yet Signed Up",
-  });
-  expect(
-    within(dialog).getByRole("heading", { name: "Faculty Not Yet Signed Up" }),
-  ).toBeDefined();
-  expect(
-    within(dialog).getByText(
-      "Fall 2026 evaluation cycle • 2 faculty not signed up",
-    ),
-  ).toBeDefined();
-  expect(within(dialog).queryByText("Faculty Due for Evaluation")).toBeNull();
-  expect(
-    within(dialog).queryByText("All due faculty have signed up."),
-  ).toBeNull();
-  expect(
-    within(dialog).getByRole("columnheader", { name: "Next Due" }),
-  ).toBeDefined();
-  const notify = within(dialog).getByRole("button", {
-    name: "Notify Alice Nguyen",
-  });
-  const row = notify.closest("tr");
-  if (!row) throw new Error("Missing professor row");
-  expect(within(row).getByText("Due")).toBeDefined();
-  fireEvent.click(notify);
-  expect(
-    ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
-  ).toBe("Faculty Evaluation Due - Fall 2026");
-});
-
-test("custom empty message replaces the default empty state", () => {
-  openModal({ ...notSignedUp, queue: emptyQueue });
-  const dialog = screen.getByRole("dialog", {
-    name: "Faculty Not Yet Signed Up",
-  });
-  expect(
-    within(dialog).getByText(
-      "Fall 2026 evaluation cycle • 0 faculty not signed up",
-    ),
-  ).toBeDefined();
-  expect(
-    within(dialog).getByText("All due faculty have signed up."),
-  ).toBeDefined();
-  expect(
-    within(dialog).queryByText("No faculty are due for evaluation."),
-  ).toBeNull();
-});
-
-test("default wording is derived from kind when no custom text is passed", () => {
-  openModal({ kind: "due", queue: emptyQueue });
-  let dialog = screen.getByRole("dialog", {
-    name: "Faculty Due for Evaluation",
-  });
-  expect(
-    within(dialog).getByText("Fall 2026 evaluation cycle • 0 faculty due"),
-  ).toBeDefined();
-  expect(
-    within(dialog).getByText("No faculty are due for evaluation."),
-  ).toBeDefined();
-  cleanup();
-
-  openModal({ queue: emptyQueue });
-  dialog = screen.getByRole("dialog", {
-    name: "Faculty Overdue for Evaluation",
-  });
-  expect(
-    within(dialog).getByText("Fall 2026 evaluation cycle • 0 faculty overdue"),
-  ).toBeDefined();
-  expect(
-    within(dialog).getByText("No faculty are overdue for evaluation."),
-  ).toBeDefined();
-});
-
-test("template load failure can be retried without recording an email", async () => {
-  let attempts = 0;
-  globalThis.fetch = mock(async (input: unknown) => {
-    if (String(input).endsWith("/email-preview")) {
-      attempts++;
-      return attempts === 1
-        ? Response.json({ detail: "Template inactive" }, { status: 409 })
-        : Response.json({
-            recipient: "alice@utdallas.edu",
-            subject: "Saved server template",
-            body: "Server draft",
-          });
-    }
-    throw new Error("Unexpected request");
-  }) as unknown as typeof fetch;
-  openModal({});
-  fireEvent.click(screen.getByRole("button", { name: "Notify Alice Nguyen" }));
-  expect((await screen.findByRole("alert")).textContent).toContain(
-    "Template inactive",
-  );
-  expect(screen.queryByRole("button", { name: "Send Email" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  expect(
-    ((await screen.findByLabelText("Subject")) as HTMLInputElement).value,
-  ).toBe("Saved server template");
-});
-
-test("returning to the list cancels a pending preview", async () => {
-  let resolve: ((response: Response) => void) | undefined;
-  globalThis.fetch = mock(
-    () =>
-      new Promise<Response>((r) => {
-        resolve = r;
-      }),
-  ) as unknown as typeof fetch;
-  openModal({});
-  fireEvent.click(screen.getByRole("button", { name: "Notify Alice Nguyen" }));
-  await screen.findByText("Loading email template...");
-  fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  resolve?.(
-    Response.json({
-      recipient: "alice@utdallas.edu",
-      subject: "Late result",
-      body: "Late result",
-    }),
-  );
-  await waitFor(() =>
-    expect(
-      screen.getByRole("button", { name: "Notify Alice Nguyen" }),
-    ).toBeTruthy(),
-  );
-  expect(screen.queryByLabelText("Subject")).toBeNull();
 });

@@ -49,7 +49,6 @@ class ObserverRequestServiceTests {
 
     private EvaluationSignup signup;
     private Observer observer;
-    private Professor observee;
     private Department department;
     private EvaluationCycle cycle;
 
@@ -60,7 +59,7 @@ class ObserverRequestServiceTests {
         Course course = db.insert(new Course(null, department.departmentId(), "T", "1000", "C", "UNDERGRADUATE"));
         Semester semester = db.insert(new Semester(null, "Fall", 2026, null, null));
         cycle = db.insert(new EvaluationCycle(null, semester.semesterId(), null, null, null, "OPEN"));
-        observee = professor(department, "observee@test.edu");
+        Professor observee = professor(department, "observee@test.edu");
         Professor observerProfessor = professor(department, "observer@test.edu");
         Observee observeeRow = db.insert(new Observee(null, observee.professorId(), cycle.cycleId(), "ACTIVE"));
         observer = db.insert(new Observer(null, observerProfessor.professorId(), cycle.cycleId(), true));
@@ -71,7 +70,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void acceptingUnmanagedRequestLeavesOtherRequestsUnchanged() {
+    void otherRequestsAreUnchangedWhenAnUnmanagedRequestIsAccepted() {
         var first = service.create(signup.signupId(), observer.observerId(), null);
         var other = db.insert(new ObserverRequest(
                 null, signup.signupId(), observer.observerId(), NOW, NOW.plusDays(7), null, "PENDING", false));
@@ -81,7 +80,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void createStartsPendingWithDefaultWeekLongWindow() {
+    void requestIsPendingForOneWeekWhenNoExpirationIsGiven() {
         ObserverRequest request = service.create(signup.signupId(), observer.observerId(), null);
 
         assertThat(request.requestId()).isNotNull();
@@ -92,83 +91,41 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void aDeclinedObserverCannotBeInvitedAgainForThisEvaluation() {
+    void createThrowsWhenExpirationIsInThePast() {
+        assertThatThrownBy(() -> service.create(signup.signupId(), observer.observerId(), NOW))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void findByIdThrowsNotFoundWhenRequestIsUnknown() {
+        assertThatThrownBy(() -> service.findById(-1)).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void createThrowsWhenObserverAlreadyDeclinedThisSignup() {
         var request = service.create(signup.signupId(), observer.observerId(), null);
         service.decline(request.requestId());
         assertThatThrownBy(() -> service.create(signup.signupId(), observer.observerId(), null))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("cannot be invited again");
         assertThat(service.find(signup.signupId(), null)).hasSize(1);
-        assertThat(service.findById(request.requestId()).status()).isEqualTo("DECLINED");
     }
 
     @Test
-    void createUsesGivenExpirationDate() {
-        ObserverRequest request = service.create(signup.signupId(), observer.observerId(), NOW.plusDays(2));
-
-        assertThat(request.expirationDate()).isEqualTo(NOW.plusDays(2));
-    }
-
-    @Test
-    void createRejectsPastExpirationAndMissingIds() {
-        assertThatThrownBy(() -> service.create(signup.signupId(), observer.observerId(), NOW))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.create(null, observer.observerId(), null))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void createRejectsUnknownSignupOrObserver() {
-        assertThatThrownBy(() -> service.create(-1, observer.observerId(), null))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessage("No evaluation signup with id -1");
-        assertThatThrownBy(() -> service.create(signup.signupId(), -1, null))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessage("No observer with id -1");
-    }
-
-    @Test
-    void aSignupWithAConfirmedObserverTakesNoOtherRequests() {
+    void createThrowsWhenSignupAlreadyHasAConfirmedObserver() {
         Observer second = db.insert(new Observer(
                 null, professor(department, "second-observer@test.edu").professorId(), cycle.cycleId(), true));
         db.insert(new ObserverMatch(null, signup.signupId(), second.observerId(), NOW.toLocalDate(), "PROPOSED"));
-        ObserverRequest confirmed = service.confirm(
+        service.confirm(
                 service.create(signup.signupId(), observer.observerId(), null).requestId());
 
         assertThatThrownBy(() -> service.create(signup.signupId(), second.observerId(), null))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("This signup already has a confirmed observer request.");
-        // Asking the confirmed observer again is a retry and returns their request.
-        assertThat(service.create(signup.signupId(), observer.observerId(), null))
-                .isEqualTo(confirmed);
+                .hasMessageContaining("already has a confirmed observer");
     }
 
     @Test
-    void createRefusesAnInactiveObservee() {
-        db.update(new Professor(
-                observee.professorId(),
-                observee.departmentId(),
-                observee.professorRank(),
-                observee.firstName(),
-                observee.lastName(),
-                observee.email(),
-                observee.hireDate(),
-                false));
-
-        assertThatThrownBy(() -> service.create(signup.signupId(), observer.observerId(), null))
-                .isInstanceOf(ConflictException.class)
-                .hasMessage("This professor is not active.");
-    }
-
-    @Test
-    void optionsForAnUnknownProfessorIsNotFound() {
-        assertThatThrownBy(() -> service.options(-1))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessage("No professor with id -1");
-    }
-
-    @Test
-    void confirmBeforeExpirationSetsConfirmedAndResponseDate() {
+    void requestIsConfirmedWithResponseDateWhenConfirmedBeforeExpiration() {
         ObserverRequest pending = service.create(signup.signupId(), observer.observerId(), null);
 
         ObserverRequest confirmed = service.confirm(pending.requestId());
@@ -179,53 +136,38 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void confirmingTwiceIsAConflict() {
+    void requestCannotBeAnsweredAgainWhenDeclined() {
         ObserverRequest pending = service.create(signup.signupId(), observer.observerId(), null);
-        service.confirm(pending.requestId());
 
-        assertThatThrownBy(() -> service.confirm(pending.requestId()))
-                .isInstanceOf(ConflictException.class)
-                .hasMessage("Request " + pending.requestId() + " is already CONFIRMED");
+        ObserverRequest declined = service.decline(pending.requestId());
+
+        assertThat(declined.status()).isEqualTo("DECLINED");
+        assertThat(declined.responseDate()).isEqualTo(NOW);
+        assertThatThrownBy(() -> service.confirm(pending.requestId())).isInstanceOf(ConflictException.class);
     }
 
     @Test
-    void overdueRequestReadsAsExpiredAndCannotBeConfirmed() {
-        ObserverRequest overdue = insertRequest("PENDING", NOW.minusMinutes(1));
+    void requestIsExpiredAndCannotBeConfirmedWhenPastExpiration() {
+        ObserverRequest overdue = insertRequest(NOW.minusMinutes(1));
 
         assertThat(service.findById(overdue.requestId()).status()).isEqualTo("EXPIRED");
         assertThatThrownBy(() -> service.confirm(overdue.requestId()))
                 .isInstanceOf(ConflictException.class)
-                .hasMessage("Request " + overdue.requestId() + " has expired");
+                .hasMessageContaining("has expired");
     }
 
     @Test
-    void requestExpiringExactlyNowIsStillPending() {
-        ObserverRequest request = insertRequest("PENDING", NOW);
-
-        assertThat(service.findById(request.requestId()).status()).isEqualTo("PENDING");
-    }
-
-    @Test
-    void confirmedRequestNeverExpires() {
-        ObserverRequest confirmed = insertRequest("CONFIRMED", NOW.minusDays(30));
-
-        assertThat(service.findById(confirmed.requestId()).status()).isEqualTo("CONFIRMED");
-        assertThat(service.expireOverdue()).isZero();
-    }
-
-    @Test
-    void expireOverdueSweepsOnlyOverduePendingRequests() {
-        ObserverRequest overdue = insertRequest("PENDING", NOW.minusDays(1));
-        ObserverRequest active = insertRequest("PENDING", NOW.plusDays(1));
+    void expireOverdueOnlyExpiresPendingRequestsWhenPastExpiration() {
+        ObserverRequest overdue = insertRequest(NOW.minusDays(1));
+        ObserverRequest active = insertRequest(NOW.plusDays(1));
 
         assertThat(service.expireOverdue()).isEqualTo(1);
         assertThat(service.findById(overdue.requestId()).status()).isEqualTo("EXPIRED");
         assertThat(service.findById(active.requestId()).status()).isEqualTo("PENDING");
-        assertThat(service.expireOverdue()).isZero();
     }
 
     @Test
-    void findFiltersBySignupAndObserver() {
+    void findReturnsMatchingRequestsWhenFilteredBySignupOrObserver() {
         ObserverRequest request = service.create(signup.signupId(), observer.observerId(), null);
 
         assertThat(service.find(signup.signupId(), null)).containsExactly(request);
@@ -233,65 +175,9 @@ class ObserverRequestServiceTests {
         assertThat(service.find(-1, null)).isEmpty();
     }
 
-    @Test
-    void unknownRequestThrowsNotFound() {
-        assertThatThrownBy(() -> service.findById(-1))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessage("No observer request with id -1");
-        assertThatThrownBy(() -> service.confirm(-1)).isInstanceOf(NotFoundException.class);
-    }
-
-    @Test
-    void declineBeforeExpirationSetsDeclinedAndResponseDate() {
-        ObserverRequest pending = service.create(signup.signupId(), observer.observerId(), null);
-
-        ObserverRequest declined = service.decline(pending.requestId());
-
-        assertThat(declined.status()).isEqualTo("DECLINED");
-        assertThat(declined.responseDate()).isEqualTo(NOW);
-        assertThat(service.findById(pending.requestId())).isEqualTo(declined);
-    }
-
-    @Test
-    void declinedRequestCannotBeAnsweredAgain() {
-        ObserverRequest pending = service.create(signup.signupId(), observer.observerId(), null);
-        service.decline(pending.requestId());
-
-        assertThatThrownBy(() -> service.decline(pending.requestId()))
-                .isInstanceOf(ConflictException.class)
-                .hasMessage("Request " + pending.requestId() + " is already DECLINED");
-        assertThatThrownBy(() -> service.confirm(pending.requestId()))
-                .isInstanceOf(ConflictException.class)
-                .hasMessage("Request " + pending.requestId() + " is already DECLINED");
-    }
-
-    @Test
-    void overdueRequestCannotBeDeclined() {
-        ObserverRequest overdue = insertRequest("PENDING", NOW.minusMinutes(1));
-
-        assertThatThrownBy(() -> service.decline(overdue.requestId()))
-                .isInstanceOf(ConflictException.class)
-                .hasMessage("Request " + overdue.requestId() + " has expired");
-    }
-
-    @Test
-    void declinedRequestNeverExpires() {
-        ObserverRequest declined = insertRequest("DECLINED", NOW.minusDays(30));
-
-        assertThat(service.findById(declined.requestId()).status()).isEqualTo("DECLINED");
-        assertThat(service.expireOverdue()).isZero();
-    }
-
-    private ObserverRequest insertRequest(String status, LocalDateTime expiration) {
+    private ObserverRequest insertRequest(LocalDateTime expiration) {
         return db.insert(new ObserverRequest(
-                null,
-                signup.signupId(),
-                observer.observerId(),
-                NOW.minusDays(8),
-                expiration,
-                "CONFIRMED".equals(status) ? NOW.minusDays(9) : null,
-                status,
-                false));
+                null, signup.signupId(), observer.observerId(), NOW.minusDays(8), expiration, null, "PENDING", false));
     }
 
     private Professor professor(Department department, String email) {

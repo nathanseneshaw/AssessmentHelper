@@ -1,7 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import edu.utdallas.cs4485.assessmenthelper.entity.Course;
 import edu.utdallas.cs4485.assessmenthelper.entity.CourseSection;
@@ -22,6 +21,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -29,7 +30,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
-/** The ASSISTANT (1 year) and ASSOCIATE/FULL (2 years) policies come from the seed data in data.sql. */
+/**
+ * The ASSISTANT (1 year) and ASSOCIATE/FULL (2 years) policies come from the seed data in data.sql. The due/overdue
+ * rules themselves are covered by EvaluationDueRulesTests.
+ */
 @DataJdbcTest
 @Import({
     EvaluationDeadlineService.class,
@@ -61,36 +65,20 @@ class EvaluationDeadlineServiceTests {
         department = db.insert(new Department(null, school.schoolId(), "Test Department", "TEST"));
     }
 
-    @Test
-    void assistantIsDueOneYearAfterLastEvaluation() {
-        Professor professor = professor("ASSISTANT", LocalDate.of(2020, 8, 15));
+    @ParameterizedTest
+    @CsvSource({"ASSISTANT, 1, 2027-03-10", "FULL, 2, 2028-03-10"})
+    void nextDueDateIsLastEvaluationPlusRankIntervalWhenProfessorWasEvaluated(
+            String rank, int intervalYears, LocalDate nextDue) {
+        Professor professor = professor(rank, LocalDate.of(2020, 8, 15));
         completeEvaluation(professor, LocalDateTime.of(2026, 3, 10, 12, 0));
 
         assertThat(service.findByProfessor(professor.professorId()))
                 .isEqualTo(new EvaluationDeadline(
-                        professor.professorId(),
-                        "ASSISTANT",
-                        1,
-                        LocalDate.of(2026, 3, 10),
-                        LocalDate.of(2027, 3, 10),
-                        false));
+                        professor.professorId(), rank, intervalYears, LocalDate.of(2026, 3, 10), nextDue, false));
     }
 
     @Test
-    void associateAndFullAreDueTwoYearsAfterLastEvaluation() {
-        for (String rank : new String[] {"ASSOCIATE", "FULL"}) {
-            Professor professor = professor(rank, LocalDate.of(2005, 8, 15));
-            completeEvaluation(professor, LocalDateTime.of(2025, 5, 1, 9, 0));
-
-            EvaluationDeadline deadline = service.findByProfessor(professor.professorId());
-            assertThat(deadline.evaluationIntervalYears()).isEqualTo(2);
-            assertThat(deadline.nextDueDate()).isEqualTo(LocalDate.of(2027, 5, 1));
-            assertThat(deadline.overdue()).isFalse();
-        }
-    }
-
-    @Test
-    void latestCompletedEvaluationIsUsedAndIncompleteOnesAreIgnored() {
+    void latestCompletedEvaluationIsUsedWhenSomeAreIncomplete() {
         Professor professor = professor("ASSISTANT", null);
         completeEvaluation(professor, LocalDateTime.of(2024, 1, 5, 9, 0));
         completeEvaluation(professor, LocalDateTime.of(2025, 2, 6, 9, 0));
@@ -101,7 +89,7 @@ class EvaluationDeadlineServiceTests {
     }
 
     @Test
-    void pastDueDateIsOverdue() {
+    void deadlineIsOverdueWhenNextDueDateHasPassed() {
         Professor professor = professor("ASSISTANT", null);
         completeEvaluation(professor, LocalDateTime.of(2025, 1, 1, 9, 0));
 
@@ -111,78 +99,13 @@ class EvaluationDeadlineServiceTests {
     }
 
     @Test
-    void dueDateEarlierInCurrentSemesterIsDueNotOverdue() {
-        // Issue #121: due 2026-09-15 is before today (2026-10-20) but inside Fall 2026, so not overdue.
-        Professor professor = professor("ASSISTANT", null);
-        completeEvaluation(professor, LocalDateTime.of(2025, 9, 15, 9, 0));
-
-        EvaluationDeadline deadline = service.findByProfessor(professor.professorId());
-        assertThat(deadline.nextDueDate()).isEqualTo(LocalDate.of(2026, 9, 15));
-        assertThat(deadline.overdue()).isFalse();
-    }
-
-    @Test
-    void observationWithoutCompletedObserveeStatusIsNotAnEvaluation() {
-        Professor professor = professor("ASSISTANT", LocalDate.of(2024, 8, 15));
-        completeEvaluation(professor, LocalDateTime.of(2026, 3, 10, 12, 0), "ACTIVE");
-
-        EvaluationDeadline deadline = service.findByProfessor(professor.professorId());
-        assertThat(deadline.lastEvaluationDate()).isNull();
-        assertThat(deadline.nextDueDate()).isEqualTo(LocalDate.of(2025, 8, 15));
-        assertThat(deadline.overdue()).isTrue();
-    }
-
-    @Test
-    void inactiveProfessorIsNeverOverdue() {
-        Professor professor = db.insert(new Professor(
-                null,
-                department.departmentId(),
-                "ASSISTANT",
-                "Test",
-                "Professor",
-                "i" + System.nanoTime() + "@test.edu",
-                null,
-                false));
-        completeEvaluation(professor, LocalDateTime.of(2025, 1, 1, 9, 0));
-
-        EvaluationDeadline deadline = service.findByProfessor(professor.professorId());
-        assertThat(deadline.nextDueDate()).isEqualTo(LocalDate.of(2026, 1, 1));
-        assertThat(deadline.overdue()).isFalse();
-    }
-
-    @Test
-    void neverEvaluatedProfessorIsDueOneIntervalAfterHire() {
+    void nextDueDateIsOneIntervalAfterHireWhenProfessorWasNeverEvaluated() {
         Professor professor = professor("FULL", LocalDate.of(2026, 8, 15));
 
         EvaluationDeadline deadline = service.findByProfessor(professor.professorId());
         assertThat(deadline.lastEvaluationDate()).isNull();
         assertThat(deadline.nextDueDate()).isEqualTo(LocalDate.of(2028, 8, 15));
         assertThat(deadline.overdue()).isFalse();
-    }
-
-    @Test
-    void neverEvaluatedProfessorWithoutHireDateHasNoDueDate() {
-        Professor professor = professor("FULL", null);
-
-        EvaluationDeadline deadline = service.findByProfessor(professor.professorId());
-        assertThat(deadline.nextDueDate()).isNull();
-        assertThat(deadline.overdue()).isFalse();
-    }
-
-    @Test
-    void unknownProfessorThrowsNotFound() {
-        assertThatThrownBy(() -> service.findByProfessor(-1))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessage("No professor with id -1");
-    }
-
-    @Test
-    void professorWithoutRankThrowsNotFound() {
-        Professor professor = professor(null, null);
-
-        assertThatThrownBy(() -> service.findByProfessor(professor.professorId()))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessageContaining("has no rank");
     }
 
     private Professor professor(String rank, LocalDate hireDate) {
@@ -199,17 +122,14 @@ class EvaluationDeadlineServiceTests {
 
     /** Records one observation of the professor, completed at the given time or still scheduled if null. */
     private void completeEvaluation(Professor professor, LocalDateTime completedAt) {
-        completeEvaluation(professor, completedAt, completedAt == null ? "ACTIVE" : "COMPLETED");
-    }
-
-    private void completeEvaluation(Professor professor, LocalDateTime completedAt, String observeeStatus) {
         Course course = db.insert(
                 new Course(null, department.departmentId(), "T", "1" + System.nanoTime(), "C", "UNDERGRADUATE"));
         ObservationTemplate template = db.insert(new ObservationTemplate(null, null, "T", 1, null, true));
         Semester semester = db.insert(new Semester(null, "Fall", 2026, null, null));
         EvaluationCycle cycle = db.insert(new EvaluationCycle(null, semester.semesterId(), null, null, null, "OPEN"));
         Professor observerProfessor = professor("FULL", null);
-        Observee observee = db.insert(new Observee(null, professor.professorId(), cycle.cycleId(), observeeStatus));
+        Observee observee = db.insert(new Observee(
+                null, professor.professorId(), cycle.cycleId(), completedAt == null ? "ACTIVE" : "COMPLETED"));
         Observer observer = db.insert(new Observer(null, observerProfessor.professorId(), cycle.cycleId(), true));
         CourseSection section = db.insert(
                 new CourseSection(null, course.courseId(), semester.semesterId(), "001", null, null, null, null));

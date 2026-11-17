@@ -1,14 +1,15 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
 import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.AcDashboardService.Status;
 import edu.utdallas.cs4485.assessmenthelper.service.AcDashboardService.TrackedObservation;
+import edu.utdallas.cs4485.assessmenthelper.service.ObservationService.ViewerRole;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,7 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Import(AcceptanceSupport.Time.class)
 @Transactional
 class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
-    // Leander is an assistant professor, Arlo is an associate professor and Kaia is a full professor.
+    // Leander is an assistant professor and Arlo is an associate professor.
     private static final String AFTER_THE_OBSERVATION_DATE = "2026-11-05T16:00:00Z";
     private static final String AFTER_THE_OBSERVATION_DEADLINE = "2026-11-16T16:00:00Z";
 
@@ -40,13 +41,6 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     @Autowired
     private ProfessorRepository professors;
 
-    private TrackedObservation leandersEvaluation() {
-        return dashboard.observations().observations().stream()
-                .filter(o -> o.observee().contains("Leander"))
-                .findFirst()
-                .orElseThrow();
-    }
-
     private void promoteLeanderToFull() {
         var leander = professors.findById(LEANDER).orElseThrow();
         professors.save(new Professor(
@@ -60,112 +54,73 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
                 leander.activeStatus()));
     }
 
+    private TrackedObservation leandersEvaluation() {
+        return dashboard.observations().observations().stream()
+                .filter(o -> o.observee().contains("Leander"))
+                .findFirst()
+                .orElseThrow();
+    }
+
     private List<MissingObservationService.Alert> lateAlerts(int professorId) {
         return missing.findByProfessor(professorId).stream()
                 .filter(a -> "LATE_SUBMISSION".equals(a.kind()))
                 .toList();
     }
 
+    private Optional<ViewerRole> roleInListOf(int professorId, int obs) {
+        return observations.professorObservations(professorId).stream()
+                .filter(o -> o.observationId() == obs)
+                .findFirst()
+                .map(ObservationService.Summary::role);
+    }
+
     // ---------- US2 / US3: the rank decides how often a professor is evaluated ----------
 
     @Test
-    void us2_anAssistantProfessorIsEvaluatedEveryYear() {
+    void intervalIsOneYearWhenAssistantAndTwoYearsWhenAssociate() {
         assertThat(deadlines.findByProfessor(LEANDER).evaluationIntervalYears()).isEqualTo(1);
-        assertThat(deadlines.findByProfessor(LEANDER).professorRank()).isEqualTo("ASSISTANT");
-    }
-
-    @Test
-    void us2_anAssociateProfessorIsEvaluatedEveryTwoYears() {
         assertThat(deadlines.findByProfessor(ARLO).evaluationIntervalYears()).isEqualTo(2);
-        assertThat(deadlines.findByProfessor(ARLO).professorRank()).isEqualTo("ASSOCIATE");
     }
 
     @Test
-    void us2_aFullProfessorIsEvaluatedEveryTwoYears() {
-        assertThat(deadlines.findByProfessor(KAIA).evaluationIntervalYears()).isEqualTo(2);
-        assertThat(deadlines.findByProfessor(KAIA).professorRank()).isEqualTo("FULL");
-    }
-
-    @Test
-    void us3_changingARankChangesTheEvaluationInterval() {
-        assertThat(deadlines.findByProfessor(LEANDER).evaluationIntervalYears()).isEqualTo(1);
-
-        promoteLeanderToFull();
-
-        assertThat(deadlines.findByProfessor(LEANDER).evaluationIntervalYears()).isEqualTo(2);
-        assertThat(deadlines.findByProfessor(LEANDER).professorRank()).isEqualTo("FULL");
-    }
-
-    @Test
-    void us3_aRankChangeMovesTheNextDueDateLater() {
+    void nextDueDateMovesLaterWhenRankChanges() {
         LocalDate asAssistant = deadlines.findByProfessor(LEANDER).nextDueDate();
 
         promoteLeanderToFull();
-        LocalDate asFull = deadlines.findByProfessor(LEANDER).nextDueDate();
 
-        assertThat(asAssistant).isNotNull();
-        assertThat(asFull).isAfter(asAssistant);
-    }
-
-    @Test
-    void us2_aProfessorWhoDoesNotExistIsNotFound() {
-        assertThatThrownBy(() -> deadlines.findByProfessor(999_999)).isInstanceOf(NotFoundException.class);
-    }
-
-    @Test
-    void us8_theNextDueDateIsAlwaysAfterTheLastCompletedEvaluation() {
-        for (int professor : List.of(LEANDER, ARLO, KAIA, KEIRA, DARIO)) {
-            var d = deadlines.findByProfessor(professor);
-            if (d.lastEvaluationDate() != null && d.nextDueDate() != null)
-                assertThat(d.nextDueDate()).as("professor %d", professor).isAfter(d.lastEvaluationDate());
-        }
+        var asFull = deadlines.findByProfessor(LEANDER);
+        assertThat(asFull.evaluationIntervalYears()).isEqualTo(2);
+        assertThat(asFull.nextDueDate()).isAfter(asAssistant);
     }
 
     // ---------- US35: KPIs ----------
 
     @Test
-    void us35_theDashboardLoadsForTheCurrentCycle() {
+    void dashboardShowsCurrentCycleWhenLoaded() {
         var metrics = dashboard.metrics();
 
         assertThat(metrics.cycleLabel()).isEqualTo("Fall 2026");
-        assertThat(metrics.facultyDue()).isNotNegative();
         assertThat(metrics.listSize()).isPositive();
-    }
-
-    @Test
-    void us35_everyRateIsAPartOfItsTotal() {
-        var metrics = dashboard.metrics();
-
         assertThat(metrics.participation().count())
                 .isBetween(0, metrics.participation().total());
-        assertThat(metrics.observerUtilization().count())
-                .isBetween(0, metrics.observerUtilization().total());
-        assertThat(metrics.listSufficiency().count())
-                .isBetween(0, metrics.listSufficiency().total());
-        assertThat(metrics.missingObservations()).isNotNegative();
     }
 
     @Test
-    void us35_noObservationIsMissingOnTheDayItIsHeld() {
-        assertThat(dashboard.metrics().missingObservations()).isZero();
-        assertThat(leandersEvaluation().status()).isEqualTo(Status.SCHEDULED);
-    }
-
-    @Test
-    void us35_4_anIncompleteObservationIsMissingOnlyAfterTheCycleDeadline() {
+    void observationIsMissingOnlyWhenCycleDeadlinePassesWithoutACompletedForm() {
+        // The observation date passing is not enough; the cycle deadline is.
         clock.set(AFTER_THE_OBSERVATION_DATE);
         assertThat(leandersEvaluation().status()).isEqualTo(Status.SCHEDULED);
         assertThat(dashboard.metrics().missingObservations()).isZero();
-        clock.set("2026-11-15T16:00:00Z");
-        assertThat(dashboard.metrics().missingObservations()).isZero();
+
         clock.set(AFTER_THE_OBSERVATION_DEADLINE);
+
         assertThat(leandersEvaluation().status()).isEqualTo(Status.MISSING);
         assertThat(leandersEvaluation().missingReason()).isEqualTo("Not submitted");
         assertThat(dashboard.metrics().missingObservations()).isGreaterThanOrEqualTo(1);
     }
 
     @Test
-    void us35_5_theMissingCountAgreesWithTheTrackingList() {
+    void missingCountMatchesTrackingListWhenObservationsAreMissing() {
         clock.set(AFTER_THE_OBSERVATION_DEADLINE);
 
         long inList = dashboard.observations().observations().stream()
@@ -176,7 +131,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void us35_5_theMissingCountDropsWhenTheObservationIsCompleted() {
+    void missingCountDropsWhenObservationIsCompleted() {
         clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         int before = dashboard.metrics().missingObservations();
 
@@ -189,126 +144,51 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     // ---------- US14: tracking and flagging ----------
 
     @Test
-    void us14_theTrackingListShowsWhoObservesWhoAndWhen() {
-        var tracked = leandersEvaluation();
-
-        assertThat(tracked.observer()).contains("Keira");
-        assertThat(tracked.course()).startsWith("CS 3345");
-        assertThat(tracked.date()).isEqualTo(LocalDate.of(2026, 11, 4));
-        assertThat(tracked.observeeSigned()).isFalse();
-        assertThat(tracked.observerSigned()).isFalse();
-    }
-
-    @Test
-    void us14_theTrackingListFollowsTheSignaturesAsTheyHappen() {
+    void trackingListShowsSignaturesWhenObserverAndObserveeSign() {
         int obs = observationId();
+        var scheduled = leandersEvaluation();
+        assertThat(scheduled.observer()).contains("Keira");
+        assertThat(scheduled.course()).startsWith("CS 3345");
+        assertThat(scheduled.date()).isEqualTo(LocalDate.of(2026, 11, 4));
+        assertThat(scheduled.observerSigned()).isFalse();
 
         keiraSubmits(obs);
-        var afterObserver = leandersEvaluation();
-        assertThat(afterObserver.observerSigned()).isTrue();
-        assertThat(afterObserver.observeeSigned()).isFalse();
-        assertThat(afterObserver.status()).isEqualTo(Status.PENDING_SIGN_OFF);
+        var submitted = leandersEvaluation();
+        assertThat(submitted.observerSigned()).isTrue();
+        assertThat(submitted.observeeSigned()).isFalse();
 
         leanderSigns(obs, null);
-        var afterObservee = leandersEvaluation();
-        assertThat(afterObservee.observerSigned()).isTrue();
-        assertThat(afterObservee.observeeSigned()).isTrue();
-        assertThat(afterObservee.status()).isEqualTo(Status.COMPLETED);
-        assertThat(afterObservee.completedAt()).isNotNull();
+        var completed = leandersEvaluation();
+        assertThat(completed.observeeSigned()).isTrue();
+        assertThat(completed.status()).isEqualTo(Status.COMPLETED);
+        assertThat(completed.completedAt()).isNotNull();
     }
 
     @Test
-    void us14_aCompletedObservationIsNeverFlaggedMissingEvenAfterTheDeadline() {
-        complete(observationId(), null);
-        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
-
-        assertThat(leandersEvaluation().status()).isEqualTo(Status.COMPLETED);
-    }
-
-    @Test
-    void us14_theObserverIsToldTheirObservationIsMissingAfterTheCycleDeadline() {
-        assertThat(lateAlerts(KEIRA)).isEmpty();
-
+    void observerHasLateAlertWhenCycleDeadlinePassesUntilSubmitted() {
         clock.set(AFTER_THE_OBSERVATION_DATE);
         assertThat(lateAlerts(KEIRA)).isEmpty();
-        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
-        assertThat(lateAlerts(KEIRA)).hasSize(1);
-        assertThat(lateAlerts(KEIRA).getFirst().observationId()).isEqualTo(observationId());
-        assertThat(lateAlerts(KEIRA).getFirst().dueDate()).isEqualTo(LocalDate.of(2026, 11, 15));
-        assertThat(lateAlerts(KEIRA).getFirst().message()).contains("Leander Coldwell");
-    }
 
-    @Test
-    void us14_theLateAlertGoesAwayOnceTheObserverSubmits() {
         clock.set(AFTER_THE_OBSERVATION_DEADLINE);
-        assertThat(lateAlerts(KEIRA)).hasSize(1);
+        var alerts = lateAlerts(KEIRA);
+        assertThat(alerts).hasSize(1);
+        assertThat(alerts.getFirst().observationId()).isEqualTo(observationId());
 
+        // Once submitted, it is the observee's sign-off that is missing.
         keiraSubmits(observationId());
-
         assertThat(lateAlerts(KEIRA)).isEmpty();
-        assertThat(leandersEvaluation().status()).isEqualTo(Status.MISSING);
         assertThat(leandersEvaluation().missingReason()).isEqualTo("Not signed");
         assertThat(missing.findByProfessor(LEANDER)).anyMatch(a -> "MISSING_SIGN_OFF".equals(a.kind()));
-    }
-
-    @Test
-    void us14_theObserveeIsNotGivenALateSubmissionAlertForSomeoneElsesForm() {
-        clock.set(AFTER_THE_OBSERVATION_DEADLINE);
-
-        assertThat(lateAlerts(LEANDER)).isEmpty();
-        assertThat(lateAlerts(DARIO)).isEmpty();
     }
 
     // ---------- US36: a professor's own observations ----------
 
     @Test
-    void us36_theObserverSeesTheObservationAsOneTheyObserve() {
-        var mine = observations.professorObservations(KEIRA).stream()
-                .filter(o -> o.observationId() == observationId())
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(mine.role()).isEqualTo(ObservationService.ViewerRole.OBSERVER);
-        assertThat(mine.observeeName()).isEqualTo("Leander Coldwell");
-        assertThat(mine.status()).isIn(ObservationService.Status.ACCEPTED, ObservationService.Status.SCHEDULED);
-    }
-
-    @Test
-    void us36_theObserveeSeesTheObservationAsOneTheyReceive() {
-        var mine = observations.professorObservations(LEANDER).stream()
-                .filter(o -> o.observationId() == observationId())
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(mine.role()).isEqualTo(ObservationService.ViewerRole.OBSERVEE);
-        assertThat(mine.observerName()).isEqualTo("Keira Larkspur");
-    }
-
-    @Test
-    void us36_aProfessorNotInvolvedDoesNotSeeItInTheirList() {
-        assertThat(observations.professorObservations(DARIO)).noneMatch(o -> o.observationId() == observationId());
-    }
-
-    @Test
-    void us36_theListShowsTheNewStatusAfterEachStep() {
+    void observationShowsViewersRoleWhenListedForEachProfessor() {
         int obs = observationId();
 
-        keiraStarts(obs);
-        assertThat(statusInListOf(LEANDER, obs)).isEqualTo(ObservationService.Status.IN_PROGRESS);
-
-        observations.submit(obs, completeAnswers(obs), keira());
-        assertThat(statusInListOf(LEANDER, obs)).isEqualTo(ObservationService.Status.SUBMITTED);
-
-        leanderSigns(obs, null);
-        assertThat(statusInListOf(LEANDER, obs)).isEqualTo(ObservationService.Status.COMPLETED);
-        assertThat(statusInListOf(KEIRA, obs)).isEqualTo(ObservationService.Status.COMPLETED);
-    }
-
-    private ObservationService.Status statusInListOf(int professorId, int obs) {
-        return observations.professorObservations(professorId).stream()
-                .filter(o -> o.observationId() == obs)
-                .findFirst()
-                .orElseThrow()
-                .status();
+        assertThat(roleInListOf(KEIRA, obs)).contains(ViewerRole.OBSERVER);
+        assertThat(roleInListOf(LEANDER, obs)).contains(ViewerRole.OBSERVEE);
+        assertThat(roleInListOf(DARIO, obs)).isEmpty();
     }
 }

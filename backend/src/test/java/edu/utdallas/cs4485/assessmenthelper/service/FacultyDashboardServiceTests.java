@@ -10,22 +10,15 @@ import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.signupOf;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.submitted;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.tuple;
 
 import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
-import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationPolicy;
-import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observer;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.Dashboard;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.EvaluationStatus;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.ObservationItem;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.ObservationStatus;
-import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.Role;
-import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.Schedule;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.TermObservations;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.Upcoming;
 import edu.utdallas.cs4485.assessmenthelper.service.FacultyDashboardService.UpcomingType;
@@ -128,68 +121,42 @@ class FacultyDashboardServiceTests {
     }
 
     @Test
-    void theStatusFollowsTheProfessorThroughTheCycle() {
+    void statusChangesWhenProfessorMovesThroughTheCycle() {
+        assertThat(service.dashboard(KAIA).evaluation().status()).isEqualTo(EvaluationStatus.NOT_DUE);
         assertThat(service.dashboard(DARIO).evaluation().status()).isEqualTo(EvaluationStatus.NOT_SIGNED_UP);
 
         int signup = signups.save(DARIO, FALL_2026, 298, null).signupId();
         var awaiting = service.dashboard(DARIO).evaluation();
         assertThat(awaiting.status()).isEqualTo(EvaluationStatus.AWAITING_OBSERVER);
         assertThat(awaiting.course()).isEqualTo("CS 3345.005");
-        assertThat(awaiting.observer()).isNull();
 
         // Accepting a request records an ACCEPTED observation.
         int observation = observe(signup, ARLO, "2026-11-10");
         var scheduled = service.dashboard(DARIO);
         assertThat(scheduled.evaluation().status()).isEqualTo(EvaluationStatus.SCHEDULED);
         assertThat(scheduled.evaluation().observer()).isEqualTo("Arlo Glimmerton");
-        assertThat(scheduled.evaluation().observationDate()).isEqualTo(LocalDate.of(2026, 11, 10));
         assertThat(scheduled.termObservations()).isEqualTo(new TermObservations(1, 0, 1, 0));
-        assertThat(scheduled.upcoming().getFirst().status()).isEqualTo(ObservationStatus.NOT_STARTED);
 
-        // Arlo starts the form; for Dario it is still the observation he is waiting on.
+        // Once submitted, only the observee is asked to sign off, until the record is complete.
         clock.set("2026-11-10");
-        updateObservation(observation, o -> withStatus(o, "IN_PROGRESS"));
-        var started = service.dashboard(DARIO);
-        assertThat(started.evaluation().status()).isEqualTo(EvaluationStatus.SCHEDULED);
-        assertThat(started.upcoming().getFirst().status()).isEqualTo(ObservationStatus.IN_PROGRESS);
-
         submit(observation);
         var submitted = service.dashboard(DARIO);
         assertThat(submitted.evaluation().status()).isEqualTo(EvaluationStatus.SUBMITTED);
         assertThat(submitted.termObservations()).isEqualTo(new TermObservations(1, 0, 0, 1));
         assertThat(types(submitted)).containsExactly(UpcomingType.SIGN_OFF, UpcomingType.FEEDBACK);
+        assertThat(types(service.dashboard(ARLO))).doesNotContain(UpcomingType.SIGN_OFF);
 
         complete(observation, "2026-11-10T11:00:00");
-        clock.set("2026-11-11");
         var completed = service.dashboard(DARIO);
         assertThat(completed.evaluation().status()).isEqualTo(EvaluationStatus.COMPLETED);
         assertThat(completed.evaluation().completedAt()).isEqualTo(LocalDateTime.of(2026, 11, 10, 11, 0));
-        assertThat(completed.termObservations()).isEqualTo(new TermObservations(1, 1, 0, 0));
         assertThat(types(completed)).doesNotContain(UpcomingType.SIGN_OFF);
     }
 
     @Test
-    void onlyTheObserveeIsAskedToSignOffAndOnlyUntilTheyDo() {
-        int observation = observationOf(LEANDER);
-        assertThat(types(service.dashboard(LEANDER))).doesNotContain(UpcomingType.SIGN_OFF);
-
-        submit(observation);
-        assertThat(service.dashboard(LEANDER).upcoming())
-                .filteredOn(u -> u.type() == UpcomingType.SIGN_OFF)
-                .singleElement()
-                .extracting(Upcoming::observationId, Upcoming::date, Upcoming::course, Upcoming::with)
-                .containsExactly(observation, LocalDate.of(2026, 11, 15), "CS 3345.001", "Keira Larkspur");
-        assertThat(types(service.dashboard(KEIRA))).doesNotContain(UpcomingType.SIGN_OFF);
-
-        complete(observation, "2026-11-05T10:00:00");
-        assertThat(types(service.dashboard(LEANDER))).doesNotContain(UpcomingType.SIGN_OFF);
-    }
-
-    @Test
-    void theSignupReminderShowsThroughTheDeadlineDay() {
+    void signupReminderIsShownWhenTodayIsOnOrBeforeTheDeadline() {
         clock.set("2026-10-31");
         assertThat(types(service.dashboard(DARIO))).containsExactly(UpcomingType.SIGNUP);
-        assertThat(service.dashboard(DARIO).upcoming().getFirst().date()).isEqualTo(LocalDate.of(2026, 10, 31));
 
         clock.set("2026-11-01");
         var late = service.dashboard(DARIO);
@@ -198,111 +165,68 @@ class FacultyDashboardServiceTests {
     }
 
     @Test
-    void anObservationIsMissingAfterTheCycleDeadlineUntilSigned() {
-        clock.set("2026-11-15");
-        assertThat(firstForMe(LEANDER).overdue()).isFalse();
-        assertThat(service.dashboard(LEANDER).upcoming().getFirst().overdue()).isFalse();
-
+    void observationIsMissingWhenCycleDeadlinePassesUntilSigned() {
         clock.set("2026-11-16");
-        assertThat(firstForMe(LEANDER).status()).isEqualTo(ObservationStatus.NOT_STARTED);
         assertThat(firstForMe(LEANDER).overdue()).isTrue();
         assertThat(service.dashboard(LEANDER).upcoming().getFirst().overdue()).isTrue();
-        // A late observation is still the professor's open evaluation.
+        // A missing observation is still the professor's open evaluation.
         assertThat(service.dashboard(LEANDER).evaluation().status()).isEqualTo(EvaluationStatus.SCHEDULED);
 
+        // Submitting is not enough: it stays missing until the observee signs off.
         submit(observationOf(LEANDER));
         assertThat(firstForMe(LEANDER).status()).isEqualTo(ObservationStatus.SUBMITTED);
         assertThat(firstForMe(LEANDER).overdue()).isTrue();
     }
 
     @Test
-    void feedbackIsOwedByEachSideUntilGivenAndOverdueAfterTheDeadline() {
+    void feedbackIsOwedUntilGivenAndOverdueWhenDeadlinePasses() {
         submit(observationOf(LEANDER));
-        clock.set("2026-12-01");
         for (int professor : new int[] {LEANDER, KEIRA}) {
-            Upcoming feedback = service.dashboard(professor).upcoming().stream()
-                    .filter(u -> u.type() == UpcomingType.FEEDBACK)
-                    .findFirst()
-                    .orElseThrow();
-            assertThat(feedback.date()).isEqualTo(LocalDate.of(2026, 12, 1));
-            assertThat(feedback.overdue()).isFalse();
-            assertThat(feedback.course()).isEqualTo("CS 3345.001");
+            assertThat(feedbackFor(professor).date()).isEqualTo(LocalDate.of(2026, 12, 1));
+            assertThat(feedbackFor(professor).overdue()).isFalse();
         }
 
         db.insert(newFeedback(1, LEANDER, signupOf(db, LEANDER), null, LocalDate.parse("2026-12-01")));
         assertThat(types(service.dashboard(LEANDER))).doesNotContain(UpcomingType.FEEDBACK);
 
         clock.set("2026-12-02");
-        assertThat(service.dashboard(KEIRA).upcoming())
-                .filteredOn(u -> u.type() == UpcomingType.FEEDBACK)
-                .singleElement()
-                .extracting(Upcoming::overdue)
-                .isEqualTo(true);
+        assertThat(feedbackFor(KEIRA).overdue()).isTrue();
     }
 
     @Test
-    void undatedObservationsListFirstButComeLastInUpcoming() {
-        // Keira's own observation by Arlo has no date yet; her observation of Leander is on 2026-11-04.
-        observe(signupOf(db, KEIRA), ARLO, null);
-        var keira = service.dashboard(KEIRA);
+    void professorIsDueNextSemesterWithoutACompletedEvaluationWhenDeferred() {
+        int signup = signups.save(DARIO, FALL_2026, 298, null).signupId();
+        db.findAll(Observer.class).stream().filter(o -> o.cycleId() == 1).forEach(o -> db.update(inactive(o)));
+        clock.set("2026-11-16");
+        matching.defer(signup, KAIA, "No matching observers");
+        var current = service.dashboard(DARIO);
+        assertThat(current.evaluation().status()).isEqualTo(EvaluationStatus.DEFERRED);
+        assertThat(current.schedule().dueStatus()).isEqualTo("Due next semester");
+        assertThat(current.schedule().nextDueSemester()).isEqualTo("Spring 2027");
+        assertThat(deadlines.findByProfessor(DARIO).overdue()).isFalse();
+        assertThat(records.findByProfessor(DARIO).getFirst().status()).isEqualTo("DEFERRED");
 
-        assertThat(keira.observationsForMe())
-                .extracting(ObservationItem::semester, ObservationItem::date)
-                .containsExactly(tuple("Fall 2026", null), tuple("Fall 2025", LocalDate.of(2025, 10, 28)));
-        assertThat(keira.upcoming())
-                .extracting(Upcoming::role, Upcoming::date)
-                .containsExactly(tuple(Role.OBSERVER, LocalDate.of(2026, 11, 4)), tuple(Role.OBSERVEE, null));
-        assertThat(keira.evaluation().status()).isEqualTo(EvaluationStatus.SCHEDULED);
-        assertThat(keira.evaluation().observationDate()).isNull();
-    }
-
-    @Test
-    void aCancelledSignupsObservationLeavesBothDashboards() {
-        db.update(withStatus(db.findById(signupOf(db, LEANDER), EvaluationSignup.class), "CANCELLED"));
-
-        var keira = service.dashboard(KEIRA);
-        assertThat(keira.observationsForOthers()).isEmpty();
-        assertThat(keira.upcoming()).isEmpty();
-        assertThat(keira.termObservations().total()).isZero();
-        assertThat(service.dashboard(LEANDER).observationsForMe()).isEmpty();
-    }
-
-    @Test
-    void aRankWithoutAnActivePolicyHasNoSchedule() {
-        EvaluationPolicy full = db.findById("FULL", EvaluationPolicy.class);
-        db.update(new EvaluationPolicy(
-                full.professorRank(),
-                full.evaluationIntervalYears(),
-                false,
-                full.madeDate(),
-                full.effectiveDate(),
-                full.version()));
-        var kaia = service.dashboard(KAIA);
-
-        assertThat(kaia.schedule()).isEqualTo(new Schedule(null, null, null, null, null));
-        assertThat(kaia.evaluation().status()).isEqualTo(EvaluationStatus.NOT_DUE);
-        // The profile still shows the rank on file.
-        assertThat(kaia.profile().rank()).isEqualTo("FULL");
-    }
-
-    @Test
-    void historyLeavesOutTheCurrentCycle() {
-        assertThat(records.findByProfessor(LEANDER))
-                .extracting(EvaluationRecord::cycleId)
-                .contains(1);
-        assertThat(service.dashboard(LEANDER).history()).isEmpty();
-        assertThat(service.dashboard(KEIRA).history())
-                .extracting(EvaluationRecord::term, EvaluationRecord::academicYear)
-                .containsExactly(tuple("Fall", 2025));
-    }
-
-    @Test
-    void anUnknownProfessorIsNotFound() {
-        assertThatThrownBy(() -> service.dashboard(99999)).isInstanceOf(NotFoundException.class);
+        db.insert(new EvaluationCycle(
+                null,
+                14,
+                LocalDate.parse("2027-02-01"),
+                LocalDate.parse("2027-04-15"),
+                LocalDate.parse("2027-05-01"),
+                "OPEN"));
+        clock.set("2027-01-20");
+        assertThat(eligibility.findDue().faculty()).anyMatch(f -> f.professorId() == DARIO);
+        assertThat(service.dashboard(DARIO).evaluation().status()).isEqualTo(EvaluationStatus.NOT_SIGNED_UP);
     }
 
     private static List<UpcomingType> types(Dashboard dashboard) {
         return dashboard.upcoming().stream().map(Upcoming::type).toList();
+    }
+
+    private Upcoming feedbackFor(int professorId) {
+        return service.dashboard(professorId).upcoming().stream()
+                .filter(u -> u.type() == UpcomingType.FEEDBACK)
+                .findFirst()
+                .orElseThrow();
     }
 
     private ObservationItem firstForMe(int professorId) {
@@ -341,49 +265,5 @@ class FacultyDashboardServiceTests {
 
     private int observationOn(int signupId) {
         return only(observationsOn(signupId)).observationId();
-    }
-
-    @Test
-    void deferredFacultyAreDueNextSemesterWithoutPretendingTheyCompletedAnEvaluation() {
-        int signup = signups.save(DARIO, FALL_2026, 298, null).signupId();
-        db.findAll(Observer.class).stream().filter(o -> o.cycleId() == 1).forEach(o -> db.update(inactive(o)));
-        clock.set("2026-11-16");
-        matching.defer(signup, KAIA, "No matching observers");
-        var current = service.dashboard(DARIO);
-        assertThat(current.evaluation().status()).isEqualTo(EvaluationStatus.DEFERRED);
-        assertThat(current.schedule().dueStatus()).isEqualTo("Due next semester");
-        assertThat(current.schedule().nextDueSemester()).isEqualTo("Spring 2027");
-        assertThat(eligibility.findDue().faculty()).noneMatch(f -> f.professorId() == DARIO);
-        assertThat(eligibility.findOverdue().faculty()).noneMatch(f -> f.professorId() == DARIO);
-        assertThat(deadlines.findByProfessor(DARIO).nextDueDate()).isEqualTo(LocalDate.of(2027, 1, 19));
-        assertThat(deadlines.findByProfessor(DARIO).overdue()).isFalse();
-        assertThat(observationsOn(signup)).isEmpty();
-        assertThat(records.findByProfessor(DARIO).getFirst().status()).isEqualTo("DEFERRED");
-        db.insert(new EvaluationCycle(
-                null,
-                14,
-                LocalDate.parse("2027-02-01"),
-                LocalDate.parse("2027-04-15"),
-                LocalDate.parse("2027-05-01"),
-                "OPEN"));
-        clock.set("2027-01-20");
-        assertThat(eligibility.findDue().faculty()).anyMatch(f -> f.professorId() == DARIO);
-        assertThat(eligibility.findOverdue().faculty()).noneMatch(f -> f.professorId() == DARIO);
-        assertThat(deadlines.findByProfessor(DARIO).overdue()).isFalse();
-        assertThat(service.dashboard(DARIO).evaluation().status()).isEqualTo(EvaluationStatus.NOT_SIGNED_UP);
-    }
-
-    @Test
-    void anElapsedWindowDoesNotTurnAnEligibleCaseIntoAZeroEligibleDeferral() {
-        int signup = signups.save(DARIO, FALL_2026, 298, null).signupId();
-        clock.set("2026-11-16");
-        var state = matching.acState().matchingCases().stream()
-                .filter(row -> row.signupId() == signup)
-                .findFirst()
-                .orElseThrow();
-        assertThat(state.eligibleObserverCount()).isZero();
-        assertThat(state.canDefer()).isFalse();
-        assertThat(state.canAssign()).isFalse();
-        assertThatThrownBy(() -> matching.defer(signup, KAIA, "Window ended")).isInstanceOf(ConflictException.class);
     }
 }

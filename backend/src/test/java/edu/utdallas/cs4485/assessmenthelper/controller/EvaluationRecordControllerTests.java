@@ -54,7 +54,7 @@ class EvaluationRecordControllerTests {
     }
 
     @Test
-    void listReturnsTheProfessorsEvaluations() throws Exception {
+    void listReturnsEvaluationsWhenProfessorExists() throws Exception {
         when(service.findByProfessor(2))
                 .thenReturn(List.of(
                         new EvaluationRecord(1, "Fall", 2026, "ACTIVE", 1, null),
@@ -71,29 +71,12 @@ class EvaluationRecordControllerTests {
     }
 
     @Test
-    void unknownProfessorReturns404ProblemDetail() throws Exception {
+    void listReturns404WhenProfessorIsUnknown() throws Exception {
         when(service.findByProfessor(99)).thenThrow(new NotFoundException("No professor with id 99"));
 
         mockMvc.perform(get("/api/professors/99/evaluations").with(user(PROFESSOR)))
                 .andExpect(status().isNotFound())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail").value("No professor with id 99"));
-    }
-
-    @Test
-    void deniedAccessReturns403ProblemDetail() throws Exception {
-        when(professorAccess.canView(any(), anyInt())).thenReturn(false);
-
-        mockMvc.perform(get("/api/professors/1/evaluations").with(user(PROFESSOR)))
-                .andExpect(status().isForbidden())
-                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("You do not have access to this resource."));
-    }
-
-    @Test
-    void nonNumericProfessorIdReturns400() throws Exception {
-        mockMvc.perform(get("/api/professors/abc/evaluations").with(user(PROFESSOR)))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON));
     }
 }

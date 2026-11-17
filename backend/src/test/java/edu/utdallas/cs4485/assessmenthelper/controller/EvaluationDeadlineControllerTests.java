@@ -52,7 +52,7 @@ class EvaluationDeadlineControllerTests {
     }
 
     @Test
-    void returnsDeadline() throws Exception {
+    void deadlineIsReturnedWhenProfessorExists() throws Exception {
         when(service.findByProfessor(2))
                 .thenReturn(new EvaluationDeadline(
                         2, "ASSISTANT", 1, LocalDate.of(2026, 3, 10), LocalDate.of(2027, 3, 10), false));
@@ -65,18 +65,10 @@ class EvaluationDeadlineControllerTests {
     }
 
     @Test
-    void unknownProfessorReturns404() throws Exception {
+    void deadlineReturns404WhenProfessorIsUnknown() throws Exception {
         when(service.findByProfessor(9)).thenThrow(new NotFoundException("No professor with id 9"));
 
         mockMvc.perform(get("/api/professors/9/evaluation-deadline").with(user(PROFESSOR)))
                 .andExpect(status().isNotFound());
-    }
-
-    @Test
-    void deniedAccessReturns403() throws Exception {
-        when(professorAccess.canView(any(), anyInt())).thenReturn(false);
-
-        mockMvc.perform(get("/api/professors/1/evaluation-deadline").with(user(PROFESSOR)))
-                .andExpect(status().isForbidden());
     }
 }

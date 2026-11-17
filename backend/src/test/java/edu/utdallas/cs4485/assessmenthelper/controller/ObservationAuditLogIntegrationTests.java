@@ -87,7 +87,7 @@ class ObservationAuditLogIntegrationTests {
     }
 
     @Test
-    void committeeMemberReadsTheLogOldestFirst() throws Exception {
+    void logIsReturnedOldestFirstWhenCommitteeMemberReadsIt() throws Exception {
         read(kaia)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].event")
@@ -111,7 +111,7 @@ class ObservationAuditLogIntegrationTests {
     }
 
     @Test
-    void theDatabaseRejectsChangesAndDeletes() {
+    void logEntryIsUnchangedWhenUpdateOrDeleteIsAttempted() {
         List<ObservationAuditLog> before = auditLog.findByObservationIdOrderByLogIdAsc(observation);
         ObservationAuditLog first = before.get(0);
 

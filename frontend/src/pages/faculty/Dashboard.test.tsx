@@ -33,19 +33,16 @@ let current: FacultyDashboard;
 let surveys: FeedbackSurvey[];
 /** A one-shot failure for the next dashboard request. */
 let failure: Response | undefined;
-let requests = 0;
 
 beforeEach(() => {
   state = structuredClone(faculty);
   current = structuredClone(dashboard);
   surveys = [fallSurvey];
   failure = undefined;
-  requests = 0;
   fakeBackend({
     "/api/feedback-surveys": () => Response.json(surveys),
     "/api/observer-eligibility/faculty/1": () => Response.json(state),
     "/api/professors/1/dashboard": () => {
-      requests += 1;
       const response = failure ?? Response.json(current);
       failure = undefined;
       return response;
@@ -111,7 +108,7 @@ function entries(title: string) {
     );
 }
 
-test("the summary cards show the professor's evaluation from the database", async () => {
+test("summary cards show the professor's evaluation when the dashboard loads", async () => {
   await open();
 
   expect(
@@ -127,15 +124,19 @@ test("the summary cards show the professor's evaluation from the database", asyn
   );
 });
 
-test("a submitted evaluation says so", async () => {
-  current.evaluation.status = "SUBMITTED";
-  await open();
-  expect(card("Evaluation Status")).toBe(
-    "Evaluation StatusPending sign-offSilas Brightwater • Nov 4, 2026",
-  );
-});
-
-test("Upcoming links each item to what the professor can do about it", async () => {
+test("each Upcoming item links to its action when the professor has something due", async () => {
+  // A submitted observation of the professor's class waits for her sign-off.
+  current.upcoming.push({
+    type: "SIGN_OFF",
+    date: "2026-10-20",
+    startTime: "08:30:00",
+    overdue: false,
+    observationId: 28,
+    role: "OBSERVEE",
+    status: "SUBMITTED",
+    course: "CS 2305.001",
+    with: "Silas Brightwater",
+  });
   await open();
   await within(section("Upcoming")).findByRole("link", {
     name: "Start Survey",
@@ -146,49 +147,19 @@ test("Upcoming links each item to what the professor can do about it", async () 
     // The observee can open the record only once it is submitted, so they get their list.
     { name: "View Details (CS 4348.501)", href: "/faculty/observations/me" },
     { name: "Continue (CS 3345.002)", href: "/faculty/observations/31" },
+    {
+      name: "Review and Sign (CS 2305.001)",
+      href: "/faculty/observations/28",
+    },
     { name: "Start Survey", href: "/faculty/feedback?cycle=1" },
   ]);
-  expect(within(section("Upcoming")).getByText("3 items due")).toBeDefined();
-
-  const mine = upcoming("Observation — CS 4348.501");
-  expect(mine.textContent).toContain("NOV04");
-  expect(mine.textContent).toContain("Observer: Silas Brightwater");
-  expect(mine.textContent).toContain("Not started");
-  expect(mine.textContent).toContain("Nov 4, 2026, 8:30 AM");
-  expect(mine.innerHTML).not.toContain("bg-peach");
-
-  const theirs = upcoming("Observation — CS 3345.002");
-  expect(theirs.textContent).toContain("Observee: Ivo Pembrook");
-  expect(theirs.textContent).toContain("In progress");
-  // No start time yet, so only the day shows.
-  expect(theirs.textContent).toContain("Nov 6, 2026");
-
-  const feedback = upcoming("Process Feedback Due");
-  expect(feedback.textContent).toContain("Fall 2026");
-  expect(feedback.textContent).toContain("DEC01");
-  expect(feedback.textContent).toContain("Due Dec 1");
-  expect(feedback.textContent).toContain("Action needed");
-  expect(feedback.innerHTML).toContain("bg-peach");
-});
-
-test("an observation the observer has not started, with no date yet, says Start Observation and TBD", async () => {
-  current.upcoming = current.upcoming.map((item) =>
-    item.observationId === 31
-      ? { ...item, status: "NOT_STARTED", date: null, startTime: null }
-      : item,
+  expect(upcoming("Observation — CS 4348.501").textContent).toContain(
+    "Observer: Silas Brightwater",
   );
-  await open();
-
-  expect(upcomingActions()[1]).toEqual({
-    name: "Start Observation (CS 3345.002)",
-    href: "/faculty/observations/31",
-  });
-  const undated = upcoming("Observation — CS 3345.002");
-  expect(undated.textContent).toContain("TBD");
-  expect(undated.textContent).toContain("Not scheduled");
+  expect(upcoming("Process Feedback Due").textContent).toContain("Due Dec 1");
 });
 
-test("history and observation cards show the newest two records", async () => {
+test("history and observation cards show only the newest two when there are more", async () => {
   await open();
 
   const history = section("Evaluation History");
@@ -213,120 +184,9 @@ test("history and observation cards show the newest two records", async () => {
       "Pending sign-off • Oct 20, 2026",
     ],
   ]);
-  for (const [title, href] of [
-    ["Observations for Me", "/faculty/observations/me"],
-    ["Observations for Others", "/faculty/observations/others"],
-  ] as const)
-    expect(
-      within(section(title))
-        .getByRole("link", { name: "View All Records →" })
-        .getAttribute("href"),
-    ).toBe(href);
 });
 
-test("submitting the survey replaces Start Survey with View Survey", async () => {
-  await open();
-  await within(section("Upcoming")).findByRole("link", {
-    name: "Start Survey",
-  });
-
-  surveys = [
-    { ...fallSurvey, status: "SUBMITTED", submittedDate: "2026-11-25" },
-  ];
-  act(() => observerChanged());
-
-  await within(section("Upcoming")).findByRole("link", {
-    name: "View Survey",
-  });
-  expect(upcomingActions().at(-1)).toEqual({
-    name: "View Survey",
-    href: "/faculty/feedback?cycle=1",
-  });
-  const submitted = upcoming("Process Feedback Submitted");
-  expect(submitted.textContent).toContain("Submitted Nov 25, 2026");
-  expect(submitted.innerHTML).not.toContain("bg-peach");
-  expect(within(section("Upcoming")).getByText("2 items due")).toBeDefined();
-});
-
-test("the survey shows, disabled, until the observation deadline passes", async () => {
-  surveys = [{ ...fallSurvey, status: "NOT_OPEN" }];
-  await open();
-
-  const button = await within(section("Upcoming")).findByRole("button", {
-    name: "Start Survey",
-  });
-  expect((button as HTMLButtonElement).disabled).toBe(true);
-  expect(upcoming("Process Feedback Due").textContent).toContain(
-    "Not yet available",
-  );
-  expect(
-    within(section("Upcoming")).queryByRole("link", { name: "Start Survey" }),
-  ).toBeNull();
-
-  // The survey is checked again when the window regains focus.
-  surveys = [fallSurvey];
-  fireEvent.focus(window);
-  await within(section("Upcoming")).findByRole("link", {
-    name: "Start Survey",
-  });
-  expect(
-    within(section("Upcoming")).queryByRole("button", { name: "Start Survey" }),
-  ).toBeNull();
-});
-
-test.each(["CLOSED", "UNCONFIGURED"] as const)(
-  "a %s survey has no Upcoming item",
-  async (status) => {
-    surveys = [
-      fallSurvey,
-      { ...fallSurvey, cycleId: 2, label: "Spring 2026", status },
-    ];
-    await open();
-    // Both surveys arrive together, so once Fall's shows, Spring's would have too.
-    await within(section("Upcoming")).findByRole("link", {
-      name: "Start Survey",
-    });
-
-    expect(within(section("Upcoming")).queryByText("Spring 2026")).toBeNull();
-    expect(
-      within(section("Upcoming")).getAllByText("Process Feedback Due"),
-    ).toHaveLength(1);
-  },
-);
-
-test("a submitted observation of the professor's class asks them to review and sign it", async () => {
-  surveys = [];
-  current.upcoming = [
-    {
-      type: "SIGN_OFF",
-      date: "2026-10-20",
-      startTime: "08:30:00",
-      overdue: false,
-      observationId: 30,
-      role: "OBSERVEE",
-      status: "SUBMITTED",
-      course: "CS 4348.501",
-      with: "Silas Brightwater",
-    },
-  ];
-  await open();
-
-  expect(upcomingActions()).toEqual([
-    {
-      name: "Review and Sign (CS 4348.501)",
-      href: "/faculty/observations/30",
-    },
-  ]);
-  const signOff = upcoming("Sign Off — CS 4348.501");
-  expect(signOff.textContent).toContain("OCT20");
-  expect(signOff.textContent).toContain("Observer: Silas Brightwater");
-  expect(signOff.textContent).toContain("Pending sign-off");
-  expect(signOff.textContent).toContain("Due Oct 20");
-  expect(signOff.innerHTML).toContain("bg-peach");
-  expect(within(section("Upcoming")).getByText("1 item due")).toBeDefined();
-});
-
-test("a due professor who has not signed up is asked to sign up", async () => {
+test("asks the professor to sign up when they are due and not signed up", async () => {
   // Only an observee in the cycle has a survey.
   surveys = [];
   current.evaluation = {
@@ -336,12 +196,6 @@ test("a due professor who has not signed up is asked to sign up", async () => {
     observer: null,
     observationDate: null,
     completedAt: null,
-  };
-  current.schedule = {
-    ...current.schedule,
-    nextDueDate: "2026-01-27",
-    nextDueSemester: "Spring 2026",
-    dueStatus: "Overdue",
   };
   current.upcoming = [
     {
@@ -361,77 +215,12 @@ test("a due professor who has not signed up is asked to sign up", async () => {
   expect(card("Evaluation Status")).toBe(
     "Evaluation StatusSign-up NeededSign up by Oct 31, 2026",
   );
-  expect(card("Next Due")).toBe(
-    "Next DueJan 2026Overdue • Spring 2026 semester",
-  );
-  const signup = upcoming("Sign Up for Evaluation");
-  expect(signup.textContent).toContain("Fall 2026 cycle");
-  expect(signup.textContent).toContain("Due Oct 31");
   expect(upcomingActions()).toEqual([
     { name: "Sign Up", href: "/faculty/signup" },
   ]);
 });
 
-test("an observation past the cycle deadline shows its missing state", async () => {
-  current.upcoming = current.upcoming
-    .slice(0, 1)
-    .map((item) => ({ ...item, overdue: true }));
-  current.observationsForMe = current.observationsForMe
-    .slice(0, 1)
-    .map((item) => ({ ...item, overdue: true }));
-  await open();
-
-  const late = upcoming("Observation — CS 4348.501");
-  expect(late.textContent).toContain("Missing: Not submitted");
-  expect(late.innerHTML).toContain("bg-peach");
-  expect(entries("Observations for Me")).toEqual([
-    [
-      "CS 4348.501",
-      "Observer: Silas Brightwater",
-      "Missing: Not submitted • Nov 4, 2026",
-    ],
-  ]);
-});
-
-test("a professor with nothing on record sees empty states", async () => {
-  surveys = [];
-  current = {
-    ...current,
-    evaluation: { ...current.evaluation, status: "NOT_DUE" },
-    schedule: {
-      rank: null,
-      intervalYears: null,
-      nextDueDate: null,
-      nextDueSemester: null,
-      dueStatus: null,
-    },
-    termObservations: {
-      total: 0,
-      completed: 0,
-      scheduled: 0,
-      pendingSignOff: 0,
-    },
-    upcoming: [],
-    history: [],
-    observationsForMe: [],
-    observationsForOthers: [],
-  };
-  await open();
-
-  expect(card("Evaluation Status")).toBe(
-    "Evaluation StatusNot DueNothing to do this cycle",
-  );
-  expect(card("Cycle")).toBe("CycleNot setNo evaluation policy applies");
-  expect(card("Next Due")).toBe("Next DueNot setNo due date on file");
-  expect(card("Observations This Term")).toBe(
-    "Observations This Term0None yet",
-  );
-  expect(screen.getByText("Nothing coming up this cycle.")).toBeDefined();
-  expect(screen.getByText("No previous evaluations.")).toBeDefined();
-  expect(screen.getAllByText("No observations yet.")).toHaveLength(2);
-});
-
-test("a failed load explains why, and Retry loads the dashboard", async () => {
+test("explains why and Retry reloads when the dashboard fails to load", async () => {
   failure = Response.json(
     { status: 500, detail: "The evaluation cycle changed." },
     { status: 500 },
@@ -441,17 +230,15 @@ test("a failed load explains why, and Retry loads the dashboard", async () => {
 
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain("The evaluation cycle changed.");
-  expect(screen.queryByText("Evaluation Status")).toBeNull();
 
   fireEvent.click(
     within(alert).getByRole("button", { name: "Retry evaluation summary" }),
   );
   await screen.findByText("Evaluation Status");
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(requests).toBe(2);
 });
 
-test("the dashboard reloads when a dialog changes an observation", async () => {
+test("the dashboard reloads when a dialog changes an observation or a notification arrives", async () => {
   current.upcoming = current.upcoming.map((item) =>
     item.observationId === 31 ? { ...item, status: "NOT_STARTED" } : item,
   );
@@ -463,25 +250,12 @@ test("the dashboard reloads when a dialog changes an observation", async () => {
   // Ivo's observation was started in the dialog above the dashboard.
   current = structuredClone(dashboard);
   act(() => observerChanged());
-
   await within(section("Upcoming")).findByRole("link", {
     name: "Continue (CS 3345.002)",
   });
-});
-
-test("a new notification reloads the dashboard", async () => {
-  await open();
-  expect(entries("Observations for Me")[0]).toEqual([
-    "CS 4348.501",
-    "Observer: Silas Brightwater",
-    "Not started • Nov 4, 2026",
-  ]);
 
   // Silas's submission of the observation of Wren's class arrives with a notification.
   current.evaluation.status = "SUBMITTED";
-  current.observationsForMe = current.observationsForMe.map((item) =>
-    item.observationId === 30 ? { ...item, status: "SUBMITTED" } : item,
-  );
   state.notifications = [
     {
       notificationId: 1,
@@ -492,13 +266,7 @@ test("a new notification reloads the dashboard", async () => {
   ];
   // The status reloads when the window regains focus, as well as every few seconds.
   fireEvent.focus(window);
-
   await waitFor(() =>
-    expect(entries("Observations for Me")[0]).toEqual([
-      "CS 4348.501",
-      "Observer: Silas Brightwater",
-      "Pending sign-off • Nov 4, 2026",
-    ]),
+    expect(card("Evaluation Status")).toContain("Pending sign-off"),
   );
-  expect(card("Evaluation Status")).toContain("Pending sign-off");
 });

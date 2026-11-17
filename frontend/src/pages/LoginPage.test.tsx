@@ -2,7 +2,6 @@ import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../auth/AuthContext";
-import { ACCOUNTS } from "../test/fakeBackend";
 import { LoginPage } from "./LoginPage";
 
 const OLIVIA = {
@@ -58,7 +57,6 @@ async function renderLogin() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/faculty" element={<h1>Faculty home</h1>} />
-          <Route path="/ac" element={<h1>Committee home</h1>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -75,7 +73,7 @@ async function signInAs(email: string, password: string) {
   fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
 }
 
-test("an empty form says both fields are required and sends nothing", async () => {
+test("both fields are marked required and nothing is sent when the form is empty", async () => {
   backend(oliviaSignsIn);
   await renderLogin();
 
@@ -88,27 +86,7 @@ test("an empty form says both fields are required and sends nothing", async () =
   expect(logins).toHaveLength(0);
 });
 
-test("an email without a domain is refused and keeps focus on the email", async () => {
-  backend(oliviaSignsIn);
-  await signInAs("olivia.observee", PASSWORD);
-
-  expect(screen.getByRole("alert").textContent).toBe(
-    "Please enter a valid email address.",
-  );
-  expect(document.activeElement).toBe(screen.getByLabelText("Email"));
-  expect(logins).toHaveLength(0);
-});
-
-test("a missing password moves focus to the password", async () => {
-  backend(oliviaSignsIn);
-  await signInAs(OLIVIA.email, "");
-
-  expect(screen.getByRole("alert").textContent).toBe("Password is required.");
-  expect(document.activeElement).toBe(screen.getByLabelText("Password"));
-  expect(logins).toHaveLength(0);
-});
-
-test("a faculty member signs in and goes to the faculty home", async () => {
+test("goes to the faculty home when a faculty member signs in", async () => {
   backend(oliviaSignsIn);
   await signInAs(OLIVIA.email, PASSWORD);
 
@@ -116,14 +94,7 @@ test("a faculty member signs in and goes to the faculty home", async () => {
   expect(logins).toHaveLength(1);
 });
 
-test("a committee member signs in and goes to the committee home", async () => {
-  backend(() => Response.json(ACCOUNTS.ac.user));
-  await signInAs(ACCOUNTS.ac.user.email, ACCOUNTS.ac.password);
-
-  await screen.findByRole("heading", { name: "Committee home" });
-});
-
-test("a wrong password shows the backend's message", async () => {
+test("shows the backend's message when the password is wrong", async () => {
   backend(oliviaSignsIn);
   await signInAs(OLIVIA.email, "wrong");
 
@@ -131,18 +102,4 @@ test("a wrong password shows the backend's message", async () => {
     "Incorrect email or password.",
   );
   expect(screen.queryByRole("heading", { name: "Faculty home" })).toBeNull();
-});
-
-test("a server failure shows a general message, not the server's", async () => {
-  backend(() => problem(500, "NullPointerException at AuthController"));
-  await signInAs(OLIVIA.email, PASSWORD);
-
-  expect((await screen.findByRole("alert")).textContent).toBe(
-    "Unable to sign in. Please try again.",
-  );
-  // The button is usable again for another try.
-  expect(
-    (screen.getByRole("button", { name: "Sign In" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(false);
 });

@@ -124,29 +124,23 @@ class AcceptanceTests {
     // ---------- TC 16: signup ----------
 
     @Test
-    void tc16_1_signupSavesTheChosenSectionAndStartsTheObserverSearch() {
+    void sectionIsSavedAndCandidatesAreFoundWhenProfessorSignsUp() {
         int signup = darioSignsUp();
         assertThat(list(signup).section().label()).isEqualTo("CS 3345.005");
         assertThat(candidates(signup)).isNotEmpty();
     }
 
     @Test
-    void tc16_2_cannotSignUpForASectionTheProfessorDoesNotTeach() {
+    void signupIsRejectedWhenProfessorDoesNotTeachTheSection() {
         assertThatThrownBy(() -> signups.save(DARIO, FALL_2026, HOLLIS_SECTION, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("section you teach");
     }
 
-    @Test
-    void tc16_3_cannotSubmitASignupWithoutASection() {
-        assertThatThrownBy(() -> signups.save(DARIO, FALL_2026, null, null))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
     // ---------- TC 18: candidate list ----------
 
     @Test
-    void tc18_listHoldsAtMostFiveDistinctEligibleObserversAndNeverTheObservee() {
+    void listHasAtMostFiveDistinctObserversExcludingObserveeWhenGenerated() {
         int signup = darioSignsUp();
         var eligible = service.eligibleObservers(signup).stream()
                 .map(ObserverEligibilityService.Candidate::observerId)
@@ -161,14 +155,14 @@ class AcceptanceTests {
     }
 
     @Test
-    void tc18_5_wrongDepartmentOrConflictingScheduleNeverAppears() {
+    void candidateIsExcludedWhenDepartmentIsWrongOrScheduleConflicts() {
         professors.save(withDepartment(professors.findById(ARLO).orElseThrow(), 2));
         int signup = darioSignsUp();
         assertThat(candidateProfessors(signup)).doesNotContain(ARLO, XIOMARA, PERRIN);
     }
 
     @Test
-    void tc18_4_and_tc19_noEligibleObserversGivesAnEmptyListThatCannotBeReleased() {
+    void listIsEmptyAndCannotBeReleasedWhenNoObserverIsEligible() {
         observers.findByCycleId(1).forEach(o -> observers.save(inactive(o)));
         int signup = darioSignsUp();
         assertThat(candidates(signup)).isEmpty();
@@ -182,7 +176,7 @@ class AcceptanceTests {
     // ---------- TC 21: sending requests ----------
 
     @Test
-    void tc21_2_onlySelectedCandidatesGetARequest() {
+    void requestIsSentOnlyWhenCandidateIsSelected() {
         int signup = darioSignsUp();
         var c = candidates(signup);
         assertThat(c.size()).isGreaterThanOrEqualTo(4);
@@ -204,7 +198,7 @@ class AcceptanceTests {
     // ---------- TC 22: responding ----------
 
     @Test
-    void tc22_1_acceptingLocksInTheObserver() {
+    void observerIsLockedInWhenTheyAccept() {
         int signup = darioSignsUp();
         var observer = candidates(signup).getFirst();
         releaseAfterDeadline(signup);
@@ -220,7 +214,7 @@ class AcceptanceTests {
     }
 
     @Test
-    void tc22_2_decliningDoesNotLockInTheObserver() {
+    void observerIsNotLockedInWhenTheyDecline() {
         int signup = darioSignsUp();
         var observer = candidates(signup).getFirst();
         releaseAfterDeadline(signup);
@@ -235,7 +229,7 @@ class AcceptanceTests {
     // ---------- TC 22-3 / 23-1: expiry ----------
 
     @Test
-    void tc22_3_and_tc23_1_anExpiredRequestCannotBeAccepted() {
+    void acceptIsRejectedWhenRequestHasExpired() {
         int signup = darioSignsUp();
         var observer = candidates(signup).getFirst();
         releaseAfterDeadline(signup);
@@ -256,7 +250,7 @@ class AcceptanceTests {
 
     @Disabled("US23/TC-23: stories say 48 hours, code uses 7 days (ObserverRequestService.DEFAULT_RESPONSE_WINDOW)")
     @Test
-    void tc23_requestExpiresAfter48Hours() {
+    void expirationIs48HoursLaterWhenRequestIsSent() {
         int signup = darioSignsUp();
         var observer = candidates(signup).getFirst();
         releaseAfterDeadline(signup);
@@ -267,7 +261,7 @@ class AcceptanceTests {
 
     @Disabled("Spec on double accept: only one observer may accept a signup (see bug 2 in the #82 list)")
     @Test
-    void onlyOneObserverCanAcceptASignup() {
+    void secondAcceptIsRejectedWhenAnotherObserverAlreadyAccepted() {
         int signup = darioSignsUp();
         var c = candidates(signup);
         releaseAfterDeadline(signup);

@@ -49,7 +49,7 @@ function open() {
   fireEvent.click(screen.getByRole("button", { name: "Edit Deadlines" }));
 }
 
-test("edits all three deadlines and refreshes the dashboard after saving", async () => {
+test("the dashboard refreshes when all three deadlines are saved", async () => {
   open();
   fireEvent.change(screen.getByLabelText("Observation Deadline"), {
     target: { value: "2026-11-20" },
@@ -70,7 +70,7 @@ test("edits all three deadlines and refreshes the dashboard after saving", async
   expect(screen.queryByRole("button", { name: "Save Deadlines" })).toBeNull();
 });
 
-test("failed changes keep the dates editable and show the server explanation", async () => {
+test("the dates stay editable and the server's reason shows when saving fails", async () => {
   failure = true;
   open();
   fireEvent.change(screen.getByLabelText("Observation Deadline"), {
@@ -86,7 +86,7 @@ test("failed changes keep the dates editable and show the server explanation", a
   expect(saved).toBe(0);
 });
 
-test("cancel discards draft dates without saving", () => {
+test("draft dates are discarded without saving when Cancel is clicked", () => {
   open();
   fireEvent.change(screen.getByLabelText("Observation Deadline"), {
     target: { value: "2026-11-20" },

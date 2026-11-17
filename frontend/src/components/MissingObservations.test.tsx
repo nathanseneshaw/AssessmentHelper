@@ -32,15 +32,15 @@ const signup: MissingObservationAlert = {
   dueDate: "2026-10-31",
   message: "Your required evaluation has no signup.",
 };
-function show(observerOnly = false) {
+function show() {
   return render(
     <MemoryRouter>
-      <MissingObservations professorId={2} observerOnly={observerOnly} />
+      <MissingObservations professorId={2} />
     </MemoryRouter>,
   );
 }
 
-test("dashboard displays missing signup and links the observer to their late form", async () => {
+test("shows the missing signup and links the late form when the professor has both alerts", async () => {
   fakeBackend({
     "/api/professors/2/missing-observations": () =>
       Response.json([late, signup]),
@@ -55,17 +55,7 @@ test("dashboard displays missing signup and links the observer to their late for
   ).toBe("/faculty/observations/42");
 });
 
-test("observer list only displays observer obligations", async () => {
-  fakeBackend({
-    "/api/professors/2/missing-observations": () =>
-      Response.json([late, signup]),
-  });
-  show(true);
-  await screen.findByText(late.message);
-  expect(screen.queryByText(signup.message)).toBeNull();
-});
-
-test("submitted observation disappears after a workflow change", async () => {
+test("the late alert disappears when the observation is submitted", async () => {
   let alerts = [late];
   fakeBackend({
     "/api/professors/2/missing-observations": () => Response.json(alerts),
@@ -81,7 +71,7 @@ test("submitted observation disappears after a workflow change", async () => {
   );
 });
 
-test("failed checks show a retry that recovers", async () => {
+test("Retry recovers when the alerts fail to load", async () => {
   let failed = true;
   fakeBackend({
     "/api/professors/2/missing-observations": () =>

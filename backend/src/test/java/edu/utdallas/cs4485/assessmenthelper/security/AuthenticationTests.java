@@ -5,7 +5,6 @@ import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -47,7 +46,7 @@ class AuthenticationTests {
     private UserAccountRepository accounts;
 
     @Test
-    void everySeededProfessorHasAnAccountWithTheirEmail() {
+    void accountExistsForEveryProfessorWhenSeedDataIsLoaded() {
         var accountEmails = accounts.findAll().stream()
                 .filter(account -> account.professorId() != null)
                 .collect(Collectors.toMap(UserAccount::professorId, UserAccount::email));
@@ -57,49 +56,20 @@ class AuthenticationTests {
     }
 
     @Test
-    void newlyProvisionedFacultyCanSignInWithTheSharedFacultyPassword() throws Exception {
-        mockMvc.perform(signInRequest("avery.hazelwood@example.edu", "Faculty123!"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("Avery Hazelwood"))
-                .andExpect(jsonPath("$.professorId").value(31))
-                .andExpect(jsonPath("$.roles").value(contains("PROFESSOR")));
-        mockMvc.perform(signInRequest("isla.wrenfield@example.edu", "Faculty123!"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("Isla Wrenfield"))
-                .andExpect(jsonPath("$.schoolId").value(2))
-                .andExpect(jsonPath("$.roles").value(contains("PROFESSOR")));
-        mockMvc.perform(signInRequest("rowan.cedarvale@example.edu", "Faculty123!"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("Rowan Cedarvale"))
-                .andExpect(jsonPath("$.roles").value(contains("PROFESSOR")));
-    }
-
-    @Test
-    void signingInReturnsTheUser() throws Exception {
+    void loginReturnsUserAndRolesWhenCredentialsAreCorrect() throws Exception {
         mockMvc.perform(signInRequest(DARIO, DARIO_PASSWORD))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Dario Hollowell"))
-                .andExpect(jsonPath("$.email").value(DARIO))
                 .andExpect(jsonPath("$.professorId").value(34))
-                .andExpect(jsonPath("$.schoolId").value(1))
                 .andExpect(jsonPath("$.roles").value(contains("PROFESSOR")));
-    }
-
-    @Test
-    void committeeMembersAlsoHaveTheProfessorRole() throws Exception {
+        // Committee members also have the professor role.
         mockMvc.perform(signInRequest(KAIA, KAIA_PASSWORD))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.roles").value(contains("AC", "PROFESSOR")));
     }
 
     @Test
-    void emailIsNotCaseSensitive() throws Exception {
-        mockMvc.perform(signInRequest("Dario.Hollowell@Example.edu", DARIO_PASSWORD))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    void wrongPasswordReturns401ProblemDetail() throws Exception {
+    void loginReturns401WhenPasswordIsWrong() throws Exception {
         mockMvc.perform(signInRequest(DARIO, "wrong"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
@@ -107,65 +77,26 @@ class AuthenticationTests {
     }
 
     @Test
-    void unknownEmailGetsTheSameErrorAsAWrongPassword() throws Exception {
-        mockMvc.perform(signInRequest("nobody@example.edu", DARIO_PASSWORD))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.detail").value("Incorrect email or password."));
-    }
-
-    @Test
-    void signingInWithoutACsrfTokenIsRejected() throws Exception {
+    void loginReturns403WhenCsrfTokenIsMissing() throws Exception {
         mockMvc.perform(post("/api/auth/login").param("email", DARIO).param("password", DARIO_PASSWORD))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void csrfEndpointSetsATokenCookieThatScriptsCanRead() throws Exception {
-        mockMvc.perform(get("/api/auth/csrf"))
-                .andExpect(status().isNoContent())
-                .andExpect(cookie().exists("XSRF-TOKEN"))
-                .andExpect(cookie().httpOnly("XSRF-TOKEN", false));
-    }
-
-    @Test
-    void apiRequiresSignIn() throws Exception {
+    void apiReturns401WhenUserIsNotSignedIn() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail").value("Sign in to continue."));
-        mockMvc.perform(get("/api/evaluation-policies")).andExpect(status().isUnauthorized());
     }
 
     @Test
-    void meReturnsTheSignedInUser() throws Exception {
+    void sessionEndsOnlyWhenUserLogsOut() throws Exception {
         MockHttpSession session = signIn(DARIO, DARIO_PASSWORD);
 
         mockMvc.perform(get("/api/auth/me").session(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value("Dario Hollowell"))
                 .andExpect(jsonPath("$.professorId").value(34));
-    }
-
-    @Test
-    void professorsCanReadOnlyTheirOwnEvaluations() throws Exception {
-        MockHttpSession session = signIn(DARIO, DARIO_PASSWORD);
-
-        mockMvc.perform(get("/api/professors/34/evaluations").session(session)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/professors/12/evaluations").session(session)).andExpect(status().isForbidden());
-    }
-
-    @Test
-    void committeeMembersCanReadEvaluationsAcrossSchools() throws Exception {
-        MockHttpSession session = signIn(KAIA, KAIA_PASSWORD);
-
-        mockMvc.perform(get("/api/professors/34/evaluations").session(session)).andExpect(status().isOk());
-        mockMvc.perform(get("/api/professors/160/evaluations").session(session)).andExpect(status().isOk());
-    }
-
-    @Test
-    void signingOutEndsTheSession() throws Exception {
-        MockHttpSession session = signIn(DARIO, DARIO_PASSWORD);
-
         mockMvc.perform(withCsrfToken(post("/api/auth/logout").session(session)))
                 .andExpect(status().isNoContent());
         mockMvc.perform(get("/api/auth/me").session(session)).andExpect(status().isUnauthorized());

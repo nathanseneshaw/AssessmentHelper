@@ -43,7 +43,7 @@ class EvaluationPolicyControllerTests {
     private UserDetailsService userDetailsService;
 
     @Test
-    void listReturnsAllPolicies() throws Exception {
+    void listReturnsEveryRanksPolicyWhenNoRankIsGiven() throws Exception {
         when(service.findAll()).thenReturn(List.of(ASSISTANT));
 
         mockMvc.perform(get("/api/evaluation-policies"))
@@ -53,7 +53,7 @@ class EvaluationPolicyControllerTests {
     }
 
     @Test
-    void unknownRankReturns404ProblemDetail() throws Exception {
+    void policyReturns404WhenRankIsUnknown() throws Exception {
         when(service.findByRank("EMERITUS")).thenThrow(new NotFoundException("No evaluation policy for rank EMERITUS"));
 
         mockMvc.perform(get("/api/evaluation-policies/EMERITUS"))
@@ -64,16 +64,12 @@ class EvaluationPolicyControllerTests {
     }
 
     @Test
-    void frontendOriginIsAllowedByCors() throws Exception {
+    void corsIsRejectedWhenOriginIsNotTheFrontend() throws Exception {
         mockMvc.perform(options("/api/evaluation-policies")
                         .header(HttpHeaders.ORIGIN, "http://localhost:3000")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"));
-    }
-
-    @Test
-    void otherOriginsAreRejectedByCors() throws Exception {
         mockMvc.perform(options("/api/evaluation-policies")
                         .header(HttpHeaders.ORIGIN, "http://example.com")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))

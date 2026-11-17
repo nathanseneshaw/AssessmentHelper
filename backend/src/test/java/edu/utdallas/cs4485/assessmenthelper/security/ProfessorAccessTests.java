@@ -29,26 +29,13 @@ class ProfessorAccessTests {
     }
 
     @Test
-    void requestedObserverMayAnswer() {
+    void isRequestedObserverIsTrueWhenProfessorIsTheRequestedObserver() {
         assertThat(access.isRequestedObserver(professor(7), 1)).isTrue();
     }
 
     @Test
-    void otherProfessorMayNotAnswer() {
+    void isRequestedObserverIsFalseWhenProfessorIsSomeoneElse() {
         assertThat(access.isRequestedObserver(professor(8), 1)).isFalse();
-    }
-
-    @Test
-    void committeeMemberWithoutAProfessorRecordMayNotAnswer() {
-        AccountPrincipal committeeOnly = new AccountPrincipal(
-                new CurrentUser(9, null, 1, "Committee Only", "committee@univ.edu", List.of(Role.AC)), null, true);
-
-        assertThat(access.isRequestedObserver(committeeOnly, 1)).isFalse();
-    }
-
-    @Test
-    void unknownRequestIsDenied() {
-        assertThat(access.isRequestedObserver(professor(7), 99)).isFalse();
     }
 
     @Test

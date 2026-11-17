@@ -63,7 +63,7 @@ class CourseCatalogControllerTests {
     }
 
     @Test
-    void semestersAreNewestFirstWithUndatedSemestersLast() throws Exception {
+    void undatedSemestersComeLastWhenSemestersAreSortedNewestFirst() throws Exception {
         mockMvc.perform(get("/api/semesters"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(3))
@@ -73,7 +73,7 @@ class CourseCatalogControllerTests {
     }
 
     @Test
-    void signupOpenKeepsOnlySemestersWithAnOpenCycle() throws Exception {
+    void onlyOpenCycleSemestersAreReturnedWhenSignupOpenIsTrue() throws Exception {
         mockMvc.perform(get("/api/semesters").param("signupOpen", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
@@ -81,7 +81,7 @@ class CourseCatalogControllerTests {
     }
 
     @Test
-    void sectionsPassOnlyTheGivenFiltersThrough() throws Exception {
+    void sectionsAreFilteredWhenSemesterAndProfessorAreGiven() throws Exception {
         when(sections.findFiltered(3, null, 9))
                 .thenReturn(List.of(new CourseSection(
                         284, 2, 3, "002", "MW", LocalTime.of(10, 0), LocalTime.of(11, 15), "ECSW 1.355")));

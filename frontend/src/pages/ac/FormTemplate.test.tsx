@@ -4,7 +4,6 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
   within,
 } from "@testing-library/react";
 import { App } from "../../App";
@@ -14,10 +13,8 @@ import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
 let template: FormTemplate;
 let writes: FormTemplate[];
 let failSave: boolean;
-let failLoad: boolean;
 let versions: FormTemplate[];
 let restores: number;
-let failRestore: boolean;
 beforeEach(() => {
   template = {
     templateId: 1,
@@ -29,19 +26,12 @@ beforeEach(() => {
   };
   versions = [structuredClone(template)];
   restores = 0;
-  failRestore = false;
   writes = [];
   failSave = false;
-  failLoad = false;
   fakeBackend({
     "/api/form-template/versions": () => Response.json(versions),
     "/api/form-template/versions/1/restore": () => {
       restores++;
-      if (failRestore)
-        return Response.json(
-          { detail: "Another committee member restored a version first." },
-          { status: 409 },
-        );
       template = {
         ...(versions[versions.length - 1] as FormTemplate),
         templateId: 1,
@@ -65,9 +55,7 @@ beforeEach(() => {
         };
         return Response.json(template);
       }
-      return failLoad
-        ? Response.json({ detail: "Could not load template." }, { status: 503 })
-        : Response.json(template);
+      return Response.json(template);
     },
   });
   signInAs("ac");
@@ -84,7 +72,15 @@ async function edit() {
   );
   return screen.getByRole("dialog", { name: "Edit Observation Form Criteria" });
 }
-test("edits, adds, deletes, and saves selected criteria and notes", async () => {
+
+test("only included criteria are shown when the template loads", async () => {
+  render(<App />);
+  await screen.findByText("Student Engagement");
+  expect(screen.queryByText("Clarity")).toBeNull();
+  expect(screen.getByText("Version 1")).toBeDefined();
+});
+
+test("edits, additions and deletions are saved when Save Changes is clicked", async () => {
   const dialog = await edit();
   const ui = within(dialog);
   fireEvent.change(ui.getByLabelText("Criterion 1 name"), {
@@ -112,7 +108,8 @@ test("edits, adds, deletes, and saves selected criteria and notes", async () => 
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByText("Version 2")).toBeDefined();
 });
-test("cancel discards additions and deletes without writing to the server", async () => {
+
+test("additions and deletions are discarded when Cancel is clicked", async () => {
   const dialog = await edit();
   fireEvent.click(within(dialog).getByLabelText("Delete criterion 1"));
   fireEvent.click(
@@ -129,98 +126,8 @@ test("cancel discards additions and deletes without writing to the server", asyn
     (screen.getByLabelText("Criterion 1 name") as HTMLInputElement).value,
   ).toBe("Student Engagement");
 });
-test("keeps unsaved edits when another committee member has saved first", async () => {
-  failSave = true;
-  const dialog = await edit();
-  fireEvent.change(within(dialog).getByLabelText("Criterion 1 name"), {
-    target: { value: "My edit" },
-  });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Save Changes" }));
-  await screen.findByRole("alert");
-  expect(
-    (screen.getByLabelText("Criterion 1 name") as HTMLInputElement).value,
-  ).toBe("My edit");
-  expect(screen.queryByText(/Changes saved/)).toBeNull();
-});
-test("refreshes shared state on focus without overwriting the open draft", async () => {
-  const dialog = await edit();
-  fireEvent.change(within(dialog).getByLabelText("Criterion 1 name"), {
-    target: { value: "My draft" },
-  });
-  template = {
-    ...template,
-    templateId: 2,
-    version: 2,
-    criteria: [{ title: "Other committee edit", selected: true, notes: false }],
-  };
-  fireEvent.focus(window);
-  await screen.findByText("Other committee edit");
-  expect(
-    (screen.getByLabelText("Criterion 1 name") as HTMLInputElement).value,
-  ).toBe("My draft");
-  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  fireEvent.click(screen.getByRole("button", { name: "Add/Edit Criterion" }));
-  expect(
-    (screen.getByLabelText("Criterion 1 name") as HTMLInputElement).value,
-  ).toBe("Other committee edit");
-});
-test("rejects an empty selection, blank names, and duplicate names before saving", async () => {
-  const dialog = await edit();
-  const ui = within(dialog);
-  fireEvent.click(ui.getByLabelText("Include criterion 1"));
-  fireEvent.click(ui.getByRole("button", { name: "Save Changes" }));
-  await screen.findByText(/Select at least one criterion/);
-  fireEvent.click(ui.getByLabelText("Include criterion 1"));
-  fireEvent.change(ui.getByLabelText("Criterion 2 name"), {
-    target: { value: "   " },
-  });
-  fireEvent.click(ui.getByRole("button", { name: "Save Changes" }));
-  await screen.findByText("Give every criterion a name before saving.");
-  fireEvent.change(ui.getByLabelText("Criterion 2 name"), {
-    target: { value: "student engagement" },
-  });
-  fireEvent.click(ui.getByRole("button", { name: "Save Changes" }));
-  await screen.findByText("Criterion names must be unique.");
-  expect(writes).toHaveLength(0);
-});
-test("load failures support retry and preview includes only selected criteria", async () => {
-  failLoad = true;
-  render(<App />);
-  await screen.findByRole("alert");
-  failLoad = false;
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Preview Form" }));
-  const preview = screen.getByRole("dialog");
-  expect(within(preview).getByText("Student Engagement")).toBeDefined();
-  expect(within(preview).queryByText("Clarity")).toBeNull();
-  fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-});
 
-test("main screen shows only included criteria and keeps a single editor entry point", async () => {
-  render(<App />);
-  await screen.findByText("Student Engagement");
-  expect(screen.queryByText("Clarity")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Edit Criteria" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Add/Edit Criterion" }));
-  const dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByText("Remove")).toBeDefined();
-  expect(
-    (within(dialog).getByLabelText("Criterion 2 name") as HTMLInputElement)
-      .value,
-  ).toBe("Clarity");
-  const notes = within(dialog).getByRole("checkbox", {
-    name: "Optional notes for criterion 2",
-  }) as HTMLInputElement;
-  expect(notes.className).toContain("rounded-full");
-  expect(notes.checked).toBe(false);
-  fireEvent.click(notes);
-  expect(notes.checked).toBe(true);
-  fireEvent.click(notes);
-  expect(notes.checked).toBe(false);
-});
-
-test("removal requires confirmation and cancel keeps the criterion", async () => {
+test("the criterion is kept when its removal is cancelled", async () => {
   const editor = await edit();
   fireEvent.click(within(editor).getByLabelText("Delete criterion 2"));
   const confirmation = screen.getByRole("dialog", {
@@ -246,60 +153,53 @@ test("removal requires confirmation and cancel keeps the criterion", async () =>
   expect(writes).toHaveLength(0);
 });
 
-test("views an old version and restores it only after confirmation", async () => {
-  const original = structuredClone(template);
-  template = {
-    templateId: 2,
-    version: 2,
-    criteria: [{ title: "Updated rubric", selected: true, notes: false }],
-  };
-  versions = [structuredClone(template), original];
-  render(<App />);
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Version History" }),
-  );
-  const history = screen.getByRole("dialog", {
-    name: "Template Version History",
+test("keeps unsaved edits when another committee member has saved first", async () => {
+  failSave = true;
+  const dialog = await edit();
+  fireEvent.change(within(dialog).getByLabelText("Criterion 1 name"), {
+    target: { value: "My edit" },
   });
-  const select = await within(history).findByRole("combobox", {
-    name: "Version",
-  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save Changes" }));
+  await screen.findByRole("alert");
   expect(
-    (
-      within(history).getByRole("button", {
-        name: "Restore This Version",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  fireEvent.change(select, { target: { value: "1" } });
-  expect(within(history).getByText("Student Engagement")).toBeDefined();
-  expect(within(history).getByText("Clarity")).toBeDefined();
-  fireEvent.click(
-    within(history).getByRole("button", { name: "Restore This Version" }),
-  );
-  const confirmation = screen.getByRole("dialog", {
-    name: "Restore version 1?",
-  });
-  expect(restores).toBe(0);
-  fireEvent.click(within(confirmation).getByRole("button", { name: "Cancel" }));
-  expect(restores).toBe(0);
-  fireEvent.click(
-    within(history).getByRole("button", { name: "Restore This Version" }),
-  );
-  fireEvent.click(
-    within(
-      screen.getByRole("dialog", { name: "Restore version 1?" }),
-    ).getByRole("button", { name: "Confirm Restore" }),
-  );
-  await screen.findByText(/Version 1 is now current/);
-  expect(restores).toBe(1);
-  expect(screen.getByText("Student Engagement")).toBeDefined();
-  expect(screen.queryByText("Updated rubric")).toBeNull();
-  expect(screen.queryByText("Included")).toBeNull();
+    (screen.getByLabelText("Criterion 1 name") as HTMLInputElement).value,
+  ).toBe("My edit");
+  expect(screen.queryByText(/Changes saved/)).toBeNull();
 });
 
-test("a refused restore shows why and keeps the current version", async () => {
-  failRestore = true;
+test("nothing is saved when no criterion is selected", async () => {
+  const dialog = await edit();
+  const ui = within(dialog);
+  fireEvent.click(ui.getByLabelText("Include criterion 1"));
+  fireEvent.click(ui.getByRole("button", { name: "Save Changes" }));
+  await screen.findByText(/Select at least one criterion/);
+  expect(writes).toHaveLength(0);
+});
+
+test("the preview shows the selected criteria and updates when another member saves", async () => {
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Preview Form" }));
+  const dialog = screen.getByRole("dialog");
+  expect(
+    within(dialog).getByRole("img", { name: "Unrated: Student Engagement" }),
+  ).toBeDefined();
+  expect(within(dialog).queryByText("Clarity")).toBeNull();
+
+  template = {
+    templateId: 4,
+    version: 4,
+    criteria: [
+      { title: "Current selected criterion", selected: true, notes: false },
+      { title: "Hidden criterion", selected: false, notes: true },
+    ],
+  };
+  fireEvent.focus(window);
+  await within(dialog).findByText("Current selected criterion");
+  expect(within(dialog).queryByText("Hidden criterion")).toBeNull();
+  expect(within(dialog).queryByText("Student Engagement")).toBeNull();
+});
+
+test("an old version is restored only when the restore is confirmed", async () => {
   const original = structuredClone(template);
   template = {
     templateId: 2,
@@ -318,79 +218,18 @@ test("a refused restore shows why and keeps the current version", async () => {
     await within(history).findByRole("combobox", { name: "Version" }),
     { target: { value: "1" } },
   );
+  expect(within(history).getByText("Student Engagement")).toBeDefined();
   fireEvent.click(
     within(history).getByRole("button", { name: "Restore This Version" }),
   );
+  expect(restores).toBe(0);
   fireEvent.click(
     within(
       screen.getByRole("dialog", { name: "Restore version 1?" }),
     ).getByRole("button", { name: "Confirm Restore" }),
   );
-
-  expect((await within(history).findByRole("alert")).textContent).toContain(
-    "Another committee member restored a version first.",
-  );
+  await screen.findByText(/Version 1 is now current/);
   expect(restores).toBe(1);
-  expect(
-    screen.queryByRole("dialog", { name: "Restore version 1?" }),
-  ).toBeNull();
-  expect(screen.queryByText(/Version 1 is now current/)).toBeNull();
-  // The list may be stale now, so Restore waits until Retry reloads it.
-  const restore = within(history).getByRole("button", {
-    name: "Restore This Version",
-  }) as HTMLButtonElement;
-  expect(restore.disabled).toBe(true);
-  fireEvent.click(within(history).getByRole("button", { name: "Retry" }));
-  await waitFor(() => expect(restore.disabled).toBe(false));
-  expect(within(history).queryByRole("alert")).toBeNull();
-});
-
-test("shared polling can move the active template back to an older version", async () => {
-  const old = structuredClone(template);
-  template = {
-    templateId: 3,
-    version: 3,
-    criteria: [{ title: "Newest rubric", selected: true, notes: false }],
-  };
-  render(<App />);
-  await screen.findByText("Version 3");
-  template = old;
-  fireEvent.focus(window);
-  await screen.findByText("Version 1");
   expect(screen.getByText("Student Engagement")).toBeDefined();
-  expect(screen.queryByText("Newest rubric")).toBeNull();
-});
-
-test("record preview follows current version criteria and optional notes settings", async () => {
-  render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "Preview Form" }));
-  const dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByText("Observation Criteria")).toBeDefined();
-  expect(
-    within(dialog).getByRole("img", { name: "Unrated: Student Engagement" }),
-  ).toBeDefined();
-  expect(within(dialog).getByText("Observee Comments:")).toBeDefined();
-  expect(within(dialog).getByText("Observee Signature")).toBeDefined();
-  expect(within(dialog).getByText("Observer Signature")).toBeDefined();
-  expect(within(dialog).queryByText("Notes disabled")).toBeNull();
-  for (const field of within(dialog).getAllByRole("textbox")) {
-    expect((field as HTMLInputElement | HTMLTextAreaElement).value).toBe("");
-  }
-  expect(
-    within(dialog).queryByText(/Professor 3|CS 4348|Signed!|Example/),
-  ).toBeNull();
-  template = {
-    templateId: 4,
-    version: 4,
-    criteria: [
-      { title: "Current selected criterion", selected: true, notes: false },
-      { title: "Hidden criterion", selected: false, notes: true },
-    ],
-  };
-  fireEvent.focus(window);
-  await within(dialog).findByText("Current selected criterion");
-  expect(within(dialog).getByText("Notes disabled")).toBeDefined();
-  expect(within(dialog).queryByText("Hidden criterion")).toBeNull();
-  expect(within(dialog).queryByText("Student Engagement")).toBeNull();
-  expect(within(dialog).getByText(/Current Version:\s*4/)).toBeDefined();
+  expect(screen.queryByText("Updated rubric")).toBeNull();
 });

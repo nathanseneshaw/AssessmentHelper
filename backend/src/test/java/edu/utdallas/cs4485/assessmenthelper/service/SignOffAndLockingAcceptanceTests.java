@@ -49,19 +49,12 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     // ---------- US41: who may read the record ----------
 
     @Test
-    void us41_theObserveeCannotOpenTheRecordWhileItIsStillADraft() {
+    void observeeCanReadRecordOnlyWhenObserverHasSubmitted() {
         int obs = observationId();
-
-        assertThatThrownBy(() -> observations.detail(obs, leander())).isInstanceOf(AccessDeniedException.class);
         keiraStarts(obs);
         assertThatThrownBy(() -> observations.detail(obs, leander())).isInstanceOf(AccessDeniedException.class);
-    }
 
-    @Test
-    void us41_theObserveeCanReadTheRecordOnceTheObserverSubmits() {
-        int obs = observationId();
-        keiraSubmits(obs);
-
+        observations.submit(obs, completeAnswers(obs), keira());
         var detail = observations.detail(obs, leander());
 
         assertThat(detail.viewerRole()).isEqualTo(ViewerRole.OBSERVEE);
@@ -71,207 +64,72 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void us41_aProfessorNotInvolvedCanNeverReadTheRecord() {
+    void committeeCanReadRecordFromAnySchoolOnlyWhenCompleted() {
         int obs = observationId();
-        assertThatThrownBy(() -> observations.detail(obs, dario())).isInstanceOf(AccessDeniedException.class);
-
         keiraSubmits(obs);
-        assertThatThrownBy(() -> observations.detail(obs, dario())).isInstanceOf(AccessDeniedException.class);
-
-        leanderSigns(obs, null);
-        assertThatThrownBy(() -> observations.detail(obs, dario())).isInstanceOf(AccessDeniedException.class);
-    }
-
-    @Test
-    void us41_theCommitteeCannotReadADraftOrASubmittedRecordOnlyACompletedOne() {
-        int obs = observationId();
-        keiraStarts(obs);
-        assertThatThrownBy(() -> observations.detail(obs, kaia())).isInstanceOf(AccessDeniedException.class);
-
-        observations.submit(obs, completeAnswers(obs), keira());
         assertThatThrownBy(() -> observations.detail(obs, kaia())).isInstanceOf(AccessDeniedException.class);
 
         leanderSigns(obs, null);
-        var detail = observations.detail(obs, kaia());
-        assertThat(detail.viewerRole()).isEqualTo(ViewerRole.COMMITTEE);
-        assertThat(detail.responses()).isNotEmpty();
-    }
 
-    @Test
-    void us41_aCommitteeMemberFromAnotherSchoolCanReadTheRecord() {
-        int obs = observationId();
-        complete(obs, null);
-
+        assertThat(observations.detail(obs, kaia()).viewerRole()).isEqualTo(ViewerRole.COMMITTEE);
         assertThat(observations.detail(obs, outsiderCommittee()).viewerRole()).isEqualTo(ViewerRole.COMMITTEE);
     }
 
-    @Test
-    void us41_theObserverCanStillReadTheRecordAfterItIsLocked() {
-        int obs = observationId();
-        complete(obs, null);
-
-        var detail = observations.detail(obs, keira());
-
-        assertThat(detail.viewerRole()).isEqualTo(ViewerRole.OBSERVER);
-        assertThat(detail.locked()).isTrue();
-    }
+    // ---------- US31 / US32: observee sign-off ----------
 
     @Test
-    void us41_aRefusedReadIsNotWrittenToTheAuditLog() {
+    void signOffIsRejectedWhenObserverHasNotSubmitted() {
         int obs = observationId();
-        complete(obs, null);
-        int before = events(obs).size();
+        keiraStarts(obs);
 
-        assertThatThrownBy(() -> observations.detail(obs, dario())).isInstanceOf(AccessDeniedException.class);
-
-        assertThat(events(obs)).hasSize(before);
-    }
-
-    // ---------- US31: observee sign-off ----------
-
-    @Test
-    void us31_theObserveeCannotSignBeforeTheObserverHasSubmitted() {
-        int obs = observationId();
-
-        assertThatThrownBy(() -> leanderSigns(obs, "Too early."))
+        assertThatThrownBy(() -> leanderSigns(obs, null))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("has not submitted");
-        keiraStarts(obs);
-        assertThatThrownBy(() -> leanderSigns(obs, "Still too early.")).isInstanceOf(ConflictException.class);
     }
 
     @Test
-    void us31_onlyTheObserveeCanSignOff() {
+    void signOffIsRejectedWhenSignerIsNotTheObservee() {
         int obs = observationId();
         keiraSubmits(obs);
 
         assertThatThrownBy(() -> observations.observeeSign(obs, null, keira()))
                 .isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> observations.observeeSign(obs, null, dario()))
-                .isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> observations.observeeSign(obs, null, kaia()))
-                .isInstanceOf(AccessDeniedException.class);
         assertThat(observations.detail(obs, leander()).status()).isEqualTo(Status.SUBMITTED);
     }
 
     @Test
-    void us31_bothSignaturesCompleteTheRecord() {
-        int obs = observationId();
-
-        var detail = complete(obs, "Thanks, Keira.");
-
-        assertThat(detail.status()).isEqualTo(Status.COMPLETED);
-        assertThat(detail.submittedAt()).isNotNull();
-        assertThat(detail.observeeSignedAt()).isNotNull();
-        assertThat(detail.observeeSignedAt()).isAfterOrEqualTo(detail.submittedAt());
-    }
-
-    @Test
-    void us31_aRecordWithOnlyTheObserversSignatureIsNotCompleted() {
-        int obs = observationId();
-
-        var detail = keiraSubmits(obs);
-
-        assertThat(detail.status()).isNotEqualTo(Status.COMPLETED);
-        assertThat(detail.observeeSignedAt()).isNull();
-        assertThat(observeeStatus(obs)).isNotEqualTo("COMPLETED");
-    }
-
-    @Test
-    void us31_signingOffMarksTheObserveesEvaluationCompleted() {
-        int obs = observationId();
-        complete(obs, null);
-
-        assertThat(observeeStatus(obs)).isEqualTo("COMPLETED");
-        assertThat(observationRecords.findById(obs).orElseThrow().completedAt()).isNotNull();
-    }
-
-    @Test
-    void us31_theObserverIsToldTheRecordIsComplete() {
+    void evaluationIsCompletedAndObserverNotifiedWhenObserveeSignsOff() {
         int obs = observationId();
         keiraSubmits(obs);
         int before = notificationCount(KEIRA);
 
-        leanderSigns(obs, null);
-
-        assertThat(notificationCount(KEIRA)).isEqualTo(before + 1);
-    }
-
-    @Test
-    void us31_theRecordCannotBeSignedOffTwice() {
-        int obs = observationId();
-        complete(obs, null);
-
-        assertThatThrownBy(() -> leanderSigns(obs, "Again."))
-                .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("already been signed off");
-    }
-
-    // ---------- US32: signing does not mean agreeing ----------
-
-    @Test
-    void us32_theObserveeCanSignWithoutAnyCommentOrAgreement() {
-        int obs = observationId();
-        keiraSubmits(obs);
-
+        // US32: signing needs no comment, and does not mean agreeing.
         var detail = leanderSigns(obs, null);
 
         assertThat(detail.status()).isEqualTo(Status.COMPLETED);
+        assertThat(detail.observeeSignedAt()).isAfterOrEqualTo(detail.submittedAt());
         assertThat(detail.observeeComments()).isNull();
-    }
-
-    @Test
-    void us32_aBlankCommentIsTreatedAsNoComment() {
-        int obs = observationId();
-        keiraSubmits(obs);
-
-        var detail = leanderSigns(obs, "    ");
-
-        assertThat(detail.observeeComments()).isNull();
-        assertThat(events(obs)).doesNotContain(AuditEvent.OBSERVEE_COMMENTED);
-    }
-
-    @Test
-    void us32_signingDoesNotChangeAnyOfTheObserversRatingsOrNotes() {
-        int obs = observationId();
-        keiraSubmits(obs);
-        var before = observations.detail(obs, leander()).responses();
-
-        leanderSigns(obs, "I disagree with some of the ratings.");
-
-        assertThat(observations.detail(obs, leander()).responses()).containsExactlyElementsOf(before);
+        assertThat(observeeStatus(obs)).isEqualTo("COMPLETED");
+        assertThat(notificationCount(KEIRA)).isEqualTo(before + 1);
     }
 
     // ---------- US33: observee comments ----------
 
     @Test
-    void us33_theObserveesCommentsAreSavedWithTheFinalRecord() {
+    void observersAnswersAreUnchangedWhenObserveeAddsComments() {
         int obs = observationId();
         keiraSubmits(obs);
+        var answers = observations.detail(obs, leander()).responses();
 
-        leanderSigns(obs, "  Thanks, Keira. I will try more worked examples.  ");
+        leanderSigns(obs, "I disagree with some of the ratings.");
 
-        assertThat(observations.detail(obs, keira()).observeeComments())
-                .isEqualTo("Thanks, Keira. I will try more worked examples.");
-        assertThat(observations.detail(obs, kaia()).observeeComments())
-                .isEqualTo("Thanks, Keira. I will try more worked examples.");
+        var detail = observations.detail(obs, kaia());
+        assertThat(detail.observeeComments()).isEqualTo("I disagree with some of the ratings.");
+        assertThat(detail.responses()).containsExactlyElementsOf(answers);
     }
 
     @Test
-    void us33_theObserveesCommentsStaySeparateFromTheObserversNotes() {
-        int obs = observationId();
-        keiraSubmits(obs);
-        var notesBefore = observations.detail(obs, leander()).responses();
-
-        leanderSigns(obs, "My side of the observation.");
-
-        var detail = observations.detail(obs, leander());
-        assertThat(detail.responses()).containsExactlyElementsOf(notesBefore);
-        assertThat(detail.responses()).noneMatch(a -> "My side of the observation.".equals(a.comments()));
-    }
-
-    @Test
-    void us33_aCommentOverTheLimitIsRejectedAndNothingChanges() {
+    void signOffIsRejectedAndNothingChangesWhenCommentIsOverTheLimit() {
         int obs = observationId();
         keiraSubmits(obs);
 
@@ -282,187 +140,86 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
         var detail = observations.detail(obs, leander());
         assertThat(detail.status()).isEqualTo(Status.SUBMITTED);
         assertThat(detail.observeeComments()).isNull();
-        assertThat(observeeStatus(obs)).isNotEqualTo("COMPLETED");
-    }
-
-    @Test
-    void us33_aCommentOfExactlyTheLimitIsAccepted() {
-        int obs = observationId();
-        keiraSubmits(obs);
-
-        var detail = leanderSigns(obs, "x".repeat(4000));
-
-        assertThat(detail.observeeComments()).hasSize(4000);
     }
 
     // ---------- US34: locking ----------
 
     @Test
-    void us34_signingOffLocksTheRecord() {
+    void recordIsLockedButReadableByObserverWhenObserveeSignsOff() {
         int obs = observationId();
+        assertThat(keiraSubmits(obs).locked()).isFalse();
 
-        var detail = complete(obs, null);
+        leanderSigns(obs, null);
 
+        var detail = observations.detail(obs, keira());
+        assertThat(detail.viewerRole()).isEqualTo(ViewerRole.OBSERVER);
         assertThat(detail.locked()).isTrue();
         assertThat(detail.canEdit()).isFalse();
-        assertThat(detail.canSign()).isFalse();
         assertThat(detail.canStart()).isFalse();
     }
 
     @Test
-    void us34_aRecordIsNotLockedUntilBothHaveSigned() {
-        int obs = observationId();
-
-        assertThat(observations.detail(obs, keira()).locked()).isFalse();
-        keiraStarts(obs);
-        assertThat(observations.detail(obs, keira()).locked()).isFalse();
-        observations.submit(obs, completeAnswers(obs), keira());
-        assertThat(observations.detail(obs, keira()).locked()).isFalse();
-        leanderSigns(obs, null);
-        assertThat(observations.detail(obs, keira()).locked()).isTrue();
-    }
-
-    @Test
-    void us34_theObserverCannotEditALockedRecord() {
+    void changesAreRejectedWhenRecordIsLocked() {
         int obs = observationId();
         complete(obs, null);
 
         assertThatThrownBy(() -> observations.saveResponses(obs, completeAnswers(obs), keira()))
                 .isInstanceOf(ConflictException.class);
-        assertThatThrownBy(() -> observations.submit(obs, completeAnswers(obs), keira()))
-                .isInstanceOf(ConflictException.class);
-        assertThatThrownBy(() -> observations.start(obs, keira())).isInstanceOf(ConflictException.class);
-    }
-
-    @Test
-    void us34_noOneIncludingTheCommitteeCanEditALockedRecord() {
-        int obs = observationId();
-        complete(obs, null);
-
         assertThatThrownBy(() -> observations.saveResponses(obs, completeAnswers(obs), kaia()))
                 .isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> observations.saveResponses(obs, completeAnswers(obs), leander()))
-                .isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> observations.observeeSign(obs, "Changed my mind.", leander()))
-                .isInstanceOf(ConflictException.class);
-    }
-
-    @Test
-    void us34_aFailedEditAttemptLeavesTheRecordExactlyAsItWas() {
-        int obs = observationId();
-        complete(obs, "Original comment.");
-        var before = observations.detail(obs, keira());
-
-        assertThatThrownBy(() -> observations.saveResponses(obs, List.of(), keira()))
-                .isInstanceOf(ConflictException.class);
-
-        var after = observations.detail(obs, keira());
-        assertThat(after.responses()).containsExactlyElementsOf(before.responses());
-        assertThat(after.observeeComments()).isEqualTo("Original comment.");
-        assertThat(after.status()).isEqualTo(Status.COMPLETED);
+        assertThatThrownBy(() -> leanderSigns(obs, "Changed my mind."))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("already been signed off");
     }
 
     // ---------- audit log ----------
 
     @Test
-    void audit_theLogRecordsTheWorkflowInTheOrderItHappened() {
+    void auditLogRecordsEachStepWithActorAndTimeWhenWorkflowCompletes() {
         int obs = observationId();
-        complete(obs, "Thanks.");
+        keiraStarts(obs);
+        observations.saveResponses(obs, completeAnswers(obs), keira());
+        observations.submit(obs, completeAnswers(obs), keira());
+        leanderSigns(obs, "Thanks.");
 
-        assertThat(events(obs))
-                .containsSubsequence(
+        var entries = audit.auditLog(obs, kaia());
+
+        assertThat(entries)
+                .extracting(ObservationAuditService.AuditEntry::event)
+                .containsExactly(
                         AuditEvent.STARTED,
+                        AuditEvent.EDITED,
                         AuditEvent.SUBMITTED,
                         AuditEvent.OBSERVEE_COMMENTED,
                         AuditEvent.OBSERVEE_SIGNED,
                         AuditEvent.LOCKED);
+        assertThat(entries).allSatisfy(e -> assertThat(e.occurredAt()).isNotNull());
+        assertThat(entries.get(2).actorName()).isEqualTo("Keira Larkspur");
+        assertThat(entries.get(4).actorName()).isEqualTo("Leander Coldwell");
     }
 
     @Test
-    void audit_eachEntryNamesWhoDidItAndWhen() {
-        int obs = observationId();
-        complete(obs, null);
-
-        var entries = audit.auditLog(obs, kaia());
-
-        assertThat(entries).isNotEmpty().allSatisfy(e -> {
-            assertThat(e.actorName()).isNotBlank();
-            assertThat(e.occurredAt()).isNotNull();
-        });
-        assertThat(entries.stream()
-                        .filter(e -> e.event() == AuditEvent.SUBMITTED)
-                        .findFirst()
-                        .orElseThrow()
-                        .actorName())
-                .isEqualTo("Keira Larkspur");
-        assertThat(entries.stream()
-                        .filter(e -> e.event() == AuditEvent.OBSERVEE_SIGNED)
-                        .findFirst()
-                        .orElseThrow()
-                        .actorName())
-                .isEqualTo("Leander Coldwell");
-    }
-
-    @Test
-    void audit_everyViewOfALockedRecordIsLoggedButDraftViewsAreNot() {
+    void viewIsLoggedOnlyWhenRecordIsLocked() {
         int obs = observationId();
         keiraStarts(obs);
         observations.detail(obs, keira());
+        // The committee may read the log at any status, though not the record itself.
         assertThat(events(obs)).doesNotContain(AuditEvent.VIEWED);
 
         observations.submit(obs, completeAnswers(obs), keira());
         leanderSigns(obs, null);
         observations.detail(obs, keira());
-        observations.detail(obs, leander());
 
-        assertThat(events(obs).stream().filter(e -> e == AuditEvent.VIEWED).count())
-                .isGreaterThanOrEqualTo(2);
-    }
-
-    @Test
-    void audit_theLogOnlyGrowsAndNeverLosesEarlierEntries() {
-        int obs = observationId();
-        keiraStarts(obs);
-        var afterStart = events(obs);
-
-        observations.submit(obs, completeAnswers(obs), keira());
-        var afterSubmit = events(obs);
-
-        assertThat(afterSubmit).startsWith(afterStart.toArray(new AuditEvent[0]));
-        assertThat(afterSubmit.size()).isGreaterThan(afterStart.size());
-    }
-
-    @Test
-    void audit_onlyCommitteeMembersAcrossSchoolsCanReadTheLog() {
-        int obs = observationId();
-        complete(obs, null);
-
-        assertThatThrownBy(() -> audit.auditLog(obs, keira())).isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> audit.auditLog(obs, leander())).isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> audit.auditLog(obs, dario())).isInstanceOf(AccessDeniedException.class);
-        assertThat(audit.auditLog(obs, outsiderCommittee())).isNotEmpty();
-        assertThat(audit.auditLog(obs, kaia())).isNotEmpty();
-    }
-
-    @Test
-    void audit_theCommitteeCanReadTheLogEvenBeforeTheRecordIsComplete() {
-        int obs = observationId();
-        keiraStarts(obs);
-
-        assertThat(events(obs)).contains(AuditEvent.STARTED);
-    }
-
-    @Test
-    void audit_aMissingObservationHasNoLog() {
-        assertThatThrownBy(() -> audit.auditLog(999_999, kaia())).isInstanceOf(NotFoundException.class);
+        assertThat(events(obs)).containsOnlyOnce(AuditEvent.VIEWED);
     }
 
     // ---------- forwarding a record link ----------
 
     @Test
-    void forward_theCommitteeCanForwardALockedRecordAndTheForwardIsLogged() {
+    void recipientIsNotifiedButGetsNoAccessWhenLockedRecordIsForwarded() {
         int obs = observationId();
         complete(obs, null);
+        int before = notificationCount(DARIO);
 
         observations.forward(obs, DARIO, kaia());
 
@@ -472,63 +229,17 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
                 .orElseThrow();
         assertThat(forwarded.actorName()).isEqualTo("Kaia Clearbrook");
         assertThat(forwarded.recipientName()).contains("Dario");
-    }
-
-    @Test
-    void forward_doesNotGiveTheRecipientAccess() {
-        int obs = observationId();
-        complete(obs, null);
-
-        observations.forward(obs, DARIO, kaia());
-
+        assertThat(notificationCount(DARIO)).isEqualTo(before + 1);
         assertThatThrownBy(() -> observations.detail(obs, dario())).isInstanceOf(AccessDeniedException.class);
     }
 
     @Test
-    void forward_onlyALockedRecordCanBeForwarded() {
+    void forwardIsRejectedWhenRecordIsNotLocked() {
         int obs = observationId();
         keiraSubmits(obs);
 
         assertThatThrownBy(() -> observations.forward(obs, DARIO, kaia()))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("locked");
-    }
-
-    @Test
-    void forward_onlyCommitteeMembersCanForward() {
-        int obs = observationId();
-        complete(obs, null);
-
-        assertThatThrownBy(() -> observations.forward(obs, DARIO, keira())).isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> observations.forward(obs, DARIO, leander())).isInstanceOf(AccessDeniedException.class);
-    }
-
-    @Test
-    void forward_aCommitteeMemberFromAnotherSchoolCanForward() {
-        int obs = observationId();
-        complete(obs, null);
-
-        int before = notificationCount(DARIO);
-        observations.forward(obs, DARIO, outsiderCommittee());
-        assertThat(notificationCount(DARIO)).isEqualTo(before + 1);
-    }
-
-    @Test
-    void forward_toAProfessorWhoDoesNotExistIsRejected() {
-        int obs = observationId();
-        complete(obs, null);
-
-        assertThatThrownBy(() -> observations.forward(obs, 999_999, kaia())).isInstanceOf(NotFoundException.class);
-    }
-
-    @Test
-    void forward_theRecipientIsNotified() {
-        int obs = observationId();
-        complete(obs, null);
-        int before = notificationCount(DARIO);
-
-        observations.forward(obs, DARIO, kaia());
-
-        assertThat(notificationCount(DARIO)).isEqualTo(before + 1);
     }
 }

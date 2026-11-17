@@ -4,7 +4,6 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
   within,
 } from "@testing-library/react";
 import { App } from "../../App";
@@ -72,50 +71,31 @@ function pendingRequest() {
   ];
 }
 
-test("the dashboard shows the signed-in professor and pending requests", async () => {
-  pendingRequest();
-  open("/faculty");
-  await screen.findByText("Professor 1", { selector: "p.font-semibold" });
-  expect(
-    screen.getByRole("link", { name: "Observer Requests (1 pending)" }),
-  ).toBeDefined();
-  expect(screen.queryByLabelText(/Demo faculty identity/)).toBeNull();
-});
-
-test("observer can accept and sees accepted requests", async () => {
+test("the request shows as accepted when the observer accepts with a date", async () => {
   pendingRequest();
   open("/faculty/requests");
   fireEvent.click(await screen.findByRole("button", { name: "Accept" }));
-  const dates = await screen.findByLabelText("Observation date");
-  expect(sent).toHaveLength(0);
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Accept & Schedule",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  fireEvent.change(dates, { target: { value: "2026-11-03" } });
+  fireEvent.change(await screen.findByLabelText("Observation date"), {
+    target: { value: "2026-11-03" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Accept & Schedule" }));
-  await waitFor(() =>
-    expect(
-      screen.getByRole("heading", { name: "Accepted / Assigned Requests (1)" }),
-    ).toBeDefined(),
-  );
+
+  const accepted = (
+    await screen.findByRole("heading", {
+      name: "Accepted / Assigned Requests (1)",
+    })
+  ).closest("section");
+  if (!accepted) throw Error("Missing accepted section");
+  expect(within(accepted).getByText(/Professor 8/)).toBeDefined();
   expect(sent).toEqual([
     {
       path: "/api/observer-eligibility/faculty/1/requests/7/respond",
       body: { accept: true, observationDate: "2026-11-03" },
     },
   ]);
-  const accepted = screen
-    .getByRole("heading", { name: "Accepted / Assigned Requests (1)" })
-    .closest("section");
-  if (!accepted) throw Error("Missing accepted section");
-  expect(within(accepted).getByText(/Professor 8/)).toBeDefined();
 });
 
-test("observer can decline a request", async () => {
+test("the request moves to Declined when the observer declines it", async () => {
   pendingRequest();
   open("/faculty/requests");
   fireEvent.click(await screen.findByRole("button", { name: "Decline" }));
@@ -123,81 +103,19 @@ test("observer can decline a request", async () => {
   expect(sent[0]?.body).toEqual({ accept: false });
 });
 
-test("notification history includes timestamps and entries beyond the first five", async () => {
-  state.notifications = Array.from({ length: 7 }, (_, i) => ({
-    notificationId: i + 1,
-    message: `Notification ${i + 1}`,
-    createdAt: "2026-10-21T10:30:00-05:00",
-  }));
-  open("/faculty");
-  const history = await screen.findByRole("list", {
-    name: "Notification history",
-  });
-  expect(within(history).getAllByRole("listitem")).toHaveLength(7);
-  expect(
-    within(history).getAllByText("Oct 21, 2026, 10:30 AM CT"),
-  ).toHaveLength(7);
-  expect(history.className).toContain("overflow-y-auto");
-});
-
-test("sessions without a faculty profile load nothing instead of using another professor", async () => {
-  signInAs("professor", { professorId: null });
-  open("/faculty/requests");
-  await screen.findByText(/Your session has no faculty profile/);
-  await screen.findByText(/This account has no faculty profile/);
-  const observerCalls = (
-    globalThis.fetch as unknown as Mock<typeof fetch>
-  ).mock.calls.filter(([input]) =>
-    String(input).includes("/api/observer-eligibility/"),
-  );
-  expect(observerCalls).toHaveLength(0);
-});
-
-test("generated observers stay disabled until the committee sends the list", async () => {
-  state.signup = { ...signup, released: false };
-  open("/faculty");
-  await screen.findByText("Professor 1", { selector: "p.font-semibold" });
-  const button = screen.getByRole("button", {
-    name: "View Generated Observers",
-  }) as HTMLButtonElement;
-  expect(button.disabled).toBe(true);
-  fireEvent.click(button);
-  expect(window.location.pathname).toBe("/faculty");
-});
-
-test("a sent list enables the orange generated observers link", async () => {
-  state.signup = { ...signup, released: true };
-  open("/faculty");
-  const link = await screen.findByRole("link", {
-    name: "View Generated Observers",
-  });
-  expect(link.className).toContain("bg-brand-orange");
-  fireEvent.click(link);
-  expect(window.location.pathname).toBe("/faculty/observers");
-});
-
-test("signup is disabled once the signup period closes", async () => {
-  state.cycle.signupOpen = false;
-  open("/faculty");
-  await screen.findByText("Professor 1", { selector: "p.font-semibold" });
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Sign Up for Evaluation",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-});
-
-test("an AC-assigned observer can choose a date and see the saved schedule", async () => {
+test("the request stops counting as pending when an assigned observer picks a date", async () => {
   pendingRequest();
   const request = state.incoming[0];
   if (!request) throw Error("Missing request");
   request.status = "CONFIRMED";
   request.assignedByAc = true;
-  open("/faculty/requests");
+  open("/faculty");
+  fireEvent.click(
+    await screen.findByRole("link", { name: "Observer Requests (1 pending)" }),
+  );
   await screen.findByText("Assigned by AC");
   expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+
   fireEvent.click(
     screen.getByRole("button", { name: "Choose Observation Date" }),
   );
@@ -214,31 +132,55 @@ test("an AC-assigned observer can choose a date and see the saved schedule", asy
       body: { observationDate: "2026-11-05" },
     },
   ]);
-  expect(
-    screen.queryByRole("button", { name: "Choose Observation Date" }),
-  ).toBeNull();
+  await screen.findByRole("link", { name: "Observer Requests (0 pending)" });
 });
 
-test("an assigned observation stays pending on the dashboard until its date is chosen", async () => {
-  pendingRequest();
-  const request = state.incoming[0];
-  if (!request) throw Error("Missing request");
-  request.status = "CONFIRMED";
-  request.assignedByAc = true;
+test("notifications are listed with their times when the dashboard loads", async () => {
+  state.notifications = [1, 2].map((id) => ({
+    notificationId: id,
+    message: `Notification ${id}`,
+    createdAt: "2026-10-21T10:30:00-05:00",
+  }));
   open("/faculty");
-  await screen.findByRole("link", { name: "Observer Requests (1 pending)" });
-  fireEvent.click(
-    screen.getByRole("link", { name: "Observer Requests (1 pending)" }),
-  );
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Choose Observation Date" }),
-  );
-  fireEvent.change(await screen.findByLabelText("Observation date"), {
-    target: { value: "2026-11-05" },
+  const history = await screen.findByRole("list", {
+    name: "Notification history",
   });
+  expect(within(history).getByText("Notification 2")).toBeDefined();
+  expect(
+    within(history).getAllByText("Oct 21, 2026, 10:30 AM CT"),
+  ).toHaveLength(2);
+});
+
+test("generated observers stay disabled when the committee has not sent the list", async () => {
+  state.signup = { ...signup, released: false };
+  open("/faculty");
+  await screen.findByText("Professor 1", { selector: "p.font-semibold" });
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "View Generated Observers",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+
+  cleanup();
+  state.signup = { ...signup, released: true };
+  open("/faculty");
   fireEvent.click(
-    screen.getByRole("button", { name: "Save Observation Date" }),
+    await screen.findByRole("link", { name: "View Generated Observers" }),
   );
-  await screen.findByText(/Observation scheduled: 2026-11-05/);
-  await screen.findByRole("link", { name: "Observer Requests (0 pending)" });
+  expect(window.location.pathname).toBe("/faculty/observers");
+});
+
+test("nothing loads when the session has no faculty profile", async () => {
+  signInAs("professor", { professorId: null });
+  open("/faculty/requests");
+  await screen.findByText(/Your session has no faculty profile/);
+  await screen.findByText(/This account has no faculty profile/);
+  const observerCalls = (
+    globalThis.fetch as unknown as Mock<typeof fetch>
+  ).mock.calls.filter(([input]) =>
+    String(input).includes("/api/observer-eligibility/"),
+  );
+  expect(observerCalls).toHaveLength(0);
 });

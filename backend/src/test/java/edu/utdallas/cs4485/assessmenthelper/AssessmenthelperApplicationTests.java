@@ -15,7 +15,7 @@ class AssessmenthelperApplicationTests {
     private ProfessorRepository professors;
 
     @Test
-    void contextLoadsWithTheAppSeedData() {
+    void seedDataIsLoadedWhenTheApplicationStarts() {
         assertThat(professors.count()).isPositive();
     }
 }

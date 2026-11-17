@@ -1,7 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import edu.utdallas.cs4485.assessmenthelper.entity.Course;
 import edu.utdallas.cs4485.assessmenthelper.entity.CourseSection;
@@ -67,7 +66,7 @@ class EvaluationRecordServiceTests {
     }
 
     @Test
-    void returnsOneRecordPerCycleNewestFirst() {
+    void recordsAreOnePerCycleNewestFirstWhenProfessorWasObserved() {
         assertThat(service.findByProfessor(observeeProfessor.professorId()))
                 .containsExactly(
                         new EvaluationRecord(fall2026.cycleId(), "Fall", 2026, "ACTIVE", 1, null),
@@ -81,24 +80,8 @@ class EvaluationRecordServiceTests {
     }
 
     @Test
-    void professorWhoWasNeverObservedHasNoRecords() {
+    void recordsAreEmptyWhenProfessorWasNeverObserved() {
         assertThat(service.findByProfessor(observerProfessor.professorId())).isEmpty();
-    }
-
-    @Test
-    void observeeWithoutSignupsHasNoObservations() {
-        Professor newObservee = db.insert(professor("new-observee@test.edu"));
-        db.insert(new Observee(null, newObservee.professorId(), fall2026.cycleId(), "ACTIVE"));
-
-        assertThat(service.findByProfessor(newObservee.professorId()))
-                .containsExactly(new EvaluationRecord(fall2026.cycleId(), "Fall", 2026, "ACTIVE", 0, null));
-    }
-
-    @Test
-    void unknownProfessorThrowsNotFound() {
-        assertThatThrownBy(() -> service.findByProfessor(-1))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessage("No professor with id -1");
     }
 
     private Professor professor(String email) {

@@ -1,0 +1,4 @@
+# Lets `bun test` run from the repo root
+[test]
+root = "./frontend"
+preload = ["./frontend/test-setup.ts"]

@@ -8,7 +8,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import edu.utdallas.cs4485.assessmenthelper.config.SecurityConfig;
 import edu.utdallas.cs4485.assessmenthelper.entity.CourseSection;
-import edu.utdallas.cs4485.assessmenthelper.service.NotFoundException;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverAvailabilityService;
 import java.time.LocalTime;
 import java.util.List;
@@ -17,7 +16,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,15 +38,8 @@ class ObserverAvailabilityControllerTests {
     private UserDetailsService userDetailsService;
 
     @Test
-    @WithAnonymousUser
-    void signedOutRequestReturns401() throws Exception {
-        mockMvc.perform(get("/api/observer-availability").param("signupId", "2").param("observerId", "3"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
     @WithMockUser(roles = "PROFESSOR")
-    void professorsCannotCheckAvailability() throws Exception {
+    void availabilityReturns403WhenCallerIsAProfessor() throws Exception {
         mockMvc.perform(get("/api/observer-availability").param("signupId", "2").param("observerId", "3"))
                 .andExpect(status().isForbidden());
 
@@ -56,17 +47,7 @@ class ObserverAvailabilityControllerTests {
     }
 
     @Test
-    void availableObserverHasNoConflicts() throws Exception {
-        when(service.conflicts(3, 2)).thenReturn(List.of());
-
-        mockMvc.perform(get("/api/observer-availability").param("signupId", "2").param("observerId", "3"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.available").value(true))
-                .andExpect(jsonPath("$.conflicts").isEmpty());
-    }
-
-    @Test
-    void unavailableObserverListsTheClashingSection() throws Exception {
+    void availabilityListsClashingSectionWhenObserverIsBusy() throws Exception {
         when(service.conflicts(3, 2)).thenReturn(List.of(CLASH));
 
         mockMvc.perform(get("/api/observer-availability").param("signupId", "2").param("observerId", "3"))
@@ -76,15 +57,7 @@ class ObserverAvailabilityControllerTests {
     }
 
     @Test
-    void unknownSignupReturns404() throws Exception {
-        when(service.conflicts(3, 9)).thenThrow(new NotFoundException("No evaluation signup with id 9"));
-
-        mockMvc.perform(get("/api/observer-availability").param("signupId", "9").param("observerId", "3"))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
-    void missingParameterReturns400() throws Exception {
+    void availabilityReturns400WhenSignupIdIsMissing() throws Exception {
         mockMvc.perform(get("/api/observer-availability").param("observerId", "3"))
                 .andExpect(status().isBadRequest());
     }

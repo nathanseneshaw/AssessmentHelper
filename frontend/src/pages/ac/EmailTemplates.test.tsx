@@ -26,15 +26,14 @@ const initial: EmailTemplate = {
   activeStatus: true,
   version: 0,
 };
-function install(save?: (init: RequestInit | undefined) => Response) {
+function install(save: (init: RequestInit | undefined) => Response) {
   fakeBackend({
     "/api/email-templates": () =>
       Response.json({
         templates: [initial],
         placeholders: ["lastName", "cycleLabel"],
       }),
-    "/api/email-templates/EVALUATION_DUE":
-      save ?? (() => Response.json({ ...initial, version: 1 })),
+    "/api/email-templates/EVALUATION_DUE": save,
     "/api/email-templates/preview": () =>
       Response.json({
         subject: "Hello Nguyen",
@@ -55,7 +54,7 @@ async function edit() {
   );
 }
 
-test("edits a template using its version and previews filled sample data", async () => {
+test("the preview fills in sample data when a template is edited", async () => {
   let saved: Record<string, unknown> | undefined;
   install((init) => {
     saved = JSON.parse(String(init?.body));
@@ -77,7 +76,7 @@ test("edits a template using its version and previews filled sample data", async
   expect(saved?.version).toBe(0);
 });
 
-test("creates a future scenario template with a new key", async () => {
+test("a new template is created when a new scenario key is entered", async () => {
   let body: Record<string, unknown> | undefined;
   fakeBackend({
     "/api/email-templates": () =>
@@ -117,7 +116,7 @@ test("creates a future scenario template with a new key", async () => {
   ).toBe(true);
 });
 
-test("a conflicting save preserves the draft and supports an explicit reload", async () => {
+test("the draft is kept and can be reloaded when the save conflicts", async () => {
   install(() =>
     Response.json(
       { detail: "This template changed. Reload it before saving again." },
@@ -142,7 +141,7 @@ test("a conflicting save preserves the draft and supports an explicit reload", a
   ).toBeTruthy();
 });
 
-test("cancel does not save template edits", async () => {
+test("edits are not saved when Cancel is clicked", async () => {
   let writes = 0;
   install(() => {
     writes++;

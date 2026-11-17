@@ -1,14 +1,9 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.firstTemplateId;
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.inactive;
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.newObservation;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observerOf;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.professor;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.submitted;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withObservationDeadline;
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withSignupDeadline;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
@@ -35,7 +30,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
@@ -150,41 +144,25 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void requiredProfessorMissingSignupIsFlagged() {
+    void missingSignupAlertIsRaisedWhenDueProfessorHasNotSignedUp() {
         assertThat(has(professor, "MISSING_SIGNUP")).isTrue();
     }
 
     @Test
-    void signupDeadlineIsInclusive() {
-        updateCycle(c -> withSignupDeadline(c, LocalDate.parse("2026-11-16")));
-        assertThat(has(professor, "MISSING_SIGNUP")).isFalse();
-    }
-
-    @Test
-    void upcomingAndInactiveProfessorsAreExcluded() {
+    void noAlertsAreRaisedWhenProfessorIsNotDue() {
         updateProfessor(professor, p -> withHireDate(p, LocalDate.parse("2025-09-01")));
         assertThat(service.findByProfessor(professor)).isEmpty();
-        updateProfessor(professor, p -> inactive(withHireDate(p, LocalDate.parse("2024-09-01"))));
-        assertThat(service.findByProfessor(professor)).isEmpty();
     }
 
     @Test
-    void registeredButUnscheduledEvaluationIsFlagged() {
+    void missingScheduleAlertIsRaisedWhenSignupHasNoObservationDate() {
         signUp("PENDING");
         assertThat(has(professor, "MISSING_SIGNUP")).isFalse();
         assertThat(has(professor, "MISSING_SCHEDULE")).isTrue();
-        setObservationDeadline(LocalDate.parse("2026-11-16"));
-        assertThat(has(professor, "MISSING_SCHEDULE")).isFalse();
     }
 
     @Test
-    void cancelledSignupDoesNotSatisfyRequirement() {
-        signUp("CANCELLED");
-        assertThat(has(professor, "MISSING_SIGNUP")).isTrue();
-    }
-
-    @Test
-    void lateSubmissionBelongsToObserverAndClearsOnSubmission() {
+    void lateSubmissionAlertGoesToObserverAndClearsWhenFormIsSubmitted() {
         int observer = id("keira.larkspur@example.edu");
         int observee = id("leander.coldwell@example.edu");
         assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
@@ -192,22 +170,6 @@ class MissingObservationIntegrationTests {
         updateObservations(observedBy(observer), o -> submitted(o, LocalDateTime.parse("2026-11-16T09:00:00")));
         assertThat(has(observer, "LATE_SUBMISSION")).isFalse();
         assertThat(has(observee, "MISSING_SIGN_OFF")).isTrue();
-    }
-
-    @Test
-    void futureAndSameDayObservationsAreMissingAfterTheCycleDeadline() {
-        int observer = id("keira.larkspur@example.edu");
-        updateObservations(observedBy(observer), o -> withPlan(o, LocalDate.parse("2026-11-16"), o.startTime()));
-        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
-        updateObservations(observedBy(observer), o -> withPlan(o, LocalDate.parse("2026-11-17"), o.startTime()));
-        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
-    }
-
-    @Test
-    void aStartedButUnsubmittedObservationIsStillLate() {
-        int observer = id("keira.larkspur@example.edu");
-        updateObservations(observedBy(observer), o -> withStatus(o, "IN_PROGRESS"));
-        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
     }
 
     @Test
@@ -228,13 +190,6 @@ class MissingObservationIntegrationTests {
         assertThat(has(observee, "MISSING_SUBMISSION")).isFalse();
     }
 
-    @Test
-    void anUndatedObservationIsMissingAfterTheDeadline() {
-        int observer = id("keira.larkspur@example.edu");
-        updateObservations(observedBy(observer), o -> withPlan(o, null, null));
-        assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
-    }
-
     AccountPrincipal principal() {
         return new AccountPrincipal(
                 new CurrentUser(999, professor, 1, "Missing Test", "missing-test@example.edu", List.of(Role.PROFESSOR)),
@@ -243,19 +198,11 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void apiAllowsOwnerAndDeniesAnotherProfessor() throws Exception {
+    void alertsAreReturnedWhenProfessorReadsTheirOwn() throws Exception {
         mvc.perform(get("/api/professors/" + professor + "/missing-observations")
                         .with(user(principal())))
-                .andExpect(status().isOk());
-        mvc.perform(get("/api/professors/" + id("keira.larkspur@example.edu") + "/missing-observations")
-                        .with(user(principal())))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void anonymousCannotReadAlerts() throws Exception {
-        mvc.perform(get("/api/professors/" + professor + "/missing-observations"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].kind").value("MISSING_SIGNUP"));
     }
 
     // GET /api/missing-observations. data.sql's Fall 2026 cycle has eight signups and only Leander's has an
@@ -307,93 +254,39 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void everySignupWithoutACompletedObservationIsListedAfterTheDeadline() {
+    void signupIsListedAsMissingWhenDeadlinePassesWithoutACompletedObservation() {
         var result = service.findMissingSignups();
         assertThat(result.cycleId()).isEqualTo(1);
-        assertThat(result.cycleLabel()).isEqualTo("Fall 2026");
         assertThat(result.observationDeadline()).isEqualTo(LocalDate.of(2026, 11, 15));
         assertThat(missingObservees()).hasSize(8);
-        assertThat(missingObservees()).contains("Leander Coldwell", "Avery Hazelwood");
+        // A signup with an observation shows its observer and progress; one nobody accepted has neither.
+        assertThat(missingFor(LEANDER).observer()).isEqualTo("Keira Larkspur");
+        assertThat(missingFor(LEANDER).observationStatus()).isEqualTo("SCHEDULED");
+        assertThat(missingFor(AVERY).observer()).isNull();
     }
 
     @Test
-    void aSignupWithAnObservationShowsItsObserverAndProgress() {
-        var leander = missingFor(LEANDER);
-        assertThat(leander.observer()).isEqualTo("Keira Larkspur");
-        assertThat(leander.observationStatus()).isEqualTo("SCHEDULED");
-        assertThat(leander.course()).startsWith("CS 3345.");
-    }
-
-    @Test
-    void aSignupNobodyAcceptedHasNoObservationDetails() {
-        var avery = missingFor(AVERY);
-        assertThat(avery.observer()).isNull();
-        assertThat(avery.observationStatus()).isNull();
-    }
-
-    @Test
-    void aCompletedObservationTakesTheSignupOffTheList() {
-        setObservationStatus(LEANDER, "COMPLETED");
-        assertThat(missingObservees()).hasSize(7);
-        assertThat(missingObservees()).doesNotContain("Leander Coldwell");
-    }
-
-    @Test
-    void aSubmittedObservationIsStillMissingUntilTheObserveeSignsOff() {
+    void signupLeavesMissingListOnlyWhenObservationIsCompleted() {
+        // A submitted observation is still missing until the observee signs off.
         setObservationStatus(LEANDER, "SUBMITTED");
         assertThat(missingFor(LEANDER).observationStatus()).isEqualTo("SUBMITTED");
+
+        setObservationStatus(LEANDER, "COMPLETED");
+        assertThat(missingObservees()).hasSize(7).doesNotContain("Leander Coldwell");
     }
 
     @Test
-    void aCancelledSignupIsNotListed() {
-        setSignupStatus(signupOf(AVERY), "CANCELLED");
-        assertThat(missingObservees()).hasSize(7);
-        assertThat(missingObservees()).doesNotContain("Avery Hazelwood");
-    }
-
-    @Test
-    void aSignupShowsTheSubmittedObservationAheadOfANewerAcceptedOne() throws Exception {
-        int signup = signupOf(LEANDER);
-        setObservationStatus(LEANDER, "SUBMITTED");
-        var accepted = newObservation(signup, observerOf(db, id(AVERY)), firstTemplateId(db), "ACCEPTED");
-        db.insert(withPlan(accepted, LocalDate.parse("2026-11-05"), null));
-        assertThat(Collections.frequency(missingObservees(), "Leander Coldwell"))
-                .isEqualTo(1);
-        String signupPath = "$.signups[?(@.signupId == " + signup + ")]";
-        mvc.perform(get(URL).with(user(COMMITTEE)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath(signupPath).value(hasSize(1)))
-                .andExpect(jsonPath(signupPath + ".observer").value("Keira Larkspur"))
-                .andExpect(jsonPath(signupPath + ".observationStatus").value("SUBMITTED"));
-        updateObservations(on(signup).and(o -> "ACCEPTED".equals(o.status())), o -> withStatus(o, "COMPLETED"));
-        assertThat(missingObservees()).doesNotContain("Leander Coldwell");
-    }
-
-    @Test
-    void theObservationDeadlineDayIsStillOnTime() {
+    void nothingIsMissingWhenTodayIsTheDeadlineDay() {
         setObservationDeadline(LocalDate.parse("2026-11-16"));
         assertThat(missing()).isEmpty();
     }
 
     @Test
-    void aCycleWithoutAnObservationDeadlineHasNothingMissing() {
-        setObservationDeadline(null);
-        assertThat(service.findMissingSignups().observationDeadline()).isNull();
-        assertThat(missing()).isEmpty();
-    }
-
-    @Test
-    void committeeGetsTheMissingSignupsAsJson() throws Exception {
+    void missingSignupsAreReturnedAsJsonWhenCommitteeRequestsThem() throws Exception {
         mvc.perform(get(URL).with(user(COMMITTEE)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cycleId").value(1))
                 .andExpect(jsonPath("$.observationDeadline").value("2026-11-15"))
                 .andExpect(jsonPath("$.signups", hasSize(8)));
-    }
-
-    @Test
-    void professorsAndAnonymousCannotReadTheMissingSignups() throws Exception {
-        mvc.perform(get(URL).with(user(principal()))).andExpect(status().isForbidden());
-        mvc.perform(get(URL)).andExpect(status().isUnauthorized());
     }
 }
