@@ -67,8 +67,7 @@ class EvaluationDeadlineServiceTests {
 
     @ParameterizedTest
     @CsvSource({"ASSISTANT, 1, 2027-03-10", "FULL, 2, 2028-03-10"})
-    void nextDueDateIsLastEvaluationPlusRankIntervalWhenProfessorWasEvaluated(
-            String rank, int intervalYears, LocalDate nextDue) {
+    void theRanksIntervalIsAddedToTheLastEvaluation(String rank, int intervalYears, LocalDate nextDue) {
         Professor professor = professor(rank, LocalDate.of(2020, 8, 15));
         completeEvaluation(professor, LocalDateTime.of(2026, 3, 10, 12, 0));
 
@@ -78,7 +77,7 @@ class EvaluationDeadlineServiceTests {
     }
 
     @Test
-    void latestCompletedEvaluationIsUsedWhenSomeAreIncomplete() {
+    void latestCompletedEvaluationIsUsedAndIncompleteOnesAreIgnored() {
         Professor professor = professor("ASSISTANT", null);
         completeEvaluation(professor, LocalDateTime.of(2024, 1, 5, 9, 0));
         completeEvaluation(professor, LocalDateTime.of(2025, 2, 6, 9, 0));
@@ -89,7 +88,7 @@ class EvaluationDeadlineServiceTests {
     }
 
     @Test
-    void deadlineIsOverdueWhenNextDueDateHasPassed() {
+    void pastDueDateIsOverdue() {
         Professor professor = professor("ASSISTANT", null);
         completeEvaluation(professor, LocalDateTime.of(2025, 1, 1, 9, 0));
 
@@ -99,7 +98,7 @@ class EvaluationDeadlineServiceTests {
     }
 
     @Test
-    void nextDueDateIsOneIntervalAfterHireWhenProfessorWasNeverEvaluated() {
+    void neverEvaluatedProfessorIsDueOneIntervalAfterHire() {
         Professor professor = professor("FULL", LocalDate.of(2026, 8, 15));
 
         EvaluationDeadline deadline = service.findByProfessor(professor.professorId());

@@ -39,7 +39,7 @@ class ObserverAvailabilityControllerTests {
 
     @Test
     @WithMockUser(roles = "PROFESSOR")
-    void availabilityReturns403WhenCallerIsAProfessor() throws Exception {
+    void professorsCannotCheckAvailability() throws Exception {
         mockMvc.perform(get("/api/observer-availability").param("signupId", "2").param("observerId", "3"))
                 .andExpect(status().isForbidden());
 
@@ -47,7 +47,7 @@ class ObserverAvailabilityControllerTests {
     }
 
     @Test
-    void availabilityListsClashingSectionWhenObserverIsBusy() throws Exception {
+    void unavailableObserverListsTheClashingSection() throws Exception {
         when(service.conflicts(3, 2)).thenReturn(List.of(CLASH));
 
         mockMvc.perform(get("/api/observer-availability").param("signupId", "2").param("observerId", "3"))
@@ -57,7 +57,7 @@ class ObserverAvailabilityControllerTests {
     }
 
     @Test
-    void availabilityReturns400WhenSignupIdIsMissing() throws Exception {
+    void missingParameterReturns400() throws Exception {
         mockMvc.perform(get("/api/observer-availability").param("observerId", "3"))
                 .andExpect(status().isBadRequest());
     }

@@ -85,7 +85,7 @@ function kpi(label: string) {
   return card.querySelectorAll("p")[1]?.textContent;
 }
 
-test("cards show live metrics and the overdue count when the dashboard loads", async () => {
+test("cards show the live metrics and the overdue count", async () => {
   await openOverview();
   await waitFor(() => expect(kpi("Faculty Due This Cycle")).toBe("13"));
   expect(kpi("Participation Rate")).toBe("15%");
@@ -96,7 +96,7 @@ test("cards show live metrics and the overdue count when the dashboard loads", a
   await waitFor(() => expect(kpi("Overdue Evaluations")).toBe("1"));
 });
 
-test("lists every unmatched faculty member and opens the chosen case when Resolve Matches is clicked", async () => {
+test("Resolve Matches lists every unmatched faculty member and opens the selected case directly", async () => {
   const signup = matchingState.signups[1];
   const matching = matchingState.matchingCases[1];
   if (!signup || !matching) throw new Error("Missing fixture");
@@ -191,7 +191,7 @@ test("coming back to the window refreshes the metrics and due list, keeping the 
   await waitFor(() => expect(kpi("Faculty Due This Cycle")).toBe("14"));
 });
 
-test("only the metrics cards show Unavailable when the metrics request fails", async () => {
+test("a failed metrics request marks its cards unavailable and leaves the other cards loaded", async () => {
   answerMetrics = () =>
     Response.json({ detail: "Metrics unavailable" }, { status: 503 });
   await openOverview();

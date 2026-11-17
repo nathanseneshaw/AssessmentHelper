@@ -60,7 +60,7 @@ const card = (cards: ReturnType<typeof summarize>, label: string) => {
   return found;
 };
 
-test("cards are in dashboard order and show a placeholder when their data has not arrived", () => {
+test("the cards come in the dashboard's order, and say they are loading until their data arrives", () => {
   const cards = summarize({
     deadline: null,
     records: null,
@@ -76,7 +76,7 @@ test("cards are in dashboard order and show a placeholder when their data has no
   expect(cards.map((c) => c.value)).toEqual(["—", "—", "—", "—"]);
 });
 
-test("status follows the record when the professor has one for the current cycle", () => {
+test("status follows the professor's record for the current cycle", () => {
   // Due this semester, so a professor who has not signed up has not started.
   const status = (records: EvaluationRecord[], overdue = false) =>
     card(
@@ -113,14 +113,14 @@ test("status follows the record when the professor has one for the current cycle
   });
 });
 
-test("the cycle card shows the rank's interval when the policy loads", () => {
+test("the cycle card reads the rank's interval from the policy", () => {
   expect(card(summarize(), "Cycle")).toMatchObject({
     value: "Every 2 Years",
     note: "Associate Professor schedule",
   });
 });
 
-test("next due shows the month and how it was reached when the deadline loads", () => {
+test("next due shows the month, and how the date was reached", () => {
   expect(card(summarize(), "Next Due")).toEqual({
     label: "Next Due",
     value: "Mar 2028",
@@ -140,7 +140,7 @@ test("next due shows the month and how it was reached when the deadline loads", 
   });
 });
 
-test("cards that need the deadline explain why when it fails to load", () => {
+test("a deadline that cannot load explains why on the cards that need it", () => {
   const cards = summarize({
     deadline: null,
     deadlineError: "Professor 21 has no rank",
@@ -155,7 +155,7 @@ test("cards that need the deadline explain why when it fails to load", () => {
   expect(card(cards, "Evaluation Status").value).toBe("Not Started");
 });
 
-test("observations this term counts only the professor's own current-cycle classes when others exist", () => {
+test("observations this term counts only the professor's own classes in the current cycle", () => {
   const cards = summarize({
     observations: [
       observation({ observationId: 1, status: "ACCEPTED" }),

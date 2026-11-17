@@ -73,7 +73,7 @@ async function signInAs(email: string, password: string) {
   fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
 }
 
-test("both fields are marked required and nothing is sent when the form is empty", async () => {
+test("an empty form says both fields are required and sends nothing", async () => {
   backend(oliviaSignsIn);
   await renderLogin();
 
@@ -86,7 +86,7 @@ test("both fields are marked required and nothing is sent when the form is empty
   expect(logins).toHaveLength(0);
 });
 
-test("goes to the faculty home when a faculty member signs in", async () => {
+test("a faculty member signs in and goes to the faculty home", async () => {
   backend(oliviaSignsIn);
   await signInAs(OLIVIA.email, PASSWORD);
 
@@ -94,7 +94,7 @@ test("goes to the faculty home when a faculty member signs in", async () => {
   expect(logins).toHaveLength(1);
 });
 
-test("shows the backend's message when the password is wrong", async () => {
+test("a wrong password shows the backend's message", async () => {
   backend(oliviaSignsIn);
   await signInAs(OLIVIA.email, "wrong");
 

@@ -74,7 +74,7 @@ function submitButton() {
   return screen.getByRole("button", { name: "Submit" }) as HTMLButtonElement;
 }
 
-test("one survey is submitted when all six ratings are given", async () => {
+test("requires six ratings and submits one survey for the cycle", async () => {
   await open();
   expect(submitButton().disabled).toBe(true);
   answerAll();
@@ -96,7 +96,7 @@ test("one survey is submitted when all six ratings are given", async () => {
   expect(dialog.queryByRole("button", { name: "Submit" })).toBeNull();
 });
 
-test("answers are kept for retry when submitting fails", async () => {
+test("failed submissions preserve answers for retry", async () => {
   fail = true;
   await open();
   answerAll();
@@ -115,12 +115,9 @@ test("answers are kept for retry when submitting fails", async () => {
 test.each([
   ["NOT_OPEN", /becomes available after/],
   ["CLOSED", /Submissions are closed/],
-] as const)(
-  "Submit is hidden when the survey is %s",
-  async (status, message) => {
-    survey.status = status;
-    await open();
-    expect(screen.getByText(message)).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
-  },
-);
+] as const)("%s surveys cannot be submitted", async (status, message) => {
+  survey.status = status;
+  await open();
+  expect(screen.getByText(message)).toBeDefined();
+  expect(screen.queryByRole("button", { name: "Submit" })).toBeNull();
+});

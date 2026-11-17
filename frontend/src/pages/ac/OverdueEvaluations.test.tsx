@@ -109,7 +109,7 @@ async function openList(name: string) {
   fireEvent.click(viewAll);
 }
 
-test("the edited email is sent and a follow-up offered when an overdue professor is notified", async () => {
+test("notifying an overdue professor sends the edited email and offers a follow-up", async () => {
   let body: Record<string, string> | undefined;
   mockFetch(async (_input: unknown, init?: RequestInit) => {
     if (init?.method === "POST") {
@@ -148,7 +148,7 @@ test("the edited email is sent and a follow-up offered when an overdue professor
   ).toStartWith("Follow Up:");
 });
 
-test("the draft is kept and the reason shown when sending fails", async () => {
+test("failed send keeps the draft and shows why", async () => {
   mockFetch(async (_input: unknown, init?: RequestInit) =>
     init?.method === "POST"
       ? Response.json(
@@ -169,7 +169,7 @@ test("the draft is kept and the reason shown when sending fails", async () => {
   expect(screen.getByLabelText("Subject")).toBeDefined();
 });
 
-test("the email goes to the due endpoint when sent from the due list", async () => {
+test("the due list sends its email to the due endpoint", async () => {
   let savedUrl = "";
   let savedBody: Record<string, string> | undefined;
   mockFetch(async (input: unknown, init?: RequestInit) => {

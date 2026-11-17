@@ -140,7 +140,7 @@ function remindButton() {
   }) as HTMLButtonElement;
 }
 
-test("rows and card counts show each observation when the list loads", async () => {
+test("each signup shows its observer, course, time and status, and the cards count them", async () => {
   await renderObservations();
   await expandFaculty();
   await screen.findByRole("rowheader", { name: "Marlow Fenwick" });
@@ -184,7 +184,7 @@ test("rows and card counts show each observation when the list loads", async () 
   expect(kpi("Observation Deadline")).toBe("Nov 15");
 });
 
-test("details open when View is clicked on a completed observation", async () => {
+test("View opens the completed observation's details", async () => {
   await renderObservations();
   await expandFaculty();
   fireEvent.click(
@@ -202,7 +202,7 @@ test("details open when View is clicked on a completed observation", async () =>
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-test("reports how many reminders went out when Send Reminders is clicked", async () => {
+test("Send Reminders posts once and says how many reminders went out", async () => {
   await renderObservations();
   await waitFor(() => expect(remindButton().disabled).toBe(false));
   fireEvent.click(remindButton());
@@ -213,7 +213,7 @@ test("reports how many reminders went out when Send Reminders is clicked", async
   expect(reminderRequests[0]?.method).toBe("POST");
 });
 
-test("shows an error and Retry reloads when the observations fail to load", async () => {
+test("when the observations fail to load, an error is shown and Retry loads them", async () => {
   answerObservations = () =>
     Response.json({ detail: "Observations unavailable" }, { status: 503 });
   await renderObservations();
@@ -228,7 +228,7 @@ test("shows an error and Retry reloads when the observations fail to load", asyn
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-test("shows the deferral details instead of Awaiting Observer when a case is deferred", async () => {
+test("deferred cases show their decision details instead of Awaiting Observer", async () => {
   const data = structuredClone(observationTracking);
   const row = data.observations[0];
   if (!row) throw Error("Missing observation");

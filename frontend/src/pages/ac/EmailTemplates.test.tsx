@@ -54,7 +54,7 @@ async function edit() {
   );
 }
 
-test("the preview fills in sample data when a template is edited", async () => {
+test("edits a template using its version and previews filled sample data", async () => {
   let saved: Record<string, unknown> | undefined;
   install((init) => {
     saved = JSON.parse(String(init?.body));
@@ -76,7 +76,7 @@ test("the preview fills in sample data when a template is edited", async () => {
   expect(saved?.version).toBe(0);
 });
 
-test("a new template is created when a new scenario key is entered", async () => {
+test("creates a future scenario template with a new key", async () => {
   let body: Record<string, unknown> | undefined;
   fakeBackend({
     "/api/email-templates": () =>
@@ -116,7 +116,7 @@ test("a new template is created when a new scenario key is entered", async () =>
   ).toBe(true);
 });
 
-test("the draft is kept and can be reloaded when the save conflicts", async () => {
+test("a conflicting save preserves the draft and supports an explicit reload", async () => {
   install(() =>
     Response.json(
       { detail: "This template changed. Reload it before saving again." },
@@ -141,7 +141,7 @@ test("the draft is kept and can be reloaded when the save conflicts", async () =
   ).toBeTruthy();
 });
 
-test("edits are not saved when Cancel is clicked", async () => {
+test("cancel does not save template edits", async () => {
   let writes = 0;
   install(() => {
     writes++;

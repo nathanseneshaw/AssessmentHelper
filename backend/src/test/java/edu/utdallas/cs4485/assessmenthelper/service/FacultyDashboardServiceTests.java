@@ -121,7 +121,7 @@ class FacultyDashboardServiceTests {
     }
 
     @Test
-    void statusChangesWhenProfessorMovesThroughTheCycle() {
+    void theStatusFollowsTheProfessorThroughTheCycle() {
         assertThat(service.dashboard(KAIA).evaluation().status()).isEqualTo(EvaluationStatus.NOT_DUE);
         assertThat(service.dashboard(DARIO).evaluation().status()).isEqualTo(EvaluationStatus.NOT_SIGNED_UP);
 
@@ -154,7 +154,7 @@ class FacultyDashboardServiceTests {
     }
 
     @Test
-    void signupReminderIsShownWhenTodayIsOnOrBeforeTheDeadline() {
+    void theSignupReminderShowsThroughTheDeadlineDay() {
         clock.set("2026-10-31");
         assertThat(types(service.dashboard(DARIO))).containsExactly(UpcomingType.SIGNUP);
 
@@ -165,7 +165,7 @@ class FacultyDashboardServiceTests {
     }
 
     @Test
-    void observationIsMissingWhenCycleDeadlinePassesUntilSigned() {
+    void anObservationIsMissingAfterTheCycleDeadlineUntilSigned() {
         clock.set("2026-11-16");
         assertThat(firstForMe(LEANDER).overdue()).isTrue();
         assertThat(service.dashboard(LEANDER).upcoming().getFirst().overdue()).isTrue();
@@ -179,7 +179,7 @@ class FacultyDashboardServiceTests {
     }
 
     @Test
-    void feedbackIsOwedUntilGivenAndOverdueWhenDeadlinePasses() {
+    void feedbackIsOwedByEachSideUntilGivenAndOverdueAfterTheDeadline() {
         submit(observationOf(LEANDER));
         for (int professor : new int[] {LEANDER, KEIRA}) {
             assertThat(feedbackFor(professor).date()).isEqualTo(LocalDate.of(2026, 12, 1));
@@ -194,7 +194,7 @@ class FacultyDashboardServiceTests {
     }
 
     @Test
-    void professorIsDueNextSemesterWithoutACompletedEvaluationWhenDeferred() {
+    void deferredFacultyAreDueNextSemesterWithoutPretendingTheyCompletedAnEvaluation() {
         int signup = signups.save(DARIO, FALL_2026, 298, null).signupId();
         db.findAll(Observer.class).stream().filter(o -> o.cycleId() == 1).forEach(o -> db.update(inactive(o)));
         clock.set("2026-11-16");

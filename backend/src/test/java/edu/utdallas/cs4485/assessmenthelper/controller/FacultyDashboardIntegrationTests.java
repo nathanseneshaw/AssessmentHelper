@@ -44,7 +44,7 @@ class FacultyDashboardIntegrationTests {
     }
 
     @Test
-    void dashboardShowsUpcomingObservationAndHistoryWhenProfessorIsAnObserver() throws Exception {
+    void anObserverSeesTheObservationTheyWillDoAndTheirOwnHistory() throws Exception {
         mvc.perform(get("/api/professors/" + KEIRA + "/dashboard").with(user(professor(KEIRA))))
                 .andExpect(status().isOk())
                 .andExpect(content().json("""

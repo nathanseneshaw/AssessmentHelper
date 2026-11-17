@@ -94,7 +94,7 @@ function signOffs(view: View) {
   return view.getByRole("region", { name: "Sign-offs" }).textContent;
 }
 
-test("the record is completed and locked when the observee confirms sign-off", async () => {
+test("the observee adds comments, confirms, and the record is complete and locked", async () => {
   const { view, panel } = await openSignOff();
   expect(signOffs(view)).toContain("Not signed yet");
 
@@ -115,7 +115,7 @@ test("the record is completed and locked when the observee confirms sign-off", a
   expect(view.queryAllByRole("button")).toHaveLength(0);
 });
 
-test("shows why and keeps the comments when sign-off is refused", async () => {
+test("a refused sign-off says why and keeps the comments for another try", async () => {
   signFailure = Response.json(
     { detail: "Comments must be at most 4000 characters." },
     { status: 400 },

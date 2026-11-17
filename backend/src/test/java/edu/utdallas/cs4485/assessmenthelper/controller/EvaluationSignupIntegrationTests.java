@@ -70,7 +70,7 @@ class EvaluationSignupIntegrationTests {
     private MockMvc mvc;
 
     @Test
-    void catalogCombinesFiltersWhenSemesterCourseAndProfessorAreGiven() throws Exception {
+    void listsCatalogAndCombinesSemesterCourseAndProfessorFilters() throws Exception {
         mvc.perform(as(HOLLIS, get("/api/semesters?signupOpen=true")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
@@ -105,7 +105,7 @@ class EvaluationSignupIntegrationTests {
     private TeachingHistoryRepository teachingHistory;
 
     @Test
-    void onlyOnePendingSignupExistsWhenSignupIsCreatedRetriedAndUpdated() throws Exception {
+    void createsReadsRetriesAndUpdatesOnePendingSignup() throws Exception {
         // Keep this editable-signup scenario without candidates; matching otherwise locks the course selection.
         observers.findByCycleId(1).forEach(o -> observers.save(inactive(o)));
         mvc.perform(as(HOLLIS, get("/api/professors/9/evaluation-signups/13"))).andExpect(status().isNoContent());
@@ -141,7 +141,7 @@ class EvaluationSignupIntegrationTests {
     }
 
     @Test
-    void signupReturns400AndSavesNothingWhenSectionBelongsToAnotherProfessor() throws Exception {
+    void rejectsAnotherProfessorsSectionWithoutWritingAnything() throws Exception {
         long originalCount = signups.count();
         mvc.perform(as(HOLLIS, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -153,7 +153,7 @@ class EvaluationSignupIntegrationTests {
     }
 
     @Test
-    void signupChangesReturn403WhenCallerIsNotTheSignupsProfessor() throws Exception {
+    void onlyTheProfessorCanChangeTheirSignupButCommitteeMembersCanReadIt() throws Exception {
         long originalCount = signups.count();
         mvc.perform(as(LEANDER, put("/api/professors/9/evaluation-signups/13"))
                         .contentType(MediaType.APPLICATION_JSON)

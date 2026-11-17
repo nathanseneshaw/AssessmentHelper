@@ -233,14 +233,14 @@ function button(
   return scope.getByRole("button", { name }) as HTMLButtonElement;
 }
 
-test("candidate lists are generated when Generate Matches is clicked", async () => {
+test("Generate Matches asks the backend to generate the candidate lists", async () => {
   await open();
   fireEvent.click(button("Generate Matches"));
   await screen.findByRole("status");
   expect(posts).toEqual(["/api/observer-eligibility/generate"]);
 });
 
-test("shows each candidate's courses and releases the list when the committee sends it", async () => {
+test("shows the candidate list with each observer's courses and releases it", async () => {
   state.cycle.signupOpen = false;
   state.cycle.candidateListsOpen = true;
   await open();
@@ -259,7 +259,7 @@ test("shows each candidate's courses and releases the list when the committee se
   expect(posts).toEqual(["/api/observer-eligibility/signups/1/release"]);
 });
 
-test("send is disabled and gray when signup is still open", async () => {
+test("send stays disabled and gray until signup closes", async () => {
   await open();
   const send = screen.getByRole("button", {
     name: "Send Candidate List",
@@ -270,7 +270,7 @@ test("send is disabled and gray when signup is still open", async () => {
   expect(posts).toHaveLength(0);
 });
 
-test("manual assignment is disabled when recommendations are pending or the pool is not exhausted", async () => {
+test("manual assignment is disabled until all recommendations decline and the pool is exhausted", async () => {
   await open();
   expect(button("Assign Observer").disabled).toBe(true);
   expect(
@@ -278,7 +278,7 @@ test("manual assignment is disabled when recommendations are pending or the pool
   ).toBeNull();
 });
 
-test("a new list is generated for review and old ones are kept when recommendations are regenerated", async () => {
+test("generates a replacement list for review and sends it separately while retaining history", async () => {
   exhaustedCase();
   await open();
   fireEvent.click(button("Generate New Recommendations"));
@@ -308,7 +308,7 @@ async function openAssign() {
   return dialog;
 }
 
-test("the chosen professor becomes the observer when they pass the rules", async () => {
+test("assigns any professor who passes the rules as the observer", async () => {
   const dialog = await openAssign();
   expect(within(dialog).getAllByRole("radio")).toHaveLength(6);
 
@@ -332,7 +332,7 @@ test("keeps the dialog open with the reason when assignment is refused", async (
   expect(screen.queryByText(/^Observer:/)).toBeNull();
 });
 
-test("nothing is assigned when the dialog is cancelled", async () => {
+test("cancel closes the dialog without assigning", async () => {
   const dialog = await openAssign();
   fireEvent.click(within(dialog).getByRole("radio", { name: /Professor 7/ }));
   fireEvent.click(button("Cancel", within(dialog)));
@@ -340,7 +340,7 @@ test("nothing is assigned when the dialog is cancelled", async () => {
   expect(assigned).toEqual([]);
 });
 
-test("the case is deferred with its reason when no observers are eligible", async () => {
+test("AC can defer a case with zero eligible observers and see its recorded reason", async () => {
   const matching = state.matchingCases[0];
   if (!matching) throw Error("Missing case");
   matching.status = "UNMATCHED";

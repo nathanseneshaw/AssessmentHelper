@@ -33,7 +33,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     // ---------- US29: the form ----------
 
     @Test
-    void formUsesItsOriginalTemplateInCommitteeOrderWhenTemplateIsRetired() {
+    void us29_theFormKeepsTheTemplateTheObservationWasCreatedWithInTheCommitteesOrder() {
         int obs = observationId();
         int templateId = observationRecords.findById(obs).orElseThrow().templateId();
         // The committee moves the first question to the end, then retires the template.
@@ -59,7 +59,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void formIsInProgressWithAgreedDateAndTimeWhenStarted() {
+    void us29_startingTheFormMovesItToInProgressAndKeepsTheAgreedDateAndTime() {
         int obs = observationId();
         assertThat(observations.detail(obs, keira()).canStart()).isTrue();
 
@@ -72,7 +72,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void todayAndCurrentTimeAreRecordedWhenFormIsStartedEarly() {
+    void us29_startingBeforeThePlannedDayRecordsTodayAndTheCurrentMinute() {
         // A week before Leander's class, at 09:05:30 in Dallas: the observation is happening now, not on Nov 4.
         clock.set("2026-10-28T14:05:30Z");
 
@@ -97,7 +97,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     // ---------- US30: ratings and notes ----------
 
     @Test
-    void saveIsRejectedWhenFormIsNotStarted() {
+    void us30_answersCannotBeRecordedBeforeTheFormIsStarted() {
         int obs = observationId();
 
         assertThatThrownBy(() -> observations.saveResponses(obs, completeAnswers(obs), keira()))
@@ -107,7 +107,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void draftIsSavedWhenOnlySomeQuestionsAreAnswered() {
+    void us30_aDraftWithARatingAndANoteForOnlySomeQuestionsIsSaved() {
         int obs = observationId();
         keiraStarts(obs);
         Criterion rating = firstRatingQuestion(obs);
@@ -122,7 +122,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void previousDraftIsReplacedWhenSavedAgain() {
+    void us30_savingAgainReplacesThePreviousDraft() {
         int obs = observationId();
         keiraStarts(obs);
         Criterion rating = firstRatingQuestion(obs);
@@ -136,7 +136,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void earlierDraftIsKeptWhenRatingIsOutOfRange() {
+    void us30_aRatingOutsideTheQuestionsRangeIsRejectedAndTheEarlierDraftIsKept() {
         int obs = observationId();
         keiraStarts(obs);
         Criterion rating = firstRatingQuestion(obs);
@@ -158,7 +158,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     // ---------- US31 (observer's part): submitting ----------
 
     @Test
-    void submitIsRejectedWhenRequiredQuestionIsUnanswered() {
+    void us31_submittingWithoutAnsweringEveryRequiredQuestionIsRefused() {
         int obs = observationId();
         keiraStarts(obs);
 
@@ -169,7 +169,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void formIsSubmittedAndObserveeIsNotifiedWhenAllAnswersAreComplete() {
+    void us31_submittingCompleteAnswersRecordsTheObserversSignOffAndTellsTheObservee() {
         int obs = observationId();
         int before = notificationCount(LEANDER);
 
@@ -182,7 +182,7 @@ class ObservationFormAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void saveAndSubmitAreRejectedWhenFormIsAlreadySubmitted() {
+    void us31_afterSubmittingTheObserverCannotChangeOrResubmitTheAnswers() {
         int obs = observationId();
         keiraSubmits(obs);
 

@@ -144,25 +144,25 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void missingSignupAlertIsRaisedWhenDueProfessorHasNotSignedUp() {
+    void requiredProfessorMissingSignupIsFlagged() {
         assertThat(has(professor, "MISSING_SIGNUP")).isTrue();
     }
 
     @Test
-    void noAlertsAreRaisedWhenProfessorIsNotDue() {
+    void professorWhoIsNotDueGetsNoAlerts() {
         updateProfessor(professor, p -> withHireDate(p, LocalDate.parse("2025-09-01")));
         assertThat(service.findByProfessor(professor)).isEmpty();
     }
 
     @Test
-    void missingScheduleAlertIsRaisedWhenSignupHasNoObservationDate() {
+    void registeredButUnscheduledEvaluationIsFlagged() {
         signUp("PENDING");
         assertThat(has(professor, "MISSING_SIGNUP")).isFalse();
         assertThat(has(professor, "MISSING_SCHEDULE")).isTrue();
     }
 
     @Test
-    void lateSubmissionAlertGoesToObserverAndClearsWhenFormIsSubmitted() {
+    void lateSubmissionBelongsToObserverAndClearsOnSubmission() {
         int observer = id("keira.larkspur@example.edu");
         int observee = id("leander.coldwell@example.edu");
         assertThat(has(observer, "LATE_SUBMISSION")).isTrue();
@@ -198,7 +198,7 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void alertsAreReturnedWhenProfessorReadsTheirOwn() throws Exception {
+    void professorReadsTheirOwnAlerts() throws Exception {
         mvc.perform(get("/api/professors/" + professor + "/missing-observations")
                         .with(user(principal())))
                 .andExpect(status().isOk())
@@ -254,7 +254,7 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void signupIsListedAsMissingWhenDeadlinePassesWithoutACompletedObservation() {
+    void everySignupWithoutACompletedObservationIsListedAfterTheDeadline() {
         var result = service.findMissingSignups();
         assertThat(result.cycleId()).isEqualTo(1);
         assertThat(result.observationDeadline()).isEqualTo(LocalDate.of(2026, 11, 15));
@@ -266,7 +266,7 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void signupLeavesMissingListOnlyWhenObservationIsCompleted() {
+    void onlyACompletedObservationTakesTheSignupOffTheList() {
         // A submitted observation is still missing until the observee signs off.
         setObservationStatus(LEANDER, "SUBMITTED");
         assertThat(missingFor(LEANDER).observationStatus()).isEqualTo("SUBMITTED");
@@ -276,13 +276,13 @@ class MissingObservationIntegrationTests {
     }
 
     @Test
-    void nothingIsMissingWhenTodayIsTheDeadlineDay() {
+    void theObservationDeadlineDayIsStillOnTime() {
         setObservationDeadline(LocalDate.parse("2026-11-16"));
         assertThat(missing()).isEmpty();
     }
 
     @Test
-    void missingSignupsAreReturnedAsJsonWhenCommitteeRequestsThem() throws Exception {
+    void committeeGetsTheMissingSignupsAsJson() throws Exception {
         mvc.perform(get(URL).with(user(COMMITTEE)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cycleId").value(1))

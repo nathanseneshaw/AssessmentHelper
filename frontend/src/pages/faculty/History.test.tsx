@@ -63,7 +63,7 @@ async function openHistory(search = "") {
   return screen.findByRole("dialog");
 }
 
-test("lists every cycle newest first when the history dialog opens", async () => {
+test("the history dialog lists every cycle, newest first", async () => {
   const dialog = await openHistory();
   await within(dialog).findByText("Spring 2026");
 
@@ -91,7 +91,7 @@ test("lists every cycle newest first when the history dialog opens", async () =>
   ]);
 });
 
-test("shows the API's reason and Retry reloads when history fails to load", async () => {
+test("the history dialog shows the API's reason and Retry tries again", async () => {
   failures.push(
     Response.json({ detail: "History is unavailable." }, { status: 503 }),
   );
@@ -104,7 +104,7 @@ test("shows the API's reason and Retry reloads when history fails to load", asyn
   expect(within(dialog).queryByRole("alert")).toBeNull();
 });
 
-test("lists that cycle's observations of the professor's classes when Details is clicked", async () => {
+test("choosing Details lists the observations of the professor's classes in that cycle", async () => {
   const dialog = await openHistory();
   fireEvent.click(
     await within(dialog).findByRole("link", { name: "Details (Fall 2026)" }),
@@ -125,7 +125,7 @@ test("lists that cycle's observations of the professor's classes when Details is
   ).toEqual(["/faculty/observations/11"]);
 });
 
-test("shows the saved deferral details when the cycle was deferred", async () => {
+test("a deferred cycle shows its saved decision details", async () => {
   const past = records[1];
   if (!past) throw Error("Missing past record");
   past.status = "DEFERRED";

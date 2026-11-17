@@ -64,7 +64,7 @@ class FormTemplateControllerTests {
             """;
 
     @Test
-    void newVersionIsSharedAndOldOneIsKeptWhenTemplateIsSaved() throws Exception {
+    void savesSharedCriteriaAndPreservesOldTemplate() throws Exception {
         var original = service.current();
         mvc.perform(as(AC, put("/api/form-template"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -85,7 +85,7 @@ class FormTemplateControllerTests {
     }
 
     @Test
-    void saveReturns400AndTemplateIsUnchangedWhenChangesAreInvalid() throws Exception {
+    void rejectsInvalidChangesWithoutModifyingSharedTemplate() throws Exception {
         int original = service.current().templateId();
         mvc.perform(as(AC, put("/api/form-template"))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -95,12 +95,12 @@ class FormTemplateControllerTests {
     }
 
     @Test
-    void templateEditorReturns403WhenCallerIsFaculty() throws Exception {
+    void facultyCannotUseTheCommitteeTemplateEditor() throws Exception {
         mvc.perform(as(FACULTY, get("/api/form-template"))).andExpect(status().isForbidden());
     }
 
     @Test
-    void previousVersionIsActiveAndNewerHistoryIsKeptWhenRestored() throws Exception {
+    void reactivatesPreviousVersionAndPreservesNewerHistory() throws Exception {
         var original = service.current();
         var changed = service.save(
                 new FormTemplateService.Update(
@@ -121,7 +121,7 @@ class FormTemplateControllerTests {
     }
 
     @Test
-    void nextUnusedVersionNumberIsUsedWhenEditingAfterARestore() {
+    void editingAfterRevertUsesNextUnusedVersionNumber() {
         var first = service.current();
         var second = service.save(
                 new FormTemplateService.Update(

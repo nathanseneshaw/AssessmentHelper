@@ -73,14 +73,14 @@ async function edit() {
   return screen.getByRole("dialog", { name: "Edit Observation Form Criteria" });
 }
 
-test("only included criteria are shown when the template loads", async () => {
+test("main screen shows only the included criteria", async () => {
   render(<App />);
   await screen.findByText("Student Engagement");
   expect(screen.queryByText("Clarity")).toBeNull();
   expect(screen.getByText("Version 1")).toBeDefined();
 });
 
-test("edits, additions and deletions are saved when Save Changes is clicked", async () => {
+test("edits, adds, deletes, and saves selected criteria and notes", async () => {
   const dialog = await edit();
   const ui = within(dialog);
   fireEvent.change(ui.getByLabelText("Criterion 1 name"), {
@@ -109,7 +109,7 @@ test("edits, additions and deletions are saved when Save Changes is clicked", as
   expect(screen.getByText("Version 2")).toBeDefined();
 });
 
-test("additions and deletions are discarded when Cancel is clicked", async () => {
+test("cancel discards additions and deletes without writing to the server", async () => {
   const dialog = await edit();
   fireEvent.click(within(dialog).getByLabelText("Delete criterion 1"));
   fireEvent.click(
@@ -127,7 +127,7 @@ test("additions and deletions are discarded when Cancel is clicked", async () =>
   ).toBe("Student Engagement");
 });
 
-test("the criterion is kept when its removal is cancelled", async () => {
+test("removal requires confirmation and cancel keeps the criterion", async () => {
   const editor = await edit();
   fireEvent.click(within(editor).getByLabelText("Delete criterion 2"));
   const confirmation = screen.getByRole("dialog", {
@@ -167,7 +167,7 @@ test("keeps unsaved edits when another committee member has saved first", async 
   expect(screen.queryByText(/Changes saved/)).toBeNull();
 });
 
-test("nothing is saved when no criterion is selected", async () => {
+test("an empty selection is rejected before saving", async () => {
   const dialog = await edit();
   const ui = within(dialog);
   fireEvent.click(ui.getByLabelText("Include criterion 1"));
@@ -176,7 +176,7 @@ test("nothing is saved when no criterion is selected", async () => {
   expect(writes).toHaveLength(0);
 });
 
-test("the preview shows the selected criteria and updates when another member saves", async () => {
+test("the form preview shows the current version's selected criteria and follows shared updates", async () => {
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Preview Form" }));
   const dialog = screen.getByRole("dialog");
@@ -199,7 +199,7 @@ test("the preview shows the selected criteria and updates when another member sa
   expect(within(dialog).queryByText("Student Engagement")).toBeNull();
 });
 
-test("an old version is restored only when the restore is confirmed", async () => {
+test("views an old version and restores it only after confirmation", async () => {
   const original = structuredClone(template);
   template = {
     templateId: 2,

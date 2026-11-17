@@ -158,7 +158,7 @@ function listedNames(dialog: HTMLElement) {
     .map((row) => within(row).getAllByRole("cell")[0]?.textContent);
 }
 
-test("each signup has a Review link and cards show live counts when signups load", async () => {
+test("each signup has a Review link and the cards show the live counts", async () => {
   await renderSignups();
   await screen.findByRole("rowheader", { name: "Marlow Fenwick" });
   const table = screen.getByRole("table");
@@ -177,7 +177,7 @@ test("each signup has a Review link and cards show live counts when signups load
   expect(kpi("Signup Deadline").value).toBe("Oct 31");
 });
 
-test("a professor is marked Notified when their reminder is sent from View All", async () => {
+test("View All lists who has not signed up, and notifying one sends the reminder and marks them Notified", async () => {
   await renderSignups();
   await waitFor(() => expect(viewAllButton().disabled).toBe(false));
   fireEvent.click(viewAllButton());
@@ -207,7 +207,7 @@ test("a professor is marked Notified when their reminder is sent from View All",
   expect(within(row).getByText("Notified")).toBeDefined();
 });
 
-test("shows the error and disables View All when the signups fail to load", async () => {
+test("when the signups fail to load, the error is shown and View All is disabled", async () => {
   answerObserver = () =>
     Response.json({ detail: "Signups unavailable" }, { status: 503 });
   await renderSignups();

@@ -15,36 +15,36 @@ class EvaluationDueRulesTests {
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 21);
 
     @Test
-    void statusIsDueWhenDueDateIsInsideTheSemester() {
+    void aDueDateInsideTheSemesterIsDue() {
         assertThat(calculate("2025-09-01", 1)).isEqualTo(result("2026-09-01", "2026-09-01", true, false));
     }
 
     @Test
-    void statusIsOverdueWhenDueDateIsBeforeTheSemester() {
+    void aDueDateBeforeTheSemesterIsOverdue() {
         // The next recurrence, 2027-08-23, is after the semester, so the missed date is the one to show.
         assertThat(calculate("2025-08-23", 1)).isEqualTo(result("2026-08-23", "2026-08-23", false, true));
     }
 
     @Test
-    void statusIsUpcomingWhenDueDateIsAfterTheSemester() {
+    void aDueDateAfterTheSemesterIsUpcoming() {
         assertThat(calculate("2025-09-01", 2)).isEqualTo(result("2027-09-01", "2027-09-01", false, false));
     }
 
     @Test
-    void statusIsDueNotOverdueWhenMissedDateRecursInsideTheSemester() {
+    void aMissedDateWhoseRecurrenceFallsInTheSemesterIsDueNotOverdue() {
         // Due 2025-09-01 and missed, but the yearly recurrence lands in Fall 2026, so that is the date to show.
         assertThat(calculate("2024-09-01", 1)).isEqualTo(result("2025-09-01", "2026-09-01", true, false));
     }
 
     @Test
-    void rulesApplyOnlyWhenProfessorAndPolicyAreBothActive() {
+    void onlyActiveProfessorsWithAnActivePolicyApply() {
         assertThat(EvaluationDueRules.applies(professor(true), policy(true))).isTrue();
         assertThat(EvaluationDueRules.applies(professor(false), policy(true))).isFalse();
         assertThat(EvaluationDueRules.applies(professor(true), policy(false))).isFalse();
     }
 
     @Test
-    void countsAsCompletedOnlyWhenCycleIsCompletedByToday() {
+    void onlyACompletedCycleFinishedByTodayCounts() {
         var morning = TODAY.atTime(9, 0);
         assertThat(EvaluationDueRules.countsAsCompleted("COMPLETED", morning, TODAY))
                 .isTrue();

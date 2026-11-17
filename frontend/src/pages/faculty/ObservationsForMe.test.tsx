@@ -46,7 +46,7 @@ async function openList() {
   );
 }
 
-test("lists only the professor's own classes and adds a link when the observer has submitted", async () => {
+test("lists only observations of the professor's own classes, with a link once the observer submits", async () => {
   const dialog = await openList();
   await dialog.findByText("CS 3345.001");
   const courses = dialog
@@ -70,7 +70,7 @@ test("lists only the professor's own classes and adds a link when the observer h
   ).toEqual(["/faculty/observations/11", "/faculty/observations/9"]);
 });
 
-test("submitted answers open read-only when Review and Sign is clicked", async () => {
+test("Review and Sign opens the submitted answers read-only", async () => {
   const dialog = await openList();
   fireEvent.click(
     await dialog.findByRole("link", {
@@ -95,7 +95,7 @@ test("submitted answers open read-only when Review and Sign is clicked", async (
   ]);
 });
 
-test("shows the API's reason and Retry reloads when the list fails to load", async () => {
+test("shows the API's reason when the list can't load, and Retry tries again", async () => {
   failures.push(
     Response.json({ detail: "Observations are unavailable." }, { status: 503 }),
   );

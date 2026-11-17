@@ -107,7 +107,7 @@ class ObserverEligibilityControllerTests {
     }
 
     @Test
-    void committeeEndpointsReturn403WhenCallerIsFaculty() throws Exception {
+    void committeeEndpointsRejectFacultyAndFacultySeeOnlyTheirOwnState() throws Exception {
         mvc.perform(as(DARIO, get("/api/observer-eligibility/ac"))).andExpect(status().isForbidden());
         mvc.perform(as(DARIO, get("/api/observer-eligibility/faculty/9"))).andExpect(status().isForbidden());
         mvc.perform(as(DARIO, get("/api/observer-eligibility/faculty/34")))
@@ -120,14 +120,14 @@ class ObserverEligibilityControllerTests {
     }
 
     @Test
-    void regenerateReturns409WhenListIsNotExhausted() throws Exception {
+    void regenerationRequiresAnExhaustedList() throws Exception {
         int signupId = signupOf(db, 31);
         mvc.perform(as(KAIA, post("/api/observer-eligibility/signups/" + signupId + "/regenerate")))
                 .andExpect(status().isConflict());
     }
 
     @Test
-    void unreleasedListIsCreatedWhenProfessorSignsUp() throws Exception {
+    void signupSavesTheObservationWindowAndCreatesAnUnreleasedList() throws Exception {
         mvc.perform(as(HOLLIS, get("/api/professors/9/evaluation-signups/13/window")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.start").value("2026-11-01"))
@@ -143,7 +143,7 @@ class ObserverEligibilityControllerTests {
 
     // The whole workflow with the demo accounts: Dario signs up, Kaia sends his list, Arlo accepts his request.
     @Test
-    void observerIsMatchedWhenListIsReleasedAndRequestIsAccepted() throws Exception {
+    void demoWalkthroughFromSignupToAcceptedObservation() throws Exception {
         int signupId = signUpDario();
         mvc.perform(as(KAIA, get("/api/observer-eligibility/ac")))
                 .andExpect(jsonPath("$.signups[?(@.signupId == " + signupId + ")].candidates[*].name")
@@ -174,7 +174,7 @@ class ObserverEligibilityControllerTests {
     }
 
     @Test
-    void observerIsMatchedWithoutRequestWhenCommitteeAssignsThem() throws Exception {
+    void committeeAssignsAnEligibleObserverWithoutARequest() throws Exception {
         int signupId = signUpDario();
         mvc.perform(as(KAIA, get("/api/observer-eligibility/signups/" + signupId + "/eligible")))
                 .andExpect(status().isOk())
@@ -210,7 +210,7 @@ class ObserverEligibilityControllerTests {
     }
 
     @Test
-    void cycleDeadlinesAreUpdatedWhenCommitteeMemberSavesThem() throws Exception {
+    void committeeMembersUpdateCycleDeadlines() throws Exception {
         mvc.perform(
                         as(KAIA, put("/api/observer-eligibility/cycles/1/deadlines"))
                                 .contentType(MediaType.APPLICATION_JSON)
@@ -221,7 +221,7 @@ class ObserverEligibilityControllerTests {
     }
 
     @Test
-    void deferralRecordsSignedInCommitteeMemberWhenSignupIsDeferred() throws Exception {
+    void deferralRecordsTheSignedInCommitteeMember() throws Exception {
         int signupId = signUpDario();
         signupDeadline("2026-10-20");
         observers.findByCycleId(1).forEach(o -> db.update(inactive(o)));

@@ -34,7 +34,7 @@ class ProfessorServiceTests {
     }
 
     @Test
-    void findBySchoolIncludesInactiveProfessorsSortedByNameWhenSchoolExists() {
+    void returnsOnlyTheSchoolsProfessorsIncludingInactiveSortedByLastThenFirstName() {
         Professor zedStub = db.insert(professor(testDepartment, "Zed", "Stub", false));
         Professor beaMock = db.insert(professor(testDepartment, "Bea", "Mock", true));
         Professor amyStub = db.insert(professor(testDepartment, "Amy", "Stub", true));
@@ -44,7 +44,7 @@ class ProfessorServiceTests {
     }
 
     @Test
-    void findBySchoolThrowsNotFoundWithTrimmedCodeWhenSchoolIsUnknown() {
+    void unknownSchoolThrowsNotFoundWithStrippedCode() {
         assertThatThrownBy(() -> service.findBySchool("  NOPE "))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessage("No school with code NOPE");

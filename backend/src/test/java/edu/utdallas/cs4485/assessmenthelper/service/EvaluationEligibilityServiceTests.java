@@ -60,7 +60,7 @@ class EvaluationEligibilityServiceTests {
     }
 
     @Test
-    void overdueListUsesRankIntervalsAndHireDatesAndSkipsFacultyWhenInactive() {
+    void overdueUsesRankIntervalsAndHireDateAndExcludesInactiveFaculty() {
         when(professors.findAll())
                 .thenReturn(List.of(
                         professor(1, "ASSISTANT", "2025-03-01", true),
@@ -73,7 +73,7 @@ class EvaluationEligibilityServiceTests {
     }
 
     @Test
-    void overdueIsClearedOnlyWhenObserveeCompletesAnEvaluation() {
+    void onlyObserveeCompletionClearsOldObligationsAndResetsSchedule() {
         when(observees.findAll()).thenReturn(List.of(new Observee(1, 1, 1, "ACTIVE")));
         when(signups.findAll()).thenReturn(List.of(new EvaluationSignup(1, 1, 1, null, null)));
         when(observations.findAll())
@@ -97,7 +97,7 @@ class EvaluationEligibilityServiceTests {
     }
 
     @Test
-    void professorStaysOverdueWhenNotificationIsSent() {
+    void notificationIsPersistedAndDoesNotClearOverdue() {
         when(notifications.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         var email = new EvaluationEligibilityService.Email("p1@test.edu", "Reminder", "Edited message");
         var result = service.notifyProfessor(1, 1, email);
@@ -110,7 +110,7 @@ class EvaluationEligibilityServiceTests {
     }
 
     @Test
-    void notifyThrowsAndSavesNothingWhenRecipientIsWrong() {
+    void rejectsWrongRecipientWithoutSaving() {
         assertThatThrownBy(() -> service.notifyProfessor(
                         1, 1, new EvaluationEligibilityService.Email("other@test.edu", "Hi", "Body")))
                 .isInstanceOf(ResponseStatusException.class);
@@ -118,7 +118,7 @@ class EvaluationEligibilityServiceTests {
     }
 
     @Test
-    void dueListUsesRankIntervalsAndHireDatesAndSkipsFacultyWhenInactive() {
+    void dueUsesRankIntervalsAndHireDateAndExcludesInactiveFaculty() {
         when(professors.findAll())
                 .thenReturn(List.of(
                         professor(1, "ASSISTANT", "2025-10-01", true),
@@ -143,7 +143,7 @@ class EvaluationEligibilityServiceTests {
     }
 
     @Test
-    void professorIsDueOnceWithCurrentDateWhenMissedEvaluationRecursNow() {
+    void missedEvaluationDueAgainNowIsDueOnceAndReportsCurrentRecurrence() {
         when(professors.findAll()).thenReturn(List.of(professor(1, "ASSISTANT", "2023-10-01", true)));
         var due = service.findDue();
         assertThat(due.count()).isEqualTo(1);
@@ -152,7 +152,7 @@ class EvaluationEligibilityServiceTests {
     }
 
     @Test
-    void professorStaysDueWhenNotificationIsSent() {
+    void dueNotificationIsSavedWithoutCompletingEvaluation() {
         when(professors.findAll()).thenReturn(List.of(professor(1, "ASSISTANT", "2025-10-01", true)));
         when(notifications.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         var email = new EvaluationEligibilityService.Email("p1@test.edu", "Due reminder", "Personalized due message");

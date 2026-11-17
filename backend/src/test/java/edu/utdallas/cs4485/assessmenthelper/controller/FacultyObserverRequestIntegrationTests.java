@@ -98,7 +98,7 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     @Test
-    void sameRequestIsReturnedWhenSendIsRetried() throws Exception {
+    void sendsFromMatchAndReturnsTheSameRequestOnRetry() throws Exception {
         mvc.perform(as(AVERY, get("/api/professors/31/observer-requests")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].signupId").value(signupId))
@@ -121,7 +121,7 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     @Test
-    void sendReturns400WhenMatchBelongsToAnotherSignup() throws Exception {
+    void rejectsAMatchFromAnotherSignupWithoutCreatingARequest() throws Exception {
         int leandersMatch = db.findAll(ObserverMatch.class).stream()
                 .filter(m -> m.signupId() == 33)
                 .mapToInt(ObserverMatch::matchId)
@@ -132,7 +132,7 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     @Test
-    void sendReturns403WhenCallerIsNotTheSignupsProfessor() throws Exception {
+    void onlyTheProfessorCanSendTheirRequestsButCommitteeMembersCanReadThem() throws Exception {
         mvc.perform(as(HOLLIS, post("/api/professors/31/observer-requests"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"signupId\":" + signupId + ",\"matchId\":" + matchId + "}"))
@@ -148,7 +148,7 @@ class FacultyObserverRequestIntegrationTests {
     }
 
     @Test
-    void sixthRequestIsBlockedWhenFiveArePending() throws Exception {
+    void fivePendingRequestsBlockSixthButAllowRetry() throws Exception {
         // Populate four pending requests to exercise the limit independently of generated pool size.
         db.findAll(Observer.class).stream()
                 .map(Observer::observerId)

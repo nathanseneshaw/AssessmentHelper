@@ -49,7 +49,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     // ---------- US41: who may read the record ----------
 
     @Test
-    void observeeCanReadRecordOnlyWhenObserverHasSubmitted() {
+    void us41_theObserveeCanReadTheRecordOnlyOnceTheObserverSubmits() {
         int obs = observationId();
         keiraStarts(obs);
         assertThatThrownBy(() -> observations.detail(obs, leander())).isInstanceOf(AccessDeniedException.class);
@@ -64,7 +64,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void committeeCanReadRecordFromAnySchoolOnlyWhenCompleted() {
+    void us41_theCommitteeCanReadOnlyACompletedRecordAcrossSchools() {
         int obs = observationId();
         keiraSubmits(obs);
         assertThatThrownBy(() -> observations.detail(obs, kaia())).isInstanceOf(AccessDeniedException.class);
@@ -78,7 +78,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     // ---------- US31 / US32: observee sign-off ----------
 
     @Test
-    void signOffIsRejectedWhenObserverHasNotSubmitted() {
+    void us31_theObserveeCannotSignBeforeTheObserverHasSubmitted() {
         int obs = observationId();
         keiraStarts(obs);
 
@@ -88,7 +88,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void signOffIsRejectedWhenSignerIsNotTheObservee() {
+    void us31_onlyTheObserveeCanSignOff() {
         int obs = observationId();
         keiraSubmits(obs);
 
@@ -98,7 +98,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void evaluationIsCompletedAndObserverNotifiedWhenObserveeSignsOff() {
+    void us31_signingOffCompletesTheEvaluationAndTellsTheObserver() {
         int obs = observationId();
         keiraSubmits(obs);
         int before = notificationCount(KEIRA);
@@ -116,7 +116,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     // ---------- US33: observee comments ----------
 
     @Test
-    void observersAnswersAreUnchangedWhenObserveeAddsComments() {
+    void us33_theObserveesCommentsAreSavedWithoutChangingTheObserversAnswers() {
         int obs = observationId();
         keiraSubmits(obs);
         var answers = observations.detail(obs, leander()).responses();
@@ -129,7 +129,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void signOffIsRejectedAndNothingChangesWhenCommentIsOverTheLimit() {
+    void us33_aCommentOverTheLimitIsRejectedAndNothingChanges() {
         int obs = observationId();
         keiraSubmits(obs);
 
@@ -145,7 +145,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     // ---------- US34: locking ----------
 
     @Test
-    void recordIsLockedButReadableByObserverWhenObserveeSignsOff() {
+    void us34_signingOffLocksTheRecordAndTheObserverCanStillReadIt() {
         int obs = observationId();
         assertThat(keiraSubmits(obs).locked()).isFalse();
 
@@ -159,7 +159,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void changesAreRejectedWhenRecordIsLocked() {
+    void us34_noOneCanChangeALockedRecord() {
         int obs = observationId();
         complete(obs, null);
 
@@ -175,7 +175,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     // ---------- audit log ----------
 
     @Test
-    void auditLogRecordsEachStepWithActorAndTimeWhenWorkflowCompletes() {
+    void audit_theLogRecordsEachStepInOrderWithWhoDidItAndWhen() {
         int obs = observationId();
         keiraStarts(obs);
         observations.saveResponses(obs, completeAnswers(obs), keira());
@@ -199,7 +199,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void viewIsLoggedOnlyWhenRecordIsLocked() {
+    void audit_viewsOfALockedRecordAreLoggedButDraftViewsAreNot() {
         int obs = observationId();
         keiraStarts(obs);
         observations.detail(obs, keira());
@@ -216,7 +216,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     // ---------- forwarding a record link ----------
 
     @Test
-    void recipientIsNotifiedButGetsNoAccessWhenLockedRecordIsForwarded() {
+    void forward_theCommitteeForwardsALockedRecordWhichIsLoggedAndNotifiedButGivesNoAccess() {
         int obs = observationId();
         complete(obs, null);
         int before = notificationCount(DARIO);
@@ -234,7 +234,7 @@ class SignOffAndLockingAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void forwardIsRejectedWhenRecordIsNotLocked() {
+    void forward_onlyALockedRecordCanBeForwarded() {
         int obs = observationId();
         keiraSubmits(obs);
 

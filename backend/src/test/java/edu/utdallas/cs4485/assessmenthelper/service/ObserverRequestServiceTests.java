@@ -70,7 +70,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void otherRequestsAreUnchangedWhenAnUnmanagedRequestIsAccepted() {
+    void acceptingUnmanagedRequestLeavesOtherRequestsUnchanged() {
         var first = service.create(signup.signupId(), observer.observerId(), null);
         var other = db.insert(new ObserverRequest(
                 null, signup.signupId(), observer.observerId(), NOW, NOW.plusDays(7), null, "PENDING", false));
@@ -80,7 +80,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void requestIsPendingForOneWeekWhenNoExpirationIsGiven() {
+    void createStartsPendingWithDefaultWeekLongWindow() {
         ObserverRequest request = service.create(signup.signupId(), observer.observerId(), null);
 
         assertThat(request.requestId()).isNotNull();
@@ -91,18 +91,18 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void createThrowsWhenExpirationIsInThePast() {
+    void createRejectsAPastExpiration() {
         assertThatThrownBy(() -> service.create(signup.signupId(), observer.observerId(), NOW))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void findByIdThrowsNotFoundWhenRequestIsUnknown() {
+    void unknownRequestThrowsNotFound() {
         assertThatThrownBy(() -> service.findById(-1)).isInstanceOf(NotFoundException.class);
     }
 
     @Test
-    void createThrowsWhenObserverAlreadyDeclinedThisSignup() {
+    void aDeclinedObserverCannotBeInvitedAgainForThisEvaluation() {
         var request = service.create(signup.signupId(), observer.observerId(), null);
         service.decline(request.requestId());
         assertThatThrownBy(() -> service.create(signup.signupId(), observer.observerId(), null))
@@ -112,7 +112,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void createThrowsWhenSignupAlreadyHasAConfirmedObserver() {
+    void aSignupWithAConfirmedObserverTakesNoOtherRequests() {
         Observer second = db.insert(new Observer(
                 null, professor(department, "second-observer@test.edu").professorId(), cycle.cycleId(), true));
         db.insert(new ObserverMatch(null, signup.signupId(), second.observerId(), NOW.toLocalDate(), "PROPOSED"));
@@ -125,7 +125,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void requestIsConfirmedWithResponseDateWhenConfirmedBeforeExpiration() {
+    void confirmBeforeExpirationSetsConfirmedAndResponseDate() {
         ObserverRequest pending = service.create(signup.signupId(), observer.observerId(), null);
 
         ObserverRequest confirmed = service.confirm(pending.requestId());
@@ -136,7 +136,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void requestCannotBeAnsweredAgainWhenDeclined() {
+    void declineSetsDeclinedAndTheRequestCannotBeAnsweredAgain() {
         ObserverRequest pending = service.create(signup.signupId(), observer.observerId(), null);
 
         ObserverRequest declined = service.decline(pending.requestId());
@@ -147,7 +147,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void requestIsExpiredAndCannotBeConfirmedWhenPastExpiration() {
+    void overdueRequestReadsAsExpiredAndCannotBeConfirmed() {
         ObserverRequest overdue = insertRequest(NOW.minusMinutes(1));
 
         assertThat(service.findById(overdue.requestId()).status()).isEqualTo("EXPIRED");
@@ -157,7 +157,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void expireOverdueOnlyExpiresPendingRequestsWhenPastExpiration() {
+    void expireOverdueSweepsOnlyOverduePendingRequests() {
         ObserverRequest overdue = insertRequest(NOW.minusDays(1));
         ObserverRequest active = insertRequest(NOW.plusDays(1));
 
@@ -167,7 +167,7 @@ class ObserverRequestServiceTests {
     }
 
     @Test
-    void findReturnsMatchingRequestsWhenFilteredBySignupOrObserver() {
+    void findFiltersBySignupAndObserver() {
         ObserverRequest request = service.create(signup.signupId(), observer.observerId(), null);
 
         assertThat(service.find(signup.signupId(), null)).containsExactly(request);

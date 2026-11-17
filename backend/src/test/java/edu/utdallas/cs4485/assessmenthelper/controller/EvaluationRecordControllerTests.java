@@ -54,7 +54,7 @@ class EvaluationRecordControllerTests {
     }
 
     @Test
-    void listReturnsEvaluationsWhenProfessorExists() throws Exception {
+    void listReturnsTheProfessorsEvaluations() throws Exception {
         when(service.findByProfessor(2))
                 .thenReturn(List.of(
                         new EvaluationRecord(1, "Fall", 2026, "ACTIVE", 1, null),
@@ -71,7 +71,7 @@ class EvaluationRecordControllerTests {
     }
 
     @Test
-    void listReturns404WhenProfessorIsUnknown() throws Exception {
+    void unknownProfessorReturns404ProblemDetail() throws Exception {
         when(service.findByProfessor(99)).thenThrow(new NotFoundException("No professor with id 99"));
 
         mockMvc.perform(get("/api/professors/99/evaluations").with(user(PROFESSOR)))

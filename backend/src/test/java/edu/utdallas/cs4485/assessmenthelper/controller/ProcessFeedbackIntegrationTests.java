@@ -73,7 +73,7 @@ class ProcessFeedbackIntegrationTests {
     }
 
     @Test
-    void surveysAreListedNewestFirstWhenObserveeHasSeveral() throws Exception {
+    void observeeListsTheirSurveysNewestFirst() throws Exception {
         mvc.perform(get("/api/feedback-surveys").with(user(keira)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].cycleId").value(contains(fall2026, fall2025)))
@@ -82,7 +82,7 @@ class ProcessFeedbackIntegrationTests {
     }
 
     @Test
-    void surveyIsSubmittedWhenObserveeAnswersIt() throws Exception {
+    void observeeSubmitsTheirSurvey() throws Exception {
         submit(leander, fall2026, ANSWERS)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
@@ -90,7 +90,7 @@ class ProcessFeedbackIntegrationTests {
     }
 
     @Test
-    void surveyReturns403WhenProfessorWasNotObserved() throws Exception {
+    void professorsWhoWereNotObservedAreRefused() throws Exception {
         submit(dario, fall2026, ANSWERS).andExpect(status().isForbidden());
     }
 

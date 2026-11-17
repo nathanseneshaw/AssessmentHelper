@@ -138,7 +138,7 @@ class ObservationWorkflowIntegrationTests {
     }
 
     @Test
-    void observeeCanReadFormWhenObserverSubmitsIt() throws Exception {
+    void observerSavesADraftAndSubmitsTheFormThenTheObserveeCanReadIt() throws Exception {
         start(keira)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
@@ -162,7 +162,7 @@ class ObservationWorkflowIntegrationTests {
     }
 
     @Test
-    void formChangesReturn403WhenCallerIsNotTheObserver() throws Exception {
+    void onlyTheObserverCanChangeTheForm() throws Exception {
         start(keira).andExpect(status().isOk());
 
         save(leander, List.of(answer(1, 4, null))).andExpect(status().isForbidden());
@@ -171,7 +171,7 @@ class ObservationWorkflowIntegrationTests {
     }
 
     @Test
-    void saveReturns400WhenAnswerIsForAQuestionNotOnTheForm() throws Exception {
+    void anAnswerToAQuestionThatIsNotOnTheFormIsABadRequest() throws Exception {
         start(keira).andExpect(status().isOk());
 
         save(keira, List.of(new Answer(99999, 3, null)))
@@ -182,7 +182,7 @@ class ObservationWorkflowIntegrationTests {
 
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void formIsSubmittedOnceWhenTwoSubmitsArriveTogether() throws Exception {
+    void simultaneousSubmitsSubmitTheFormOnce() throws Exception {
         Observation original = current();
         try {
             service.start(observation, keira);

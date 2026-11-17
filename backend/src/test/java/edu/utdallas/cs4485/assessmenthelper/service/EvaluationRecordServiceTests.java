@@ -66,7 +66,7 @@ class EvaluationRecordServiceTests {
     }
 
     @Test
-    void recordsAreOnePerCycleNewestFirstWhenProfessorWasObserved() {
+    void returnsOneRecordPerCycleNewestFirst() {
         assertThat(service.findByProfessor(observeeProfessor.professorId()))
                 .containsExactly(
                         new EvaluationRecord(fall2026.cycleId(), "Fall", 2026, "ACTIVE", 1, null),
@@ -80,7 +80,7 @@ class EvaluationRecordServiceTests {
     }
 
     @Test
-    void recordsAreEmptyWhenProfessorWasNeverObserved() {
+    void professorWhoWasNeverObservedHasNoRecords() {
         assertThat(service.findByProfessor(observerProfessor.professorId())).isEmpty();
     }
 

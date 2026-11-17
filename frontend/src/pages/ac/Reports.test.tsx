@@ -125,7 +125,7 @@ afterEach(() => {
 });
 
 describe("Reports & KPIs", () => {
-  test("shows live KPIs, executive metrics and the cycle summary when the data loads", async () => {
+  test("shows live KPIs, executive metrics and cycle summary", async () => {
     await renderLoadedReports();
 
     expect(screen.getByText("38%")).toBeDefined();
@@ -155,7 +155,7 @@ describe("Reports & KPIs", () => {
     );
   });
 
-  test("downloads the figures as CSV when Export Report is clicked", async () => {
+  test("Export Report downloads the loaded figures as CSV", async () => {
     await renderLoadedReports();
     const file = await download("Export Report");
 
@@ -171,7 +171,7 @@ describe("Reports & KPIs", () => {
     );
   });
 
-  test("downloads the cycle summary as text when Download Summary is clicked", async () => {
+  test("Download Summary downloads the cycle summary as text", async () => {
     await renderLoadedReports();
     const file = await download("Download Summary");
 
@@ -181,7 +181,7 @@ describe("Reports & KPIs", () => {
     expect(file.text).toContain("3 observations scheduled");
   });
 
-  test("shows Unavailable and disables exports when the request fails", async () => {
+  test("a failed request shows Unavailable and blocks exports", async () => {
     await renderReports(() =>
       Response.json({ detail: "Backend unavailable" }, { status: 503 }),
     );

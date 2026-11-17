@@ -57,7 +57,7 @@ class ObserverAvailabilityServiceTests {
     }
 
     @Test
-    void observerIsUnavailableWhenSectionsShareADayAndTimesOverlap() {
+    void unavailableWhenSharedDayAndTimesOverlap() {
         CourseSection clash = observerTeaches(section(fall, "MW", "10:30", "11:45"));
 
         assertThat(service.isAvailable(observer.observerId(), signup.signupId()))
@@ -68,7 +68,7 @@ class ObserverAvailabilityServiceTests {
     }
 
     @Test
-    void observerIsAvailableWhenMeetingDaysDiffer() {
+    void availableWhenMeetingDaysDiffer() {
         observerTeaches(section(fall, "TR", "10:00", "10:50"));
 
         assertThat(service.isAvailable(observer.observerId(), signup.signupId()))
@@ -76,7 +76,7 @@ class ObserverAvailabilityServiceTests {
     }
 
     @Test
-    void observerIsAvailableWhenClashIsInAnotherSemester() {
+    void availableWhenSameTimeWasInAnotherSemester() {
         observerTeaches(section(spring, "MWF", "10:00", "10:50"));
 
         assertThat(service.isAvailable(observer.observerId(), signup.signupId()))
@@ -84,7 +84,7 @@ class ObserverAvailabilityServiceTests {
     }
 
     @Test
-    void isAvailableThrowsNotFoundWhenSignupIsUnknown() {
+    void unknownSignupThrowsNotFound() {
         assertThatThrownBy(() -> service.isAvailable(observer.observerId(), -1)).isInstanceOf(NotFoundException.class);
     }
 

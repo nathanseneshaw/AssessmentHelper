@@ -63,7 +63,7 @@ class ObserverRequestControllerTests {
 
     @Test
     @WithMockUser(roles = "AC")
-    void createReturns201PendingRequestWhenInputIsValid() throws Exception {
+    void createReturns201WithPendingRequest() throws Exception {
         when(service.create(2, 3, null)).thenReturn(PENDING);
 
         mockMvc.perform(post("/api/observer-requests")
@@ -77,7 +77,7 @@ class ObserverRequestControllerTests {
 
     @Test
     @WithMockUser(roles = "AC")
-    void createReturns400WhenInputIsInvalid() throws Exception {
+    void createWithBadInputReturns400() throws Exception {
         when(service.create(null, 3, null))
                 .thenThrow(new IllegalArgumentException("signupId and observerId are required"));
 
@@ -89,7 +89,7 @@ class ObserverRequestControllerTests {
     }
 
     @Test
-    void requestIsReturnedWhenCallerIsTheRequestedObserver() throws Exception {
+    void theRequestedObserverCanReadTheirRequest() throws Exception {
         when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
         when(service.findById(1)).thenReturn(PENDING);
 
@@ -99,7 +99,7 @@ class ObserverRequestControllerTests {
     }
 
     @Test
-    void confirmReturns409WhenRequestHasExpired() throws Exception {
+    void confirmingExpiredRequestReturns409() throws Exception {
         when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(true);
         when(service.confirm(1, null)).thenThrow(new ConflictException("Request 1 has expired"));
 
@@ -110,7 +110,7 @@ class ObserverRequestControllerTests {
     }
 
     @Test
-    void declineReturnsDeclinedStatusWhenRequestIsPending() throws Exception {
+    void declineReturnsDeclinedRequest() throws Exception {
         ObserverRequest declined = new ObserverRequest(
                 1,
                 2,
@@ -131,7 +131,7 @@ class ObserverRequestControllerTests {
     }
 
     @Test
-    void createAndDeclineReturn403WhenProfessorIsNotTheRequestedObserver() throws Exception {
+    void professorsCannotCreateRequestsOrAnswerOnesSentToSomeoneElse() throws Exception {
         when(professorAccess.isRequestedObserver(any(), eq(1))).thenReturn(false);
 
         mockMvc.perform(post("/api/observer-requests")

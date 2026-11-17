@@ -40,7 +40,7 @@ function show() {
   );
 }
 
-test("shows the missing signup and links the late form when the professor has both alerts", async () => {
+test("dashboard displays missing signup and links the observer to their late form", async () => {
   fakeBackend({
     "/api/professors/2/missing-observations": () =>
       Response.json([late, signup]),
@@ -55,7 +55,7 @@ test("shows the missing signup and links the late form when the professor has bo
   ).toBe("/faculty/observations/42");
 });
 
-test("the late alert disappears when the observation is submitted", async () => {
+test("submitted observation disappears after a workflow change", async () => {
   let alerts = [late];
   fakeBackend({
     "/api/professors/2/missing-observations": () => Response.json(alerts),
@@ -71,7 +71,7 @@ test("the late alert disappears when the observation is submitted", async () => 
   );
 });
 
-test("Retry recovers when the alerts fail to load", async () => {
+test("failed checks show a retry that recovers", async () => {
   let failed = true;
   fakeBackend({
     "/api/professors/2/missing-observations": () =>

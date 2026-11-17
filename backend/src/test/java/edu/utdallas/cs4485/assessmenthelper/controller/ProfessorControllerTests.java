@@ -34,7 +34,7 @@ class ProfessorControllerTests {
     private ProfessorService service;
 
     @Test
-    void listReturnsSchoolsProfessorsWhenSchoolIsGiven() throws Exception {
+    void listReturnsTheSchoolsProfessors() throws Exception {
         when(service.findBySchool("CS"))
                 .thenReturn(List.of(
                         new Professor(
@@ -56,7 +56,7 @@ class ProfessorControllerTests {
     }
 
     @Test
-    void listReturns400WhenSchoolIsMissing() throws Exception {
+    void missingSchoolReturns400ProblemDetail() throws Exception {
         mockMvc.perform(get("/api/professors"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))

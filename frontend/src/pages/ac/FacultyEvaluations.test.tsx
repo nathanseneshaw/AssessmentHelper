@@ -107,7 +107,7 @@ function filterButton(name: string) {
 }
 
 describe("evaluation queue", () => {
-  test("shows all faculty when no filter is selected", () => {
+  test("shows all faculty returned by the backend", () => {
     expect(facultyShown()).toEqual([
       "Professor 1",
       "Professor 4",
@@ -119,12 +119,12 @@ describe("evaluation queue", () => {
   test.each([
     ["Due This Term", ["Professor 1", "Professor 5"]],
     ["Associate", ["Professor 4", "Professor 2"]],
-  ])("the %s filter shows %p when selected", (name, expected) => {
+  ])("the %s filter shows %p", (name, expected) => {
     fireEvent.click(filterButton(name));
     expect(facultyShown()).toEqual(expected);
   });
 
-  test("shows four rows, and all matching faculty open in a dismissible overlay when expanded", async () => {
+  test("previews four rows and opens all matching faculty in a dismissible overlay", async () => {
     cleanup();
     const extra = faculty[0];
     if (!extra) throw new Error("Missing faculty fixture");
@@ -148,7 +148,7 @@ describe("evaluation queue", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  test("Retry reloads the list when the request fails", async () => {
+  test("shows an API failure and successfully retries", async () => {
     cleanup();
     let fail = true;
     eligibility = () =>
@@ -169,7 +169,7 @@ describe("evaluation queue", () => {
   });
 });
 
-test("past deferral details open when the committee views a deferred evaluation", async () => {
+test("AC can open past deferral details from the faculty evaluation queue", async () => {
   fireEvent.click(
     screen.getByRole("button", { name: "View Evaluation(s) for Professor 1" }),
   );

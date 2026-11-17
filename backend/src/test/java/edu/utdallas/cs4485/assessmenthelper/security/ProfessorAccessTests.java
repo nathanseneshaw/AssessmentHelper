@@ -29,12 +29,12 @@ class ProfessorAccessTests {
     }
 
     @Test
-    void isRequestedObserverIsTrueWhenProfessorIsTheRequestedObserver() {
+    void requestedObserverMayAnswer() {
         assertThat(access.isRequestedObserver(professor(7), 1)).isTrue();
     }
 
     @Test
-    void isRequestedObserverIsFalseWhenProfessorIsSomeoneElse() {
+    void otherProfessorMayNotAnswer() {
         assertThat(access.isRequestedObserver(professor(8), 1)).isFalse();
     }
 

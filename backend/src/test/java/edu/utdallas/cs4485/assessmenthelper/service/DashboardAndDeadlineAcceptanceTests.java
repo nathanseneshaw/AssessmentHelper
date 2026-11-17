@@ -77,13 +77,13 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     // ---------- US2 / US3: the rank decides how often a professor is evaluated ----------
 
     @Test
-    void intervalIsOneYearWhenAssistantAndTwoYearsWhenAssociate() {
+    void us2_anAssistantProfessorIsEvaluatedEveryYearAndAnAssociateEveryTwoYears() {
         assertThat(deadlines.findByProfessor(LEANDER).evaluationIntervalYears()).isEqualTo(1);
         assertThat(deadlines.findByProfessor(ARLO).evaluationIntervalYears()).isEqualTo(2);
     }
 
     @Test
-    void nextDueDateMovesLaterWhenRankChanges() {
+    void us3_aRankChangeChangesTheIntervalAndMovesTheNextDueDateLater() {
         LocalDate asAssistant = deadlines.findByProfessor(LEANDER).nextDueDate();
 
         promoteLeanderToFull();
@@ -96,7 +96,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     // ---------- US35: KPIs ----------
 
     @Test
-    void dashboardShowsCurrentCycleWhenLoaded() {
+    void us35_theDashboardLoadsForTheCurrentCycle() {
         var metrics = dashboard.metrics();
 
         assertThat(metrics.cycleLabel()).isEqualTo("Fall 2026");
@@ -106,7 +106,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void observationIsMissingOnlyWhenCycleDeadlinePassesWithoutACompletedForm() {
+    void us35_4_anIncompleteObservationIsMissingOnlyAfterTheCycleDeadline() {
         // The observation date passing is not enough; the cycle deadline is.
         clock.set(AFTER_THE_OBSERVATION_DATE);
         assertThat(leandersEvaluation().status()).isEqualTo(Status.SCHEDULED);
@@ -120,7 +120,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void missingCountMatchesTrackingListWhenObservationsAreMissing() {
+    void us35_5_theMissingCountAgreesWithTheTrackingList() {
         clock.set(AFTER_THE_OBSERVATION_DEADLINE);
 
         long inList = dashboard.observations().observations().stream()
@@ -131,7 +131,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void missingCountDropsWhenObservationIsCompleted() {
+    void us35_5_theMissingCountDropsWhenTheObservationIsCompleted() {
         clock.set(AFTER_THE_OBSERVATION_DEADLINE);
         int before = dashboard.metrics().missingObservations();
 
@@ -144,7 +144,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     // ---------- US14: tracking and flagging ----------
 
     @Test
-    void trackingListShowsSignaturesWhenObserverAndObserveeSign() {
+    void us14_theTrackingListShowsWhoObservesWhoAndFollowsTheSignatures() {
         int obs = observationId();
         var scheduled = leandersEvaluation();
         assertThat(scheduled.observer()).contains("Keira");
@@ -165,7 +165,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     }
 
     @Test
-    void observerHasLateAlertWhenCycleDeadlinePassesUntilSubmitted() {
+    void us14_theObserverHasALateAlertFromTheCycleDeadlineUntilTheySubmit() {
         clock.set(AFTER_THE_OBSERVATION_DATE);
         assertThat(lateAlerts(KEIRA)).isEmpty();
 
@@ -184,7 +184,7 @@ class DashboardAndDeadlineAcceptanceTests extends AcceptanceSupport {
     // ---------- US36: a professor's own observations ----------
 
     @Test
-    void observationShowsViewersRoleWhenListedForEachProfessor() {
+    void us36_eachProfessorSeesTheObservationInTheRoleTheyHaveInIt() {
         int obs = observationId();
 
         assertThat(roleInListOf(KEIRA, obs)).contains(ViewerRole.OBSERVER);

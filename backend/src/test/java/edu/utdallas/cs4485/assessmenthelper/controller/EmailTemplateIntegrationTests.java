@@ -48,7 +48,7 @@ class EmailTemplateIntegrationTests {
     EvaluationNotificationRepository notifications;
 
     @Test
-    void catalogHasFourDefaultsAndPlaceholdersWhenNoTemplateIsEdited() throws Exception {
+    void catalogContainsFourDefaultsAndSupportedPlaceholders() throws Exception {
         mvc.perform(get("/api/email-templates"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.templates.length()").value(4))
@@ -56,7 +56,7 @@ class EmailTemplateIntegrationTests {
     }
 
     @Test
-    void previewFillsInProfessorDetailsWithoutSendingWhenProfessorIsDue() throws Exception {
+    void previewsUseServerFacultyContextAndDoNotSend() throws Exception {
         long before = notifications.count();
         mvc.perform(get("/api/due-evaluations/1/professors/9/email-preview"))
                 .andExpect(status().isOk())
@@ -66,13 +66,13 @@ class EmailTemplateIntegrationTests {
     }
 
     @Test
-    void previewReturns409WhenProfessorIsNotDue() throws Exception {
+    void previewRejectsAProfessorWhoIsNotDue() throws Exception {
         // Leander (13) is overdue rather than due.
         mvc.perform(get("/api/due-evaluations/1/professors/13/email-preview")).andExpect(status().isConflict());
     }
 
     @Test
-    void followUpTemplateIsUsedWhenEmailWasAlreadySent() {
+    void recordingEditedEmailUsesFollowUpTemplateNextTime() {
         var draft = evaluations.previewNotification(1, 9, true);
         var saved = evaluations.notifyDueProfessor(
                 1, 9, new EvaluationEligibilityService.Email(draft.recipient(), "Edited subject", "Edited body"));
@@ -83,7 +83,7 @@ class EmailTemplateIntegrationTests {
     }
 
     @Test
-    void notificationUsesSavedTemplateWhenTemplateIsEdited() throws Exception {
+    void savedTemplateIsUsedByExistingNotificationFlow() throws Exception {
         var current = templates.catalog().templates().stream()
                 .filter(t -> t.templateType().equals("EVALUATION_DUE"))
                 .findFirst()
@@ -103,7 +103,7 @@ class EmailTemplateIntegrationTests {
     }
 
     @Test
-    void saveIsRejectedWhenTemplateVersionIsStale() {
+    void updatesRejectStaleVersions() {
         var current = templates.catalog().templates().getFirst();
         var update = new EmailTemplateService.Update(
                 current.name(), current.subject(), current.body(), true, current.version());
@@ -112,7 +112,7 @@ class EmailTemplateIntegrationTests {
     }
 
     @Test
-    void saveIsRejectedWhenTemplateHasUnknownPlaceholder() {
+    void unknownPlaceholdersAreRejected() {
         assertThatThrownBy(() -> templates.save(
                         "CUSTOM", new EmailTemplateService.Update("Custom", "Subject", "{{typo}}", true, null)))
                 .isInstanceOf(IllegalArgumentException.class);

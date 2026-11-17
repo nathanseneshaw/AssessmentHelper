@@ -108,7 +108,7 @@ function entries(title: string) {
     );
 }
 
-test("summary cards show the professor's evaluation when the dashboard loads", async () => {
+test("the summary cards show the professor's evaluation from the database", async () => {
   await open();
 
   expect(
@@ -124,7 +124,7 @@ test("summary cards show the professor's evaluation when the dashboard loads", a
   );
 });
 
-test("each Upcoming item links to its action when the professor has something due", async () => {
+test("Upcoming links each item to what the professor can do about it", async () => {
   // A submitted observation of the professor's class waits for her sign-off.
   current.upcoming.push({
     type: "SIGN_OFF",
@@ -159,7 +159,7 @@ test("each Upcoming item links to its action when the professor has something du
   expect(upcoming("Process Feedback Due").textContent).toContain("Due Dec 1");
 });
 
-test("history and observation cards show only the newest two when there are more", async () => {
+test("history and observation cards show the newest two records", async () => {
   await open();
 
   const history = section("Evaluation History");
@@ -186,7 +186,7 @@ test("history and observation cards show only the newest two when there are more
   ]);
 });
 
-test("asks the professor to sign up when they are due and not signed up", async () => {
+test("a due professor who has not signed up is asked to sign up", async () => {
   // Only an observee in the cycle has a survey.
   surveys = [];
   current.evaluation = {
@@ -220,7 +220,7 @@ test("asks the professor to sign up when they are due and not signed up", async 
   ]);
 });
 
-test("explains why and Retry reloads when the dashboard fails to load", async () => {
+test("a failed load explains why, and Retry loads the dashboard", async () => {
   failure = Response.json(
     { status: 500, detail: "The evaluation cycle changed." },
     { status: 500 },

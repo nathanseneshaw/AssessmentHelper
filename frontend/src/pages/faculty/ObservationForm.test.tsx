@@ -221,7 +221,7 @@ function leavingAsks() {
   return event.defaultPrevented;
 }
 
-test("lists only the professor's own observations and opens the form when Start is clicked", async () => {
+test("the list shows the observations I do, and Start opens the form", async () => {
   open("/faculty/observations/others");
   const list = await dialog("Observation Records for Others");
   await list.findByText("CS 3345.001 · Olivia Observee");
@@ -257,7 +257,7 @@ test("lists only the professor's own observations and opens the form when Start 
   expect(changes).toBe(1);
 });
 
-test("shows the class details and a Start button when the observation has not started", async () => {
+test("before the observation starts, the details show the class and a Start button", async () => {
   open();
   const view = await dialog();
   await view.findByText("CS 3345.001 · Fall 2026");
@@ -274,7 +274,7 @@ test("shows the class details and a Start button when the observation has not st
   expect(view.getByText("Oct 27, 2026")).toBeDefined();
 });
 
-test("shows the template's questions filled with saved answers when the form opens", async () => {
+test("the form asks the template's questions, starting from the saved answers", async () => {
   const view = await openForm([
     { criterionId: 1, rating: 4, comments: "Students asked questions." },
     { criterionId: 6, rating: null, comments: "Clear examples." },
@@ -289,7 +289,7 @@ test("shows the template's questions filled with saved answers when the form ope
   expect(textbox(view, SUGGESTIONS).value).toBe("");
 });
 
-test("sends trimmed, non-blank answers when Save draft is clicked", async () => {
+test("Save draft sends the answers, trimmed and without blank ones", async () => {
   const view = await openForm([
     { criterionId: 1, rating: 4, comments: "Old note" },
   ]);
@@ -324,7 +324,7 @@ test("sends trimmed, non-blank answers when Save draft is clicked", async () => 
   expect(view.queryByText("Unsaved changes")).toBeNull();
 });
 
-test("lists the missing questions and sends nothing when a required question is unanswered", async () => {
+test("submitting with a required question unanswered lists what is missing and sends nothing", async () => {
   const view = await openForm([{ criterionId: 1, rating: 3, comments: null }]);
   fireEvent.click(view.getByRole("button", { name: "Submit" }));
 
@@ -338,7 +338,7 @@ test("lists the missing questions and sends nothing when a required question is 
   expect(sent).toEqual([]);
 });
 
-test("a complete form is submitted only when the observer confirms", async () => {
+test("a complete form is submitted only after the observer confirms", async () => {
   const view = await openForm([
     { criterionId: 1, rating: 4, comments: "Students asked questions." },
     { criterionId: 2, rating: 5, comments: null },
@@ -382,7 +382,7 @@ test("a complete form is submitted only when the observer confirms", async () =>
   ).toBeDefined();
 });
 
-test("shows the reason and keeps every answer when saving fails", async () => {
+test("a failed save shows the reason and keeps every answer", async () => {
   const view = await openForm([{ criterionId: 1, rating: 4, comments: null }]);
   fireEvent.change(textbox(view, STRENGTHS), {
     target: { value: "Clear examples." },
@@ -401,7 +401,7 @@ test("shows the reason and keeps every answer when saving fails", async () => {
   expect(view.getByText("Unsaved changes")).toBeDefined();
 });
 
-test("asks before closing when there are unsaved answers", async () => {
+test("with unsaved answers, closing asks first: Keep editing keeps them, Leave without saving closes", async () => {
   const view = await openForm();
   expect(leavingAsks()).toBe(false);
   fireEvent.change(textbox(view, STRENGTHS), {

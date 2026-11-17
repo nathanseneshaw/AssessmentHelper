@@ -60,7 +60,7 @@ class ObservationReadIntegrationTests {
     }
 
     @Test
-    void observerCanStartFormWhenObservationIsScheduled() throws Exception {
+    void observerSeesTheScheduledFormAndMayStartIt() throws Exception {
         read(keira, "/api/observations/" + scheduled)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SCHEDULED"))
@@ -74,7 +74,7 @@ class ObservationReadIntegrationTests {
     }
 
     @Test
-    void readReturns403ForOutsidersAnd404WhenIdIsUnknown() throws Exception {
+    void outsidersAreForbiddenAndUnknownIdsAreNotFound() throws Exception {
         read(dario, "/api/observations/" + scheduled).andExpect(status().isForbidden());
         read(dario, "/api/professors/" + keira.user().professorId() + "/observations")
                 .andExpect(status().isForbidden());
@@ -82,7 +82,7 @@ class ObservationReadIntegrationTests {
     }
 
     @Test
-    void listShowsBothRolesNewestFirstWhenProfessorIsObserverAndObservee() throws Exception {
+    void professorListShowsBothSidesNewestFirst() throws Exception {
         read(keira, "/api/professors/" + keira.user().professorId() + "/observations")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].observationId").value(contains(scheduled, keirasOwn)))

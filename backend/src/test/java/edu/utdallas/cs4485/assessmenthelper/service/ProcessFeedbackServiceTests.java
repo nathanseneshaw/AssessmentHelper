@@ -97,7 +97,7 @@ class ProcessFeedbackServiceTests {
     }
 
     @Test
-    void surveyIsOpenOnlyWhenBetweenObservationAndFeedbackDeadlines() {
+    void theSurveyIsOpenOnlyBetweenTheObservationAndFeedbackDeadlines() {
         today("2026-11-01");
         assertThat(status()).isEqualTo("NOT_OPEN");
         today("2026-11-05");
@@ -108,7 +108,7 @@ class ProcessFeedbackServiceTests {
     }
 
     @Test
-    void allAnswersAreSavedAndResubmitIsRejectedWhenSurveyIsSubmitted() {
+    void savesAllAnswersOncePerCycleAndProfessor() {
         assertThat(service.submit(cycleId, answers(), principal).status()).isEqualTo("SUBMITTED");
         var saved = service.surveys(principal).stream()
                 .filter(s -> s.cycleId() == cycleId)
@@ -121,7 +121,7 @@ class ProcessFeedbackServiceTests {
     }
 
     @Test
-    void submitIsRejectedWhenRatingIsOutsideOneToFive() {
+    void rejectsARatingOutsideOneToFive() {
         assertThatThrownBy(() -> service.submit(
                         cycleId, new ProcessFeedbackService.Submission(List.of(6, 2, 3, 4, 5, 1), null), principal))
                 .isInstanceOf(IllegalArgumentException.class);

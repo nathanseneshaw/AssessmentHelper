@@ -11,7 +11,7 @@ afterEach(() => {
 
 // West of Greenwich a calendar date's UTC midnight is the evening before, and far east it is already morning.
 test.each(["America/Los_Angeles", "Pacific/Kiritimati"])(
-  "calendar dates keep their day when the time zone is %s",
+  "calendar dates keep their day in %s",
   (zone) => {
     process.env.TZ = zone;
     expect(shortDate("2026-10-31")).toBe("Oct 31");
@@ -24,6 +24,6 @@ test.each([
   ["00:05:00", "12:05 AM"],
   ["12:00:00", "12:00 PM"],
   ["14:15", "2:15 PM"],
-])("%p shows as %p when formatted with clockTime", (time, expected) => {
+])("clockTime(%p) is %p", (time, expected) => {
   expect(clockTime(time)).toBe(expected);
 });

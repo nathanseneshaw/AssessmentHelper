@@ -87,7 +87,7 @@ class ObserverEligibilityServiceTests {
     TeachingHistoryRepository teaching;
 
     @Test
-    void candidateIsExcludedWhenDepartmentLevelActivitySemesterOrScheduleDoesNotFit() {
+    void filtersDepartmentLevelActivitySemesterAndTeachingOverlap() {
         clearPriorTeaching(HOLLIS);
         moveToDepartment(ARLO, 2);
         db.update(inactive(db.findById(AVERY, Professor.class)));
@@ -102,7 +102,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void observerIsEligibleOnlyWhenTheyTaughtInTheLastTwoYears() {
+    void onlyTeachingFromTheLastTwoYearsQualifies() {
         clearPriorTeaching(HOLLIS);
         LocalDate start = service.cycle().startDate();
         historicalCourse(HOLLIS, start.minusYears(3), start.minusYears(2).minusDays(1));
@@ -114,7 +114,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void listIsCappedAtFiveAndStopsChangingWhenReleased() {
+    void listsAreCappedAtFiveStayStableAndReleasedListsStopGrowing() {
         int dario = darioSignsUp();
         assertThat(candidateProfessors(dario)).containsExactlyInAnyOrder(LEANDER, ARLO, AVERY, KEIRA);
         assertThat(candidateProfessors(KEIRA_SIGNUP)).hasSize(5).isSubsetOf(eligibleProfessors(KEIRA_SIGNUP));
@@ -129,7 +129,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void observerIsExcludedWhenTheyAreTheObservee() {
+    void anObserverCannotObserveThemselves() {
         // Signing up puts Dario in the observer pool too.
         int dario = darioSignsUp();
         assertThat(candidateProfessors(dario)).doesNotContain(DARIO);
@@ -139,7 +139,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void daysAndLevelsAreParsedWhenGivenInDifferentFormats() {
+    void parsesMeetingDaysAndCourseLevels() {
         assertThat(ObserverEligibilityService.days("TR"))
                 .containsExactlyInAnyOrder(DayOfWeek.TUESDAY, DayOfWeek.THURSDAY);
         assertThat(ObserverEligibilityService.days("Monday / Wednesday"))
@@ -151,7 +151,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void signupWindowIsRejectedWhenOutsideObservationPeriodOrCandidatesExist() {
+    void signupWindowsStayInsideTheObservationPeriodAndLockOnceCandidatesExist() {
         assertThat(signups.window(DARIO, FALL_2026))
                 .isEqualTo(new ObserverEligibilityService.Window(
                         LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 15), null, LocalDate.of(2026, 10, 31), true));
@@ -168,7 +168,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void observerIsMatchedWhenOneRequestIsDeclinedAndAnotherAccepted() {
+    void releaseThenMultipleRequestsWithDeclineAndAccept() {
         int target = darioSignsUp();
         var candidates = list(target).candidates();
         assertThat(candidates).hasSize(4);
@@ -207,7 +207,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void releaseAndAcceptAreRejectedWhenObserverIsNoLongerEligible() {
+    void releaseAndAcceptanceRecheckEligibility() {
         int target = darioSignsUp();
         signupDeadline("2026-10-20");
         // Arlo moves to another department after the list was generated.
@@ -226,7 +226,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void acceptSavesClassTimeOnlyWhenDateIsAnAvailableClassDay() {
+    void acceptanceRequiresAnAvailableClassDateAndSavesTheClassTime() {
         int target = darioSignsUp();
         releaseAfterDeadline(target);
         var candidate = list(target).candidates().getFirst();
@@ -247,7 +247,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void statusMovesFromAwaitingToMatchedWhenInvitationIsAccepted() {
+    void aLiveInvitationAwaitsAResponseAndAnAcceptedObserverMatches() {
         int target = darioSignsUp();
         assertThat(matching(target).status()).isEqualTo("AWAITING_INVITATION");
         invitation(target, ARLO, "PENDING", LocalDateTime.parse("2026-10-22T10:00:00"));
@@ -257,7 +257,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void caseIsUnmatchedOnlyWhenEveryRecommendedObserverDeclinesOrExpires() {
+    void allRecommendedObserversMustDeclineOrExpireBeforeTheCaseIsUnmatched() {
         int target = darioSignsUp();
         releaseAfterDeadline(target);
         invitation(target, LEANDER, "DECLINED", LocalDateTime.parse("2026-10-22T10:00:00"));
@@ -271,7 +271,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void regenerateGivesNewObserversOnlyWhenListIsExhausted() {
+    void replacementBatchesNeedAnExhaustedListAndNeverReuseRecommendations() {
         int target = darioSignsUp();
         releaseAfterDeadline(target);
         addUnusedObservers(7);
@@ -295,7 +295,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void manualAssignIsAllowedOnlyWhenEveryoneDeclinedAndPoolIsExhausted() {
+    void manualAssignmentRequiresAllDeclinesAndExhaustionOfTheWholePool() {
         int target = darioSignsUp();
         int observer = candidateIds(target).getFirst();
         assertThatThrownBy(() -> service.assign(target, observer)).isInstanceOf(ConflictException.class);
@@ -310,7 +310,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void observerPicksTheDateWhenCommitteeAssignsThem() {
+    void assignedObserverChoosesTheObservationDate() {
         int target = darioSignsUp();
         var candidate = list(target).candidates().getFirst();
         exhaustForAssignment(target);
@@ -327,7 +327,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void deferIsAllowedOnlyWhenNoObserverIsEligible() {
+    void deferralRequiresZeroEligibleObserversAndPreservesTheDecision() {
         int target = darioSignsUp();
         assertThatThrownBy(() -> service.defer(target, 12, "No matching observers"))
                 .isInstanceOf(ConflictException.class);
@@ -348,7 +348,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void defaultWindowsMoveWhenCycleDeadlinesAreUpdated() {
+    void deadlinesUpdateCycleAndDefaultWindows() {
         var updated = service.updateDeadlines(1, deadlines("2026-10-30", "2026-11-20", "2026-12-05"));
         assertThat(updated.signupDeadline()).isEqualTo(LocalDate.parse("2026-10-30"));
         assertThat(updated.observationDeadline()).isEqualTo(LocalDate.parse("2026-11-20"));
@@ -358,7 +358,7 @@ class ObserverEligibilityServiceTests {
     }
 
     @Test
-    void deadlineUpdateIsRejectedWhenOrderIsInvalidOrExcludesScheduledObservations() {
+    void deadlinesRejectInvalidOrderAndDatesThatExcludeScheduledObservations() {
         assertThatThrownBy(() -> service.updateDeadlines(1, deadlines("2026-11-01", "2026-10-31", "2026-12-01")))
                 .isInstanceOf(IllegalArgumentException.class);
         // Leander's observation is scheduled for Nov 4.

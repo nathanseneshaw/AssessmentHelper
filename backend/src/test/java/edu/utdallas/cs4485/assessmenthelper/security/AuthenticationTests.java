@@ -46,7 +46,7 @@ class AuthenticationTests {
     private UserAccountRepository accounts;
 
     @Test
-    void accountExistsForEveryProfessorWhenSeedDataIsLoaded() {
+    void everySeededProfessorHasAnAccountWithTheirEmail() {
         var accountEmails = accounts.findAll().stream()
                 .filter(account -> account.professorId() != null)
                 .collect(Collectors.toMap(UserAccount::professorId, UserAccount::email));
@@ -56,7 +56,7 @@ class AuthenticationTests {
     }
 
     @Test
-    void loginReturnsUserAndRolesWhenCredentialsAreCorrect() throws Exception {
+    void signingInReturnsTheUserAndTheirRoles() throws Exception {
         mockMvc.perform(signInRequest(DARIO, DARIO_PASSWORD))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Dario Hollowell"))
@@ -69,7 +69,7 @@ class AuthenticationTests {
     }
 
     @Test
-    void loginReturns401WhenPasswordIsWrong() throws Exception {
+    void wrongPasswordReturns401ProblemDetail() throws Exception {
         mockMvc.perform(signInRequest(DARIO, "wrong"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
@@ -77,13 +77,13 @@ class AuthenticationTests {
     }
 
     @Test
-    void loginReturns403WhenCsrfTokenIsMissing() throws Exception {
+    void signingInWithoutACsrfTokenIsRejected() throws Exception {
         mockMvc.perform(post("/api/auth/login").param("email", DARIO).param("password", DARIO_PASSWORD))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void apiReturns401WhenUserIsNotSignedIn() throws Exception {
+    void apiRequiresSignIn() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
@@ -91,7 +91,7 @@ class AuthenticationTests {
     }
 
     @Test
-    void sessionEndsOnlyWhenUserLogsOut() throws Exception {
+    void theSessionKeepsTheUserSignedInUntilTheySignOut() throws Exception {
         MockHttpSession session = signIn(DARIO, DARIO_PASSWORD);
 
         mockMvc.perform(get("/api/auth/me").session(session))

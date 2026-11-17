@@ -95,7 +95,7 @@ function send() {
   );
 }
 
-test("the request shows as pending when the page is reopened after sending", async () => {
+test("sends the selected match and restores its pending status after reopening", async () => {
   const view = open();
   await choose();
   send();
@@ -108,7 +108,7 @@ test("the request shows as pending when the page is reopened after sending", asy
   expect(screen.getByText(/1 of 5 requests pending/)).toBeDefined();
 });
 
-test("the choice is kept for retry when sending fails", async () => {
+test("keeps the choice after a failed send and allows a retry", async () => {
   failSend = true;
   open();
   await choose();
@@ -126,7 +126,7 @@ test("the choice is kept for retry when sending fails", async () => {
   expect(writes).toHaveLength(2);
 });
 
-test("an observer cannot be invited again when they already declined", async () => {
+test("an observer who declined cannot be invited again, but other candidates can", async () => {
   const first = options[0];
   if (!first) throw new Error("Missing signup");
   first.requests = [
@@ -156,7 +156,7 @@ test("an observer cannot be invited again when they already declined", async () 
   ).toBe(false);
 });
 
-test("more candidates are disabled when five requests are pending, counting ones already sent", async () => {
+test("up to five requests can be pending, counting ones already sent", async () => {
   const first = options[0];
   if (!first) throw new Error("Missing signup");
   first.candidates = Array.from({ length: 6 }, (_, index) => ({
@@ -179,7 +179,7 @@ test("more candidates are disabled when five requests are pending, counting ones
   expect(screen.getByText(/5 of 5 requests pending/)).toBeDefined();
 });
 
-test("pending observers can still respond when another has confirmed", async () => {
+test("shows confirmed and pending requests together without stopping pending responses", async () => {
   if (!options[0]) throw new Error("Missing fixture");
   options[0].requests = [
     {

@@ -13,7 +13,7 @@ afterEach(() => {
   mock.restore();
 });
 
-test("dates and times use a 12-hour clock when formatted", () => {
+test("dates and times are shown as written, with a 12-hour clock", () => {
   expect(formatDate("2026-11-04")).toBe("Nov 4, 2026");
   expect(formatTime("00:05:00")).toBe("12:05 AM");
   expect(formatTime("13:45:00")).toBe("1:45 PM");
@@ -46,7 +46,7 @@ function loadThings(path: string | null = "/api/things") {
   );
 }
 
-test("current data and error stay on screen when a reload has not answered yet", async () => {
+test("a reload keeps the current data and any error on screen until a new answer arrives", async () => {
   const requests = heldRequests();
   const { result } = loadThings();
   requests.answer(Response.json(["first"]));
@@ -71,7 +71,7 @@ test("current data and error stay on screen when a reload has not answered yet",
   expect(result.current.error).toBe("");
 });
 
-test("data starts empty when the path changes", async () => {
+test("a different path starts empty", async () => {
   const requests = heldRequests();
   const { result, rerender } = loadThings();
   requests.answer(Response.json(["first"]));

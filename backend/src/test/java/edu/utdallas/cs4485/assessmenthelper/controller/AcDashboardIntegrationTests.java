@@ -138,7 +138,7 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void metricsMatchSeedDataWhenCommitteeLoadsDashboard() throws Exception {
+    void committeeSeesTheSeededCycleMetrics() throws Exception {
         metrics().andExpect(status().isOk()).andExpect(content().json("""
                         {"cycleId":1,"cycleLabel":"Fall 2026","facultyDue":13,"listSize":5,
                         "participation":{"count":5,"total":13},"observerUtilization":{"count":1,"total":8},
@@ -187,7 +187,7 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void observationIsMissingWhenCycleDeadlinePassesUntilItIsCompleted() throws Exception {
+    void anObservationPastTheCycleDeadlineIsMissingUntilItIsCompleted() throws Exception {
         String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
         // Leander's observation date (2026-11-04) passing is not enough; the 2026-11-15 cycle deadline is.
         clock.set("2026-11-05T15:00:00Z");
@@ -208,7 +208,7 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void listSufficiencyCountsAListWhenItIsFilledToListSize() throws Exception {
+    void listSufficiencyCountsListsFilledToTheListSize() throws Exception {
         // Leander's list is one candidate short of the list size until Arlo is added.
         db.insert(new ObserverMatch(
                 null, signupOf(db, LEANDER), observerOf(db, ARLO), LocalDate.parse("2026-10-26"), "PROPOSED"));
@@ -219,7 +219,7 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void observationsListHasEverySignupWhenListsAreGenerated() throws Exception {
+    void committeeTracksEachGeneratedSignupsObservation() throws Exception {
         String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
         observations()
                 .andExpect(status().isOk())
@@ -232,7 +232,7 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void remindersAreSentWhenObservationsAreOutstandingOrListsAreReleased() throws Exception {
+    void remindersGoToOutstandingObservationsAndReleasedLists() throws Exception {
         // Keira is reminded to complete Leander's scheduled observation. Avery's list is released but she has not
         // asked anyone. The other lists are not released, so their observees cannot request anyone yet.
         mvc.perform(as(KAIA, post(REMINDERS)))
@@ -261,7 +261,7 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void remindersSkipCaseWhenItIsDeferred() throws Exception {
+    void deferredCasesAreTrackedSeparatelyAndSkippedByReminders() throws Exception {
         clock.set("2026-11-02T15:00:00Z");
         int signup = signupOf(db, 27);
         matching.defer(signup, 12, "No graduate-level observers available");

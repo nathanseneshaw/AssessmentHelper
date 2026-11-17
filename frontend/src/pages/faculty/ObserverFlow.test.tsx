@@ -71,7 +71,7 @@ function pendingRequest() {
   ];
 }
 
-test("the request shows as accepted when the observer accepts with a date", async () => {
+test("observer can accept a request with a date and sees it accepted", async () => {
   pendingRequest();
   open("/faculty/requests");
   fireEvent.click(await screen.findByRole("button", { name: "Accept" }));
@@ -95,7 +95,7 @@ test("the request shows as accepted when the observer accepts with a date", asyn
   ]);
 });
 
-test("the request moves to Declined when the observer declines it", async () => {
+test("observer can decline a request", async () => {
   pendingRequest();
   open("/faculty/requests");
   fireEvent.click(await screen.findByRole("button", { name: "Decline" }));
@@ -103,7 +103,7 @@ test("the request moves to Declined when the observer declines it", async () => 
   expect(sent[0]?.body).toEqual({ accept: false });
 });
 
-test("the request stops counting as pending when an assigned observer picks a date", async () => {
+test("an AC-assigned observer chooses a date, and the request stops counting as pending", async () => {
   pendingRequest();
   const request = state.incoming[0];
   if (!request) throw Error("Missing request");
@@ -135,7 +135,7 @@ test("the request stops counting as pending when an assigned observer picks a da
   await screen.findByRole("link", { name: "Observer Requests (0 pending)" });
 });
 
-test("notifications are listed with their times when the dashboard loads", async () => {
+test("the dashboard lists notifications with their times", async () => {
   state.notifications = [1, 2].map((id) => ({
     notificationId: id,
     message: `Notification ${id}`,
@@ -151,7 +151,7 @@ test("notifications are listed with their times when the dashboard loads", async
   ).toHaveLength(2);
 });
 
-test("generated observers stay disabled when the committee has not sent the list", async () => {
+test("generated observers stay disabled until the committee sends the list", async () => {
   state.signup = { ...signup, released: false };
   open("/faculty");
   await screen.findByText("Professor 1", { selector: "p.font-semibold" });
@@ -172,7 +172,7 @@ test("generated observers stay disabled when the committee has not sent the list
   expect(window.location.pathname).toBe("/faculty/observers");
 });
 
-test("nothing loads when the session has no faculty profile", async () => {
+test("sessions without a faculty profile load nothing instead of using another professor", async () => {
   signInAs("professor", { professorId: null });
   open("/faculty/requests");
   await screen.findByText(/Your session has no faculty profile/);

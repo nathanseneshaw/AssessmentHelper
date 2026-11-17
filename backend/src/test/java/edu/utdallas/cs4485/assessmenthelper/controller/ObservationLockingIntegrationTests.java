@@ -104,7 +104,7 @@ class ObservationLockingIntegrationTests {
     }
 
     @Test
-    void recordIsCompletedAndLockedWhenObserveeSignsOff() throws Exception {
+    void theObserveeSignsOffWithCommentsAndThatCompletesAndLocksTheRecord() throws Exception {
         start(keira).andExpect(status().isOk());
         submit(keira).andExpect(status().isOk());
 
@@ -119,7 +119,7 @@ class ObservationLockingIntegrationTests {
     }
 
     @Test
-    void forwardReturns403WhenCallerIsNotOnTheCommittee() throws Exception {
+    void onlyACommitteeMemberCanForwardACompletedRecordToAProfessor() throws Exception {
         start(keira).andExpect(status().isOk());
         submit(keira).andExpect(status().isOk());
         sign(leander, null).andExpect(status().isOk());

@@ -124,14 +124,14 @@ class AcceptanceTests {
     // ---------- TC 16: signup ----------
 
     @Test
-    void sectionIsSavedAndCandidatesAreFoundWhenProfessorSignsUp() {
+    void tc16_1_signupSavesTheChosenSectionAndStartsTheObserverSearch() {
         int signup = darioSignsUp();
         assertThat(list(signup).section().label()).isEqualTo("CS 3345.005");
         assertThat(candidates(signup)).isNotEmpty();
     }
 
     @Test
-    void signupIsRejectedWhenProfessorDoesNotTeachTheSection() {
+    void tc16_2_cannotSignUpForASectionTheProfessorDoesNotTeach() {
         assertThatThrownBy(() -> signups.save(DARIO, FALL_2026, HOLLIS_SECTION, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("section you teach");
@@ -140,7 +140,7 @@ class AcceptanceTests {
     // ---------- TC 18: candidate list ----------
 
     @Test
-    void listHasAtMostFiveDistinctObserversExcludingObserveeWhenGenerated() {
+    void tc18_listHoldsAtMostFiveDistinctEligibleObserversAndNeverTheObservee() {
         int signup = darioSignsUp();
         var eligible = service.eligibleObservers(signup).stream()
                 .map(ObserverEligibilityService.Candidate::observerId)
@@ -155,14 +155,14 @@ class AcceptanceTests {
     }
 
     @Test
-    void candidateIsExcludedWhenDepartmentIsWrongOrScheduleConflicts() {
+    void tc18_5_wrongDepartmentOrConflictingScheduleNeverAppears() {
         professors.save(withDepartment(professors.findById(ARLO).orElseThrow(), 2));
         int signup = darioSignsUp();
         assertThat(candidateProfessors(signup)).doesNotContain(ARLO, XIOMARA, PERRIN);
     }
 
     @Test
-    void listIsEmptyAndCannotBeReleasedWhenNoObserverIsEligible() {
+    void tc18_4_and_tc19_noEligibleObserversGivesAnEmptyListThatCannotBeReleased() {
         observers.findByCycleId(1).forEach(o -> observers.save(inactive(o)));
         int signup = darioSignsUp();
         assertThat(candidates(signup)).isEmpty();
@@ -176,7 +176,7 @@ class AcceptanceTests {
     // ---------- TC 21: sending requests ----------
 
     @Test
-    void requestIsSentOnlyWhenCandidateIsSelected() {
+    void tc21_2_onlySelectedCandidatesGetARequest() {
         int signup = darioSignsUp();
         var c = candidates(signup);
         assertThat(c.size()).isGreaterThanOrEqualTo(4);
@@ -198,7 +198,7 @@ class AcceptanceTests {
     // ---------- TC 22: responding ----------
 
     @Test
-    void observerIsLockedInWhenTheyAccept() {
+    void tc22_1_acceptingLocksInTheObserver() {
         int signup = darioSignsUp();
         var observer = candidates(signup).getFirst();
         releaseAfterDeadline(signup);
@@ -214,7 +214,7 @@ class AcceptanceTests {
     }
 
     @Test
-    void observerIsNotLockedInWhenTheyDecline() {
+    void tc22_2_decliningDoesNotLockInTheObserver() {
         int signup = darioSignsUp();
         var observer = candidates(signup).getFirst();
         releaseAfterDeadline(signup);
@@ -229,7 +229,7 @@ class AcceptanceTests {
     // ---------- TC 22-3 / 23-1: expiry ----------
 
     @Test
-    void acceptIsRejectedWhenRequestHasExpired() {
+    void tc22_3_and_tc23_1_anExpiredRequestCannotBeAccepted() {
         int signup = darioSignsUp();
         var observer = candidates(signup).getFirst();
         releaseAfterDeadline(signup);
@@ -250,7 +250,7 @@ class AcceptanceTests {
 
     @Disabled("US23/TC-23: stories say 48 hours, code uses 7 days (ObserverRequestService.DEFAULT_RESPONSE_WINDOW)")
     @Test
-    void expirationIs48HoursLaterWhenRequestIsSent() {
+    void tc23_requestExpiresAfter48Hours() {
         int signup = darioSignsUp();
         var observer = candidates(signup).getFirst();
         releaseAfterDeadline(signup);
@@ -261,7 +261,7 @@ class AcceptanceTests {
 
     @Disabled("Spec on double accept: only one observer may accept a signup (see bug 2 in the #82 list)")
     @Test
-    void secondAcceptIsRejectedWhenAnotherObserverAlreadyAccepted() {
+    void onlyOneObserverCanAcceptASignup() {
         int signup = darioSignsUp();
         var c = candidates(signup);
         releaseAfterDeadline(signup);

@@ -167,7 +167,7 @@ class WorkflowEndToEndTests {
     }
 
     @Test
-    void reportShowsEvaluationWhenSignupMatchingAndObservationComplete() throws Exception {
+    void signupThroughMatchingObservationAndReporting() throws Exception {
         // ---- Sign-up (before the 2026-10-31 signup deadline) ----
         mvc.perform(as(DARIO, get("/api/semesters?signupOpen=true")))
                 .andExpect(status().isOk())
@@ -345,7 +345,7 @@ class WorkflowEndToEndTests {
     }
 
     @Test
-    void committeeCanAssignObserverWhenRequestIsDeclined() throws Exception {
+    void declinedRequestLeavesTheCommitteeToAssignAnObserver() throws Exception {
         signUp(DARIO, 34, 298);
         signupId = signupOf(db, 34);
         clock.set("2026-11-02T09:00:00");

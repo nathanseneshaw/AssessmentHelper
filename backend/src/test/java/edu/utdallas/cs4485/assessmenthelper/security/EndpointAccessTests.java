@@ -140,7 +140,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void endpointIsOnReviewedListWhenItHasNoAccessRule() {
+    void everyEndpointWithoutAnAccessRuleIsOnAReviewedList() {
         Set<String> withoutRule = endpoints().stream()
                 .filter(endpoint -> endpoint.rule() == null)
                 .map(Endpoint::key)
@@ -153,7 +153,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void everyEndpointExceptCsrfTokenReturns401WhenSignedOut() throws Exception {
+    void signedOutRequestsAreRefusedEverywhereExceptTheCsrfToken() throws Exception {
         List<Endpoint> signedIn = endpoints().stream()
                 .filter(endpoint -> !PUBLIC.contains(endpoint.key()))
                 .toList();
@@ -163,7 +163,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void committeeEndpointsReturn403WhenCallerIsAProfessor() throws Exception {
+    void professorsAreRefusedEveryCommitteeEndpoint() throws Exception {
         AccountPrincipal dario = accounts.loadUserByUsername(DARIO);
         AccountPrincipal kaia = accounts.loadUserByUsername(KAIA);
         List<Endpoint> committeeOnly = endpoints().stream()
@@ -183,7 +183,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void professorDataReturns403WhenCallerIsAnotherProfessor() throws Exception {
+    void professorsAreRefusedAnotherProfessorsData() throws Exception {
         AccountPrincipal dario = accounts.loadUserByUsername(DARIO);
         int leander = accounts.loadUserByUsername(LEANDER).user().professorId();
         List<Endpoint> professorScoped = professorScoped();
@@ -203,7 +203,7 @@ class EndpointAccessTests {
     }
 
     @Test
-    void observerRequestReturns403WhenCallerIsNotTheRequestedObserver() throws Exception {
+    void onlyTheRequestedObserverCanReadOrConfirmAnObserverRequest() throws Exception {
         int requestId = averyAsksKeira();
         String path = "/api/observer-requests/" + requestId;
         AccountPrincipal dario = accounts.loadUserByUsername(DARIO);

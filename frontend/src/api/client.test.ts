@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 describe("apiFetch", () => {
-  test("sends cookies and returns the parsed JSON when the request succeeds", async () => {
+  test("sends the request to the backend with cookies and returns the parsed JSON", async () => {
     const fetchSpy = respondWith(Response.json([{ professorRank: "FULL" }]));
 
     expect(await apiFetch("/api/evaluation-policies")).toEqual([
@@ -34,7 +34,7 @@ describe("apiFetch", () => {
     expect(sentHeaders(fetchSpy.mock.calls[0]).has("X-XSRF-TOKEN")).toBe(false);
   });
 
-  test("sends a CSRF token, fetching one first if there is no cookie, when the request changes data", async () => {
+  test("sends the CSRF token on requests that change data, asking for one when there is no cookie yet", async () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
       input,
     ) => {
@@ -61,7 +61,7 @@ describe("apiFetch", () => {
     );
   });
 
-  test("throws an ApiError with the server's detail when the response is a problem", async () => {
+  test("throws an ApiError with the detail from a Spring problem response", async () => {
     respondWith(
       Response.json(
         { title: "Not Found", status: 404, detail: "No professor with id 99" },

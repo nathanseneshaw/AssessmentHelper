@@ -112,7 +112,7 @@ function saveButton() {
 
 const SAVED = "Your course and section have been saved for evaluation.";
 
-test("the saved section and window are restored when the signup is reopened", async () => {
+test("selects a taught section and observation window, saves them, and restores them after reopening", async () => {
   await openSignup();
   await chooseCourse();
   expect(screen.getByText("Science Hall 206")).toBeDefined();
@@ -133,7 +133,7 @@ test("the saved section and window are restored when the signup is reopened", as
   );
 });
 
-test("the selection is kept for retry when saving fails", async () => {
+test("shows save failures and keeps the selection available for retry", async () => {
   saveFailure = true;
   await openSignup();
   await chooseCourse();
@@ -150,7 +150,7 @@ test("the selection is kept for retry when saving fails", async () => {
   await screen.findByText(SAVED);
 });
 
-test("shows the deadline and disables Save when signup is closed", async () => {
+test("closed signups explain the deadline and cannot be saved", async () => {
   signupOpen = false;
   await openSignup();
   await chooseCourse();
@@ -158,7 +158,7 @@ test("shows the deadline and disables Save when signup is closed", async () => {
   expect(saveButton().disabled).toBe(true);
 });
 
-test("the signup is read-only when it is matched", async () => {
+test("keeps matched signups read-only", async () => {
   saved = {
     signupId: 1,
     observeeId: 1,

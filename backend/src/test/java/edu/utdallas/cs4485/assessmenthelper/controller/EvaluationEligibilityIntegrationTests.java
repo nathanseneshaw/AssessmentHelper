@@ -73,7 +73,7 @@ class EvaluationEligibilityIntegrationTests {
     private EvaluationEligibilityService service;
 
     @Test
-    void countsAre13Due15OverdueAnd73UpcomingWhenSeedDataIsLoaded() throws Exception {
+    void seededProfessorsProduceThirteenDueFifteenOverdueAndSeventyThreeUpcoming() throws Exception {
         mvc.perform(get("/api/due-evaluations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(13))
@@ -95,7 +95,7 @@ class EvaluationEligibilityIntegrationTests {
     }
 
     @Test
-    void reminderSavesEditedTextWithoutChangingCountsWhenSent() throws Exception {
+    void remindersSaveEditedContentWithoutChangingCounts() throws Exception {
         mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/" + HOLLIS + "/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -118,7 +118,7 @@ class EvaluationEligibilityIntegrationTests {
     }
 
     @Test
-    void reminderIsRejectedWhenRecipientIsWrong() throws Exception {
+    void aReminderToTheWrongRecipientIsNotSaved() throws Exception {
         mvc.perform(withCsrfToken(post("/api/due-evaluations/1/professors/" + HOLLIS + "/notifications"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -130,7 +130,7 @@ class EvaluationEligibilityIntegrationTests {
 
     @Test
     @WithMockUser
-    void evaluationListsReturn403WhenCallerIsNotOnTheCommittee() throws Exception {
+    void onlyCommitteeMembersCanSeeTheLists() throws Exception {
         mvc.perform(get("/api/due-evaluations")).andExpect(status().isForbidden());
         mvc.perform(get("/api/overdue-evaluations")).andExpect(status().isForbidden());
         mvc.perform(get("/api/evaluation-eligibility")).andExpect(status().isForbidden());

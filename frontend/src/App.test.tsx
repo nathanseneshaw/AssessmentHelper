@@ -58,7 +58,7 @@ afterEach(() => {
 
 describe("signed out", () => {
   test.each(["/ac", "/faculty/signup"])(
-    "%s redirects to the login page when signed out",
+    "%s redirects to the login page",
     async (path) => {
       renderAt(path);
       await screen.findByRole("button", { name: "Sign In" });
@@ -66,21 +66,21 @@ describe("signed out", () => {
     },
   );
 
-  test("shows the not found page when the URL is unknown", async () => {
+  test("unknown URLs show the not found page", async () => {
     renderAt("/no-such-page");
     await screen.findByRole("heading", { name: "Page not found" });
   });
 });
 
 describe("signing in", () => {
-  test("opens the faculty dashboard when a faculty member signs in", async () => {
+  test("faculty land on the faculty dashboard", async () => {
     renderAt("/login");
     await submitLogin("bob@utdallas.edu", "Faculty123!");
     await screen.findByRole("heading", { name: "My Evaluation Dashboard" });
     expect(currentPath()).toBe("/faculty");
   });
 
-  test("opens the AC overview when a committee member signs in", async () => {
+  test("assessment committee members land on the AC overview", async () => {
     renderAt("/login");
     await submitLogin("alice@utdallas.edu", "Committee123!");
     await screen.findByRole("heading", {
@@ -91,7 +91,7 @@ describe("signing in", () => {
 });
 
 describe("assessment committee", () => {
-  test("each nav tab opens its page when clicked", async () => {
+  test("every nav tab opens a page", async () => {
     renderAt("/ac", "ac");
     await screen.findByRole("navigation", { name: "Main" });
 
@@ -105,13 +105,13 @@ describe("assessment committee", () => {
     }
   });
 
-  test("shows No access when a committee member opens a faculty page", async () => {
+  test("faculty pages are off limits", async () => {
     renderAt("/faculty", "ac");
     await screen.findByRole("heading", { name: "No access" });
     expect(currentPath()).toBe("/forbidden");
   });
 
-  test("returns to the login page when the user logs out", async () => {
+  test("logging out returns to the login page", async () => {
     renderAt("/ac/reports", "ac");
     fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
     await screen.findByRole("button", { name: "Sign In" });
@@ -121,7 +121,7 @@ describe("assessment committee", () => {
 });
 
 describe("faculty", () => {
-  test("dashboard dialogs close when Close or Escape is pressed", async () => {
+  test("dialogs open from the dashboard and close with Close or Escape", async () => {
     fakeBackend({
       "/api/observer-eligibility/faculty/2": () =>
         Response.json({ ...faculty, signup: { ...signup, released: true } }),
@@ -148,7 +148,7 @@ describe("faculty", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  test("shows No access when a faculty member opens an AC page", async () => {
+  test("AC pages are off limits", async () => {
     renderAt("/ac", "professor");
     await screen.findByRole("heading", { name: "No access" });
     expect(currentPath()).toBe("/forbidden");

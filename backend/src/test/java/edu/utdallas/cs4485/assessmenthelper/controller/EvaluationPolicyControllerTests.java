@@ -43,7 +43,7 @@ class EvaluationPolicyControllerTests {
     private UserDetailsService userDetailsService;
 
     @Test
-    void listReturnsEveryRanksPolicyWhenNoRankIsGiven() throws Exception {
+    void listReturnsAllPolicies() throws Exception {
         when(service.findAll()).thenReturn(List.of(ASSISTANT));
 
         mockMvc.perform(get("/api/evaluation-policies"))
@@ -53,7 +53,7 @@ class EvaluationPolicyControllerTests {
     }
 
     @Test
-    void policyReturns404WhenRankIsUnknown() throws Exception {
+    void unknownRankReturns404ProblemDetail() throws Exception {
         when(service.findByRank("EMERITUS")).thenThrow(new NotFoundException("No evaluation policy for rank EMERITUS"));
 
         mockMvc.perform(get("/api/evaluation-policies/EMERITUS"))
@@ -64,7 +64,7 @@ class EvaluationPolicyControllerTests {
     }
 
     @Test
-    void corsIsRejectedWhenOriginIsNotTheFrontend() throws Exception {
+    void corsAllowsOnlyTheFrontendOrigin() throws Exception {
         mockMvc.perform(options("/api/evaluation-policies")
                         .header(HttpHeaders.ORIGIN, "http://localhost:3000")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
