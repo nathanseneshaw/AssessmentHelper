@@ -5,6 +5,7 @@ spring-dependency-management = "1.1.7"
 spotless = "8.10.4"
 palantir-java-format = "2.102.0"
 springdoc = "3.1.1"
+commons-csv = "1.14.1"
 
 [libraries]
 # Versions for Spring Boot artifacts are managed by the Spring Boot BOM.
@@ -24,6 +25,7 @@ spring-boot-starter-validation-test = { module = "org.springframework.boot:sprin
 spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
 springdoc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc" }
 h2 = { module = "com.h2database:h2" }
+commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commons-csv" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
 [bundles]

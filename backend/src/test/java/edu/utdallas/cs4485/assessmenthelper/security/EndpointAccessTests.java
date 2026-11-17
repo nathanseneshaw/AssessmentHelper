@@ -12,6 +12,7 @@ import com.jayway.jsonpath.JsonPath;
 import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
 import jakarta.servlet.http.Cookie;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -41,14 +42,17 @@ import org.springframework.core.MethodParameter;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockPart;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
@@ -330,16 +334,27 @@ class EndpointAccessTests {
                 withCsrf(MockMvcRequestBuilders.request(HttpMethod.valueOf(endpoint.method()), uri));
         for (MethodParameter parameter : endpoint.handler().getMethodParameters()) {
             RequestParam param = parameter.getParameterAnnotation(RequestParam.class);
-            if (param != null) request.param(parameterName(parameter, param), UNKNOWN_ID);
+            if (param != null) request.param(parameterName(parameter, param.name(), param.value()), UNKNOWN_ID);
+            RequestPart part = parameter.getParameterAnnotation(RequestPart.class);
+            if (part != null)
+                request.contentType(MediaType.MULTIPART_FORM_DATA)
+                        .with(upload(parameterName(parameter, part.name(), part.value())));
             if (parameter.hasParameterAnnotation(RequestBody.class))
                 request.contentType(MediaType.APPLICATION_JSON).content("{}");
         }
         return request;
     }
 
-    private static String parameterName(MethodParameter parameter, RequestParam param) {
-        if (!param.name().isEmpty()) return param.name();
-        if (!param.value().isEmpty()) return param.value();
+    private static RequestPostProcessor upload(String part) {
+        return request -> {
+            request.addPart(new MockPart(part, "upload.csv", UNKNOWN_ID.getBytes(StandardCharsets.UTF_8)));
+            return request;
+        };
+    }
+
+    private static String parameterName(MethodParameter parameter, String name, String value) {
+        if (!name.isEmpty()) return name;
+        if (!value.isEmpty()) return value;
         parameter.initParameterNameDiscovery(new DefaultParameterNameDiscoverer());
         return parameter.getParameterName();
     }
