@@ -11,6 +11,8 @@ public interface UserAccountRepository extends ListCrudRepository<UserAccount, I
 
     Optional<UserAccount> findByEmailIgnoreCase(String email);
 
+    Optional<UserAccount> findByProfessorId(Integer professorId);
+
     boolean existsByEmailIgnoreCase(String email);
 
     boolean existsByUsername(String username);

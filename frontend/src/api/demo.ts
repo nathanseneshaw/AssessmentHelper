@@ -43,6 +43,15 @@ export interface AddedSection {
   semester: string;
 }
 
+export interface OpenEvaluation {
+  signupId: number;
+  observeeId: number;
+  observee: string;
+  course: string;
+  observer: string | null;
+  observationStatus: string | null;
+}
+
 function postJson<T>(path: string, body: unknown): Promise<T> {
   return apiFetch<T>(path, {
     method: "POST",
@@ -71,4 +80,22 @@ export function addProfessor(input: NewProfessor): Promise<DemoAccount> {
 
 export function addSection(input: NewSection): Promise<AddedSection> {
   return postJson<AddedSection>("/api/demo/sections", input);
+}
+
+export function getOpenEvaluations(
+  signal?: AbortSignal,
+): Promise<OpenEvaluation[]> {
+  return apiFetch<OpenEvaluation[]>("/api/demo/evaluations", { signal });
+}
+
+export function stepEvaluation(
+  signupId: number,
+): Promise<{ observationId: number; status: string }> {
+  return postJson(`/api/demo/evaluations/${signupId}/step`, {});
+}
+
+export function completeEvaluation(
+  signupId: number,
+): Promise<{ observationId: number }> {
+  return postJson(`/api/demo/evaluations/${signupId}/complete`, {});
 }

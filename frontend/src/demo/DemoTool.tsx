@@ -3,12 +3,14 @@ import { type DemoAccount, getDemoAccounts } from "../api/demo";
 import { useAuth } from "../auth/AuthContext";
 import { AccountsTab } from "./AccountsTab";
 import { AddDataTab } from "./AddDataTab";
+import { EvaluationsTab } from "./EvaluationsTab";
 
 const HIDDEN_KEY = "demoToolHidden";
 
 const TABS = [
   { id: "accounts", label: "Accounts" },
   { id: "data", label: "Add data" },
+  { id: "evaluations", label: "Evaluations" },
 ] as const;
 
 type Tab = (typeof TABS)[number]["id"];
@@ -112,6 +114,9 @@ export function DemoTool({
                 }
                 onDataChanged={onDataChanged}
               />
+            )}
+            {tab === "evaluations" && (
+              <EvaluationsTab onDataChanged={onDataChanged} />
             )}
           </div>
         </section>

@@ -12,6 +12,7 @@ import jakarta.servlet.http.Cookie;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -106,6 +107,29 @@ class DemoControllerTests {
                         .session(jo))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].sectionNumber").value("001"));
+    }
+
+    @Test
+    void completingASignupWithoutAnObserverLocksASignedObservation() throws Exception {
+        MockHttpSession session = signInAsDario();
+        String open = mvc.perform(get("/api/demo/evaluations").session(session))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        List<Integer> avery = JsonPath.read(open, "$[?(@.observee == 'Avery Hazelwood')].signupId");
+
+        String completed = mvc.perform(postJson("/api/demo/evaluations/" + avery.getFirst() + "/complete", "{}")
+                        .session(session))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        int observationId = JsonPath.read(completed, "$.observationId");
+
+        mvc.perform(get("/api/observations/" + observationId).session(signIn(KAIA, "Committee123!")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.locked").value(true));
     }
 
     @Test

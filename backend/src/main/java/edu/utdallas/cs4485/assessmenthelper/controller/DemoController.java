@@ -3,7 +3,9 @@ package edu.utdallas.cs4485.assessmenthelper.controller;
 import edu.utdallas.cs4485.assessmenthelper.entity.Department;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
+import edu.utdallas.cs4485.assessmenthelper.service.DemoEvaluationService;
 import edu.utdallas.cs4485.assessmenthelper.service.DemoService;
+import edu.utdallas.cs4485.assessmenthelper.service.MissingObservationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
@@ -15,6 +17,7 @@ import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,12 +29,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class DemoController {
     public record SwitchBody(Integer userId) {}
 
+    public record Completed(int observationId) {}
+
     private final DemoService service;
+    private final DemoEvaluationService evaluations;
     private final SecurityContextHolderStrategy contextHolder = SecurityContextHolder.getContextHolderStrategy();
     private final SecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
 
-    public DemoController(DemoService service) {
+    public DemoController(DemoService service, DemoEvaluationService evaluations) {
         this.service = service;
+        this.evaluations = evaluations;
     }
 
     @GetMapping("/accounts")
@@ -52,6 +59,21 @@ public class DemoController {
     @PostMapping("/sections")
     public DemoService.AddedSection addSection(@RequestBody DemoService.NewSection body) {
         return service.addSection(body);
+    }
+
+    @GetMapping("/evaluations")
+    public List<MissingObservationService.MissingSignup> openEvaluations() {
+        return evaluations.open();
+    }
+
+    @PostMapping("/evaluations/{signupId}/step")
+    public DemoEvaluationService.Step step(@PathVariable int signupId) {
+        return evaluations.step(signupId);
+    }
+
+    @PostMapping("/evaluations/{signupId}/complete")
+    public Completed complete(@PathVariable int signupId) {
+        return new Completed(evaluations.complete(signupId));
     }
 
     @PostMapping("/switch")
