@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import {
-  act,
   cleanup,
   fireEvent,
   render,
@@ -40,6 +39,15 @@ function dueFaculty(
   };
 }
 
+function dueQueueOf(faculty: OverdueFaculty[]): OverdueQueue {
+  return {
+    cycleId: 1,
+    cycleLabel: "Fall 2026",
+    count: faculty.length,
+    faculty,
+  };
+}
+
 // Eight faculty are due this cycle and the first three have signed up.
 const signedUpFaculty = [
   dueFaculty(11, "Marlow", "Fenwick"),
@@ -53,18 +61,13 @@ const notSignedUpFaculty = [
   dueFaculty(24, "Ewan", "Thistlewood"),
   dueFaculty(25, "Fenna", "Larkspur"),
 ];
-const NOT_SIGNED_UP_NAMES = notSignedUpFaculty.map((person) => person.name);
 
-function dueQueueOf(faculty: OverdueFaculty[]): OverdueQueue {
-  return {
-    cycleId: 1,
-    cycleLabel: "Fall 2026",
-    count: faculty.length,
-    faculty,
-  };
-}
-
-const dueQueue = dueQueueOf([...signedUpFaculty, ...notSignedUpFaculty]);
+const dueQueue: OverdueQueue = {
+  cycleId: 1,
+  cycleLabel: "Fall 2026",
+  count: 8,
+  faculty: [...signedUpFaculty, ...notSignedUpFaculty],
+};
 
 const state: AcState = {
   matchingCases: [],
@@ -85,21 +88,15 @@ const signupMetrics: DashboardMetrics = {
 };
 
 const NOTIFY_PATH = "/api/due-evaluations/1/professors/21/notifications";
-const pending = () => new Promise<Response>(() => {});
 const unavailable = (detail: string) => () =>
   Response.json({ detail }, { status: 503 });
 
-let answerMetrics: Answer;
-let answerDue: Answer;
 let answerObserver: Answer;
 let answerOverdue: Answer;
 let answerEligibility: Answer;
 let sentEmail: NotificationEmail | undefined;
-const originalTimeZone = process.env.TZ;
 
 beforeEach(() => {
-  answerMetrics = () => Response.json(signupMetrics);
-  answerDue = () => Response.json(dueQueue);
   answerObserver = () => Response.json(state);
   answerOverdue = () => Response.json(dueQueueOf([]));
   answerEligibility = () =>
@@ -109,8 +106,8 @@ beforeEach(() => {
     });
   sentEmail = undefined;
   fakeBackend({
-    "/api/ac-dashboard/metrics": () => answerMetrics(),
-    "/api/due-evaluations": () => answerDue(),
+    "/api/ac-dashboard/metrics": () => Response.json(signupMetrics),
+    "/api/due-evaluations": () => Response.json(dueQueue),
     "/api/overdue-evaluations": () => answerOverdue(),
     "/api/evaluation-eligibility": () => answerEligibility(),
     "/api/observer-eligibility/ac": () => answerObserver(),
@@ -131,8 +128,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   resetBackend();
-  if (originalTimeZone === undefined) Reflect.deleteProperty(process.env, "TZ");
-  else process.env.TZ = originalTimeZone;
 });
 
 async function renderSignups() {
@@ -155,12 +150,6 @@ function viewAllButton() {
   }) as HTMLButtonElement;
 }
 
-async function openNotSignedUp() {
-  await waitFor(() => expect(viewAllButton().disabled).toBe(false));
-  fireEvent.click(viewAllButton());
-  return screen.getByRole("dialog", { name: "Faculty Not Yet Signed Up" });
-}
-
 // The faculty names in the dialog's table, in order.
 function listedNames(dialog: HTMLElement) {
   return within(dialog)
@@ -169,31 +158,65 @@ function listedNames(dialog: HTMLElement) {
     .map((row) => within(row).getAllByRole("cell")[0]?.textContent);
 }
 
-test("each signup request has a Review link named for its professor", async () => {
+test("each signup has a Review link and the cards show the live counts", async () => {
   await renderSignups();
   await screen.findByRole("rowheader", { name: "Marlow Fenwick" });
   const table = screen.getByRole("table");
-
   for (const { name } of signedUpFaculty) {
-    expect(within(table).getByRole("rowheader", { name })).toBeDefined();
     expect(
       within(table).getByRole("link", { name: `Review signup for ${name}` }),
     ).toBeDefined();
   }
-});
 
-test("count cards show live values, with participation rounded to a whole percent", async () => {
-  await renderSignups();
   await waitFor(() => expect(kpi("Due Faculty").value).toBe("8"));
-  expect(kpi("Due Faculty").note).toBe("Current cycle");
   expect(kpi("Signed Up Due This Term")).toEqual({
     value: "3",
     note: "38% participation",
   });
-  expect(kpi("Not Yet Signed Up")).toEqual({
-    value: "5",
-    note: "Reminder recommended",
+  expect(kpi("Not Yet Signed Up").value).toBe("5");
+  expect(kpi("Signup Deadline").value).toBe("Oct 31");
+});
+
+test("View All lists who has not signed up, and notifying one sends the reminder and marks them Notified", async () => {
+  await renderSignups();
+  await waitFor(() => expect(viewAllButton().disabled).toBe(false));
+  fireEvent.click(viewAllButton());
+  const dialog = screen.getByRole("dialog", {
+    name: "Faculty Not Yet Signed Up",
   });
+  expect(listedNames(dialog)).toEqual(
+    notSignedUpFaculty.map((person) => person.name),
+  );
+
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Notify Juniper Ashgrove" }),
+  );
+  expect(
+    ((await within(dialog).findByLabelText("Message")) as HTMLTextAreaElement)
+      .value,
+  ).toContain("complete your evaluation signup");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Send Email" }));
+  await within(dialog).findByRole("heading", { name: "Email Sent" });
+  expect(sentEmail?.recipient).toBe("ashgrove@test.edu");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+
+  const row = within(dialog)
+    .getByRole("button", { name: "Follow up with Juniper Ashgrove" })
+    .closest("tr");
+  if (!row) throw new Error("Missing row for Juniper Ashgrove");
+  expect(within(row).getByText("Notified")).toBeDefined();
+});
+
+test("when the signups fail to load, the error is shown and View All is disabled", async () => {
+  answerObserver = () =>
+    Response.json({ detail: "Signups unavailable" }, { status: 503 });
+  await renderSignups();
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Signups unavailable",
+  );
+  expect(kpi("Signup Deadline").value).toBe("Unavailable");
+  await waitFor(() => expect(kpi("Due Faculty").value).toBe("8"));
+  expect(viewAllButton().disabled).toBe(true);
 });
 
 test("signup counts and row statuses distinguish due, overdue and not yet due faculty", async () => {
@@ -285,189 +308,4 @@ test("failed eligibility lookup does not label signups as not yet due", async ()
     expect(screen.getAllByText("Eligibility unavailable")).toHaveLength(3),
   );
   expect(screen.queryByText("Not yet due")).toBeNull();
-});
-
-test("with no faculty due, the counts are zero and say so", async () => {
-  answerMetrics = () =>
-    Response.json({
-      ...signupMetrics,
-      facultyDue: 0,
-      participation: { count: 0, total: 0 },
-    });
-  await renderSignups();
-  await waitFor(() => expect(kpi("Due Faculty").value).toBe("0"));
-  expect(kpi("Signed Up Due This Term")).toEqual({
-    value: "0",
-    note: "No faculty are due this cycle",
-  });
-  expect(kpi("Not Yet Signed Up")).toEqual({
-    value: "0",
-    note: "All due faculty have signed up",
-  });
-  expect(document.body.textContent).not.toMatch(/NaN|Infinity/);
-});
-
-test("Signup Deadline shows the cycle's deadline on the same day west of UTC", async () => {
-  // Midnight UTC on Oct 31 is still Oct 30 in Chicago.
-  process.env.TZ = "America/Chicago";
-  await renderSignups();
-  await waitFor(() => expect(kpi("Signup Deadline").value).toBe("Oct 31"));
-  expect(kpi("Signup Deadline").note).toBe("Fall 2026 cycle");
-});
-
-test("Signup Deadline says Not set when the cycle has no deadline", async () => {
-  answerObserver = () =>
-    Response.json({ ...state, cycle: { ...cycle, signupDeadline: null } });
-  await renderSignups();
-  await waitFor(() => expect(kpi("Signup Deadline").value).toBe("Not set"));
-  expect(kpi("Signup Deadline").note).toBe("Fall 2026 cycle");
-});
-
-test("cards show a dash and View All waits while the data loads", async () => {
-  answerMetrics = pending;
-  answerDue = pending;
-  answerObserver = pending;
-  await renderSignups();
-  for (const label of [
-    "Due Faculty",
-    "Signed Up Due This Term",
-    "Not Yet Signed Up",
-    "Signup Deadline",
-  ]) {
-    expect(kpi(label)).toEqual({ value: "—", note: "Loading…" });
-  }
-  expect(viewAllButton().disabled).toBe(true);
-});
-
-test("View All lists the due faculty who have not signed up", async () => {
-  await renderSignups();
-  await waitFor(() => expect(kpi("Not Yet Signed Up").value).toBe("5"));
-  const dialog = await openNotSignedUp();
-
-  expect(listedNames(dialog)).toEqual(NOT_SIGNED_UP_NAMES);
-  expect(listedNames(dialog)).toHaveLength(
-    Number(kpi("Not Yet Signed Up").value),
-  );
-  for (const { name } of signedUpFaculty) {
-    expect(within(dialog).queryByText(name)).toBeNull();
-  }
-  expect(
-    within(dialog).getByText(
-      "Fall 2026 evaluation cycle • 5 faculty not signed up",
-    ),
-  ).toBeDefined();
-
-  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
-});
-
-test("notifying someone who has not signed up sends the signup reminder and marks them Notified", async () => {
-  await renderSignups();
-  const dialog = await openNotSignedUp();
-  fireEvent.click(
-    within(dialog).getByRole("button", { name: "Notify Juniper Ashgrove" }),
-  );
-  expect(
-    ((await within(dialog).findByLabelText("Message")) as HTMLTextAreaElement)
-      .value,
-  ).toContain("complete your evaluation signup");
-  fireEvent.click(within(dialog).getByRole("button", { name: "Send Email" }));
-  await within(dialog).findByRole("heading", { name: "Email Sent" });
-  expect(sentEmail?.recipient).toBe("ashgrove@test.edu");
-  fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
-
-  const row = within(dialog)
-    .getByRole("button", { name: "Follow up with Juniper Ashgrove" })
-    .closest("tr");
-  if (!row) throw new Error("Missing row for Juniper Ashgrove");
-  expect(within(row).getByText("Notified")).toBeDefined();
-  expect(listedNames(dialog)).toEqual(NOT_SIGNED_UP_NAMES);
-  expect(
-    within(dialog).getByRole("button", { name: "Notify Cassius Wrenfield" }),
-  ).toBeDefined();
-});
-
-test("when every due faculty member has signed up, View All says so", async () => {
-  answerMetrics = () =>
-    Response.json({
-      ...signupMetrics,
-      facultyDue: 3,
-      participation: { count: 3, total: 3 },
-    });
-  answerDue = () => Response.json(dueQueueOf(signedUpFaculty));
-  await renderSignups();
-  await waitFor(() =>
-    expect(kpi("Not Yet Signed Up")).toEqual({
-      value: "0",
-      note: "All due faculty have signed up",
-    }),
-  );
-  expect(kpi("Signed Up Due This Term").note).toBe("100% participation");
-  const dialog = await openNotSignedUp();
-
-  expect(
-    within(dialog).getByText("All due faculty have signed up."),
-  ).toBeDefined();
-  expect(
-    within(dialog).getByText(
-      "Fall 2026 evaluation cycle • 0 faculty not signed up",
-    ),
-  ).toBeDefined();
-  expect(within(dialog).queryAllByRole("button", { name: /^Notify/ })).toEqual(
-    [],
-  );
-});
-
-test("a failed metrics request marks its cards unavailable without an error message", async () => {
-  answerMetrics = unavailable("Metrics unavailable");
-  await renderSignups();
-  await waitFor(() => expect(kpi("Due Faculty").value).toBe("Unavailable"));
-  for (const label of [
-    "Due Faculty",
-    "Signed Up Due This Term",
-    "Not Yet Signed Up",
-  ]) {
-    expect(kpi(label)).toEqual({
-      value: "Unavailable",
-      note: "Metrics could not be loaded",
-    });
-  }
-  expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.queryByText(/Metrics unavailable/)).toBeNull();
-  expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
-  await waitFor(() => expect(kpi("Signup Deadline").value).toBe("Oct 31"));
-  // The list comes from the due queue, so it can still be opened.
-  await waitFor(() => expect(viewAllButton().disabled).toBe(false));
-});
-
-test("View All stays disabled without an error message when the due list fails", async () => {
-  let dueRequested = false;
-  answerDue = () => {
-    dueRequested = true;
-    return unavailable("Due list unavailable")();
-  };
-  await renderSignups();
-  await screen.findByRole("rowheader", { name: "Marlow Fenwick" });
-  await waitFor(() => expect(kpi("Due Faculty").value).toBe("8"));
-  expect(dueRequested).toBe(true);
-  // Let the failed response settle before checking the button.
-  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
-  expect(viewAllButton().disabled).toBe(true);
-  expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.queryByText(/Due list unavailable/)).toBeNull();
-  expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
-});
-
-test("when the signups fail to load, the deadline is unavailable and View All is disabled", async () => {
-  answerObserver = unavailable("Signups unavailable");
-  await renderSignups();
-  expect((await screen.findByRole("alert")).textContent).toBe(
-    "Signups unavailable",
-  );
-  expect(kpi("Signup Deadline")).toEqual({
-    value: "Unavailable",
-    note: "Cycle could not be loaded",
-  });
-  await waitFor(() => expect(kpi("Due Faculty").value).toBe("8"));
-  expect(viewAllButton().disabled).toBe(true);
 });

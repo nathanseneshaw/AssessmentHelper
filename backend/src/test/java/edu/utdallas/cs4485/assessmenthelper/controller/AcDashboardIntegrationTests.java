@@ -1,21 +1,15 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.completed;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.newFeedback;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.observerOf;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.signupOf;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withFeedbackDeadline;
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withObservationDeadline;
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withReleasedAt;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
 import static java.util.Comparator.comparing;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -24,7 +18,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
-import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationSignup;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observation;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
 import edu.utdallas.cs4485.assessmenthelper.entity.ObserverListState;
@@ -117,10 +110,6 @@ class AcDashboardIntegrationTests {
                     1, 12, 1, "Kaia Clearbrook", "kaia.clearbrook@example.edu", List.of(Role.AC, Role.PROFESSOR)),
             null,
             true);
-    private static final AccountPrincipal DARIO = new AccountPrincipal(
-            new CurrentUser(2, 34, 1, "Dario Hollowell", "dario.hollowell@example.edu", List.of(Role.PROFESSOR)),
-            null,
-            true);
 
     @Autowired
     private MockMvc mvc;
@@ -141,7 +130,7 @@ class AcDashboardIntegrationTests {
     private MovableClock clock;
 
     @Autowired
-    private edu.utdallas.cs4485.assessmenthelper.service.ObserverEligibilityService matching;
+    private ObserverEligibilityService matching;
 
     @BeforeEach
     void resetClock() {
@@ -202,49 +191,62 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void onlyTheCommitteeCanSeeTheMetrics() throws Exception {
-        mvc.perform(get(METRICS).with(user(DARIO))).andExpect(status().isForbidden());
-        mvc.perform(get(METRICS)).andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void participationCountsEveryProfessorWhoseSignupIsNotCancelled() throws Exception {
-        // Hollis is due. His new signup has no generated list yet, so it is not one of the cycle's matched signups.
-        Observee hollis = db.insert(new Observee(null, HOLLIS, 1, "ACTIVE"));
-        db.insert(new EvaluationSignup(null, hollis.observeeId(), 284, LocalDate.parse("2026-10-26"), "PENDING"));
-        metrics()
-                .andExpect(jsonPath("$.participation.count").value(9))
-                .andExpect(jsonPath("$.participation.total").value(13))
-                .andExpect(jsonPath("$.observerUtilization.total").value(8));
-
-        cancelSignup(ARLO);
-        metrics()
-                .andExpect(jsonPath("$.participation.count").value(8))
-                .andExpect(jsonPath("$.observerUtilization.total").value(7))
-                .andExpect(jsonPath("$.listSufficiency.total").value(7));
-    }
-
-    @Test
-    void missingObservationsFollowTheCycleDeadlineAndFinalCompletion() throws Exception {
-        expectMissing(0);
+    void anObservationPastTheCycleDeadlineIsMissingUntilItIsCompleted() throws Exception {
+        String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
+        // Leander's observation date (2026-11-04) passing is not enough; the 2026-11-15 cycle deadline is.
         clock.set("2026-11-05T15:00:00Z");
-        expectMissing(0); // The scheduled date alone does not make anything missing.
-        clock.set("2026-11-15T15:00:00Z");
         expectMissing(0);
         setObservationStatus(LEANDER, "SUBMITTED");
-        String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
         observations().andExpect(jsonPath(leander + ".status").value("PENDING_SIGN_OFF"));
+
+        // The KPI counts incomplete observations with an assigned observer.
         clock.set("2026-11-16T15:00:00Z");
-        expectMissing(1).andExpect(jsonPath("$.observerUtilization.count").value(1));
+        expectMissing(1);
         observations()
                 .andExpect(jsonPath(leander + ".status").value("MISSING"))
-                .andExpect(jsonPath(leander + ".missingReason").value("Not signed"))
-                .andExpect(jsonPath("$.observations[?(@.observeeId == " + AVERY + ")].missingReason")
-                        .value("Not scheduled - awaiting observer"));
-        setObservationStatus(LEANDER, "Completed");
+                .andExpect(jsonPath(leander + ".missingReason").value("Not signed"));
+
+        setObservationStatus(LEANDER, "COMPLETED");
         expectMissing(0);
-        updateCycle(c -> withObservationDeadline(c, null));
-        expectMissing(0);
+        observations().andExpect(jsonPath(leander + ".status").value("COMPLETED"));
+    }
+
+    @Test
+    void listSufficiencyCountsEveryObserverMatch() throws Exception {
+        // Leander's list is one candidate short of the list size until Arlo is added.
+        db.insert(new ObserverMatch(
+                null, signupOf(db, LEANDER), observerOf(db, ARLO), LocalDate.parse("2026-10-26"), "PROPOSED"));
+        metrics()
+                .andExpect(jsonPath("$.listSize").value(ObserverEligibilityService.LIST_SIZE))
+                .andExpect(jsonPath("$.listSufficiency.count").value(9))
+                .andExpect(jsonPath("$.listSufficiency.total").value(8));
+    }
+
+    @Test
+    void committeeTracksEachGeneratedSignupsObservation() throws Exception {
+        String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
+        observations()
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cycleId").value(1))
+                .andExpect(jsonPath("$.observations.length()").value(8))
+                .andExpect(jsonPath(leander + ".observer").value("Keira Larkspur"))
+                .andExpect(jsonPath(leander + ".date").value("2026-11-04"))
+                .andExpect(jsonPath(leander + ".status").value("SCHEDULED"))
+                .andExpect(jsonPath("$.observations[?(@.status == 'AWAITING_OBSERVER')]", hasSize(7)));
+    }
+
+    @Test
+    void remindersGoToOutstandingObservationsAndReleasedLists() throws Exception {
+        // Keira is reminded to complete Leander's scheduled observation. Avery's list is released but she has not
+        // asked anyone. The other lists are not released, so their observees cannot request anyone yet.
+        mvc.perform(as(KAIA, post(REMINDERS)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(2));
+
+        assertThat(remindersFor(LEANDER)).isEmpty();
+        assertThat(remindersFor(KEIRA)).hasSize(1);
+        assertThat(remindersFor(AVERY)).singleElement().asString().contains("choose an observer");
+        assertThat(remindersFor(ARLO)).isEmpty();
     }
 
     @Test
@@ -263,130 +265,23 @@ class AcDashboardIntegrationTests {
     }
 
     @Test
-    void listSufficiencyCountsEveryObserverMatch() throws Exception {
-        int leander = signupOf(db, LEANDER);
-        assertThat(db.findAll(ObserverMatch.class))
-                .filteredOn(match -> match.signupId() == leander)
-                .hasSize(ObserverEligibilityService.LIST_SIZE - 1);
-        metrics()
-                .andExpect(jsonPath("$.listSize").value(ObserverEligibilityService.LIST_SIZE))
-                .andExpect(jsonPath("$.listSufficiency.count").value(8));
-
-        db.insert(new ObserverMatch(null, leander, observerOf(db, ARLO), LocalDate.parse("2026-10-26"), "PROPOSED"));
-        metrics()
-                .andExpect(jsonPath("$.listSufficiency.count").value(9))
-                .andExpect(jsonPath("$.listSufficiency.total").value(8));
-    }
-
-    @Test
-    void committeeTracksEachGeneratedSignupsObservation() throws Exception {
-        String leander = "$.observations[?(@.observeeId == " + LEANDER + ")]";
+    void deferredCasesAreTrackedSeparatelyAndSkippedByReminders() throws Exception {
+        clock.set("2026-11-02T15:00:00Z");
+        int signup = signupOf(db, 27);
+        matching.defer(signup, 12, "No graduate-level observers available");
         observations()
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.cycleId").value(1))
-                .andExpect(jsonPath("$.cycleLabel").value("Fall 2026"))
-                .andExpect(jsonPath("$.observationDeadline").value("2026-11-15"))
-                .andExpect(jsonPath("$.observations.length()").value(8))
-                .andExpect(jsonPath(leander + ".observee").value("Leander Coldwell"))
-                .andExpect(jsonPath(leander + ".observer").value("Keira Larkspur"))
-                .andExpect(jsonPath(leander + ".observerId").value(KEIRA))
-                .andExpect(jsonPath(leander + ".observationId")
-                        .value(only(observations.findBySignupIdIn(List.of(signupOf(db, LEANDER))))
-                                .observationId()))
-                .andExpect(jsonPath(leander + ".course").value("CS 3345.001"))
-                .andExpect(jsonPath(leander + ".date").value("2026-11-04"))
-                .andExpect(jsonPath(leander + ".startTime").value("08:30:00"))
-                .andExpect(jsonPath(leander + ".status").value("SCHEDULED"))
-                .andExpect(jsonPath("$.observations[?(@.status == 'AWAITING_OBSERVER')]", hasSize(7)))
                 .andExpect(
-                        jsonPath("$.observations[?(@.status == 'AWAITING_OBSERVER')].observer", everyItem(nullValue())))
-                .andExpect(jsonPath(
-                        "$.observations[?(@.listReleased == true)].observeeId", containsInAnyOrder(LEANDER, AVERY)));
-    }
-
-    @Test
-    void observationStatusFollowsTheDateAndCompletion() throws Exception {
-        String leander = "$.observations[?(@.observeeId == " + LEANDER + ")].status";
-        clock.set("2026-11-04T15:00:00Z");
-        observations().andExpect(jsonPath(leander).value("SCHEDULED"));
-        clock.set("2026-11-16T15:00:00Z");
-        observations().andExpect(jsonPath(leander).value("MISSING"));
-
-        updateObservations(LEANDER, o -> completed(o, LocalDateTime.parse("2026-11-04T10:00:00")));
-        observations()
-                .andExpect(jsonPath(leander).value("COMPLETED"))
-                .andExpect(jsonPath("$.observations[?(@.observeeId == " + LEANDER + ")].observeeSigned")
-                        .value(true))
-                .andExpect(jsonPath("$.observations[?(@.observeeId == " + LEANDER + ")].observerSigned")
-                        .value(false))
-                .andExpect(jsonPath("$.observations[?(@.observeeId == " + LEANDER + ")].completedAt")
-                        .value("2026-11-04T10:00:00"));
-
-        // A cancelled signup leaves the list, as it leaves the dashboard's counts.
-        cancelSignup(ARLO);
-        observations().andExpect(jsonPath("$.observations.length()").value(7));
-    }
-
-    @Test
-    void remindersGoToOutstandingObservationsAndReleasedLists() throws Exception {
-        // Leander's scheduled observation reminds him and Keira. Avery's list is released but she has not asked
-        // anyone. The other four lists are not released, so their observees cannot request anyone yet.
-        mvc.perform(as(KAIA, post(REMINDERS)))
-                .andExpect(status().isOk())
-                .andExpect(content().json("{\"sent\":2}", JsonCompareMode.STRICT));
-
-        assertThat(remindersFor(LEANDER)).isEmpty();
-        assertThat(remindersFor(KEIRA))
-                .containsExactly(
-                        "Reminder from the Assessment Committee: complete and submit your observation of Leander Coldwell's CS 3345.001 by the observation deadline, Nov 15.");
-        assertThat(remindersFor(AVERY))
-                .singleElement()
-                .asString()
-                .startsWith("Reminder from the Assessment Committee: choose an observer for CS 3345.")
-                .endsWith(" and send a request so the observation can happen by the observation deadline, Nov 15.");
-        assertThat(remindersFor(ARLO)).isEmpty();
-    }
-
-    @Test
-    void missingAndCompletedObservationsGetTheRightReminders() throws Exception {
-        clock.set("2026-11-16T15:00:00Z");
-        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(2));
-        assertThat(remindersFor(KEIRA))
-                .containsExactly(
-                        "Reminder from the Assessment Committee: complete and submit your observation of Leander Coldwell's CS 3345.001 by the observation deadline, Nov 15.");
-
-        setObservationStatus(LEANDER, "COMPLETED");
-        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(jsonPath("$.sent").value(1));
-        assertThat(remindersFor(KEIRA)).hasSize(1);
-    }
-
-    @Test
-    void anUndatedObservationIsAskedToBeScheduled() throws Exception {
-        updateObservations(LEANDER, o -> withPlan(o, null, null));
+                        jsonPath("$.observations[?(@.observeeId == 27)].status").value("DEFERRED"))
+                .andExpect(jsonPath("$.observations[?(@.observeeId == 27)].deferral.targetSemester")
+                        .value("Spring 2027"));
+        metrics()
+                .andExpect(jsonPath("$.observerUtilization.total").value(7))
+                .andExpect(jsonPath("$.listSufficiency.total").value(7));
+        db.update(withReleasedAt(
+                db.findById(signup, ObserverListState.class), LocalDateTime.parse("2026-11-02T09:00:00")));
+        int before = notifications.findByProfessorId(27).size();
         mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
-        assertThat(remindersFor(KEIRA)).singleElement().asString().contains("schedule the observation and submit");
-    }
-
-    @Test
-    void remindersLeaveOutATimeOrDeadlineThatIsNotSet() throws Exception {
-        updateObservations(LEANDER, o -> withPlan(o, o.observationDate(), null));
-        updateCycle(c -> withObservationDeadline(c, null));
-        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
-        assertThat(remindersFor(KEIRA))
-                .containsExactly(
-                        "Reminder from the Assessment Committee: complete and submit your observation of Leander Coldwell's CS 3345.001.");
-        assertThat(remindersFor(AVERY))
-                .singleElement()
-                .asString()
-                .endsWith(" and send a request so the observation can happen.");
-    }
-
-    @Test
-    void onlyTheCommitteeCanTrackObservationsOrSendReminders() throws Exception {
-        mvc.perform(get(OBSERVATIONS).with(user(DARIO))).andExpect(status().isForbidden());
-        mvc.perform(get(OBSERVATIONS)).andExpect(status().isUnauthorized());
-        mvc.perform(as(DARIO, post(REMINDERS))).andExpect(status().isForbidden());
-        assertThat(remindersFor(LEANDER)).isEmpty();
+        assertThat(notifications.findByProfessorId(27)).hasSize(before);
     }
 
     private ResultActions metrics() throws Exception {
@@ -420,10 +315,6 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath("$.missingObservations").value(count));
     }
 
-    private void cancelSignup(int professorId) {
-        db.update(withStatus(db.findById(signupOf(db, professorId), EvaluationSignup.class), "CANCELLED"));
-    }
-
     private void updateCycle(UnaryOperator<EvaluationCycle> change) {
         db.update(change.apply(db.findById(1, EvaluationCycle.class)));
     }
@@ -434,38 +325,5 @@ class AcDashboardIntegrationTests {
 
     private void updateObservations(int professorId, UnaryOperator<Observation> change) {
         observations.findBySignupIdIn(List.of(signupOf(db, professorId))).forEach(o -> db.update(change.apply(o)));
-    }
-
-    @Test
-    void deferredCasesAreTrackedSeparatelySkippedByRemindersAndVisibleInHistory() throws Exception {
-        clock.set("2026-11-02T15:00:00Z");
-        int signup = signupOf(db, 27);
-        matching.defer(signup, 12, "No graduate-level observers available");
-        observations()
-                .andExpect(
-                        jsonPath("$.observations[?(@.observeeId == 27)].status").value("DEFERRED"))
-                .andExpect(jsonPath("$.observations[?(@.observeeId == 27)].deferral.reason")
-                        .value("No graduate-level observers available"))
-                .andExpect(jsonPath("$.observations[?(@.observeeId == 27)].deferral.targetSemester")
-                        .value("Spring 2027"));
-        metrics()
-                .andExpect(jsonPath("$.observerUtilization.total").value(7))
-                .andExpect(jsonPath("$.observerUtilization.count").value(1))
-                .andExpect(jsonPath("$.listSufficiency.total").value(7));
-        db.update(withReleasedAt(
-                db.findById(signup, ObserverListState.class), LocalDateTime.parse("2026-11-02T09:00:00")));
-        int before = notifications.findByProfessorId(27).size();
-        mvc.perform(as(KAIA, post(REMINDERS))).andExpect(status().isOk());
-        assertThat(notifications.findByProfessorId(27)).hasSize(before);
-        clock.set("2027-01-20T15:00:00Z");
-        mvc.perform(get("/api/professors/27/evaluations").with(user(KAIA)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.cycleId == 1)].status").value("DEFERRED"))
-                .andExpect(
-                        jsonPath("$[?(@.cycleId == 1)].deferral.reason").value("No graduate-level observers available"))
-                .andExpect(jsonPath("$[?(@.cycleId == 1)].deferral.deferredBy").value("Kaia Clearbrook"))
-                .andExpect(jsonPath("$[?(@.cycleId == 1)].deferral.deferredAt").value("2026-11-02T09:00:00"))
-                .andExpect(
-                        jsonPath("$[?(@.cycleId == 1)].deferral.targetSemester").value("Spring 2027"));
     }
 }

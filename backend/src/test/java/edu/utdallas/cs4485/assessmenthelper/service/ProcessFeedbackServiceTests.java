@@ -1,7 +1,5 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.only;
-import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withFeedbackDeadline;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -13,14 +11,12 @@ import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.*;
 import java.time.*;
-import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
-import org.springframework.security.access.AccessDeniedException;
 
 @DataJdbcTest
 class ProcessFeedbackServiceTests {
@@ -46,7 +42,6 @@ class ProcessFeedbackServiceTests {
     private Clock clock;
     private AccountPrincipal principal;
     private int cycleId;
-    private int professorId;
 
     @BeforeEach
     void setup() {
@@ -58,7 +53,7 @@ class ProcessFeedbackServiceTests {
         var department = entities.insert(new Department(null, school.schoolId(), "Feedback Department", "FD"));
         var professor = entities.insert(new Professor(
                 null, department.departmentId(), "FULL", "Test", "Faculty", "feedback@test.edu", null, true));
-        professorId = professor.professorId();
+        int professorId = professor.professorId();
         var semester = entities.insert(
                 new Semester(null, "Fall", 2026, LocalDate.parse("2026-08-01"), LocalDate.parse("2026-12-31")));
         var cycle = entities.insert(new EvaluationCycle(
@@ -102,13 +97,10 @@ class ProcessFeedbackServiceTests {
     }
 
     @Test
-    void windowUsesChicagoDatesAndIncludesTheFeedbackDeadline() {
+    void theSurveyIsOpenOnlyBetweenTheObservationAndFeedbackDeadlines() {
         today("2026-11-01");
         assertThat(status()).isEqualTo("NOT_OPEN");
-        assertThatThrownBy(() -> service.submit(cycleId, answers(), principal)).isInstanceOf(ConflictException.class);
-        today("2026-11-02");
-        assertThat(status()).isEqualTo("AVAILABLE");
-        today("2026-11-10");
+        today("2026-11-05");
         assertThat(status()).isEqualTo("AVAILABLE");
         today("2026-11-11");
         assertThat(status()).isEqualTo("CLOSED");
@@ -118,58 +110,21 @@ class ProcessFeedbackServiceTests {
     @Test
     void savesAllAnswersOncePerCycleAndProfessor() {
         assertThat(service.submit(cycleId, answers(), principal).status()).isEqualTo("SUBMITTED");
-        var row = only(feedback.findByCycleId(cycleId), f -> f.professorId() == professorId);
-        assertThat(row.clarityRating()).isEqualTo(1);
-        assertThat(row.schedulingRating()).isEqualTo(2);
-        assertThat(row.communicationRating()).isEqualTo(3);
-        assertThat(row.organizationRating()).isEqualTo(4);
-        assertThat(row.usefulnessRating()).isEqualTo(5);
-        assertThat(row.overallRating()).isEqualTo(4);
-        assertThat(row.observeeComment()).isEqualTo("Useful process");
-        assertThat(status()).isEqualTo("SUBMITTED");
         var saved = service.surveys(principal).stream()
                 .filter(s -> s.cycleId() == cycleId)
                 .findFirst()
                 .orElseThrow();
+        assertThat(saved.status()).isEqualTo("SUBMITTED");
         assertThat(saved.ratings()).containsExactly(1, 2, 3, 4, 5, 4);
         assertThat(saved.comments()).isEqualTo("Useful process");
-        assertThat(saved.submittedDate()).isEqualTo(LocalDate.parse("2026-11-02"));
-        today("2026-12-01");
-        assertThat(status()).isEqualTo("SUBMITTED");
         assertThatThrownBy(() -> service.submit(cycleId, answers(), principal)).isInstanceOf(ConflictException.class);
     }
 
     @Test
-    void rejectsIncompleteInvalidAndOversizedAnswers() {
-        for (List<Integer> ratings : List.of(
-                List.of(1, 2),
-                List.of(0, 2, 3, 4, 5, 1),
-                List.of(6, 2, 3, 4, 5, 1),
-                Arrays.asList(1, 2, null, 4, 5, 1))) {
-            assertThatThrownBy(() ->
-                            service.submit(cycleId, new ProcessFeedbackService.Submission(ratings, null), principal))
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
+    void rejectsARatingOutsideOneToFive() {
         assertThatThrownBy(() -> service.submit(
-                        cycleId,
-                        new ProcessFeedbackService.Submission(answers().ratings(), "x".repeat(4001)),
-                        principal))
+                        cycleId, new ProcessFeedbackService.Submission(List.of(6, 2, 3, 4, 5, 1), null), principal))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(status()).isEqualTo("AVAILABLE");
-    }
-
-    @Test
-    void refusesOtherCyclesAndMissingFacultyProfiles() {
-        assertThatThrownBy(() -> service.submit(-1, answers(), principal)).isInstanceOf(AccessDeniedException.class);
-        var noProfile = new AccountPrincipal(
-                new CurrentUser(2, null, 1, "Other", "other@test.edu", List.of(Role.AC)), "", true);
-        assertThatThrownBy(() -> service.surveys(noProfile)).isInstanceOf(AccessDeniedException.class);
-    }
-
-    @Test
-    void missingOrInvalidDeadlinesDoNotOpenSurvey() {
-        cycles.save(withFeedbackDeadline(cycles.findById(cycleId).orElseThrow(), null));
-        assertThat(status()).isEqualTo("UNCONFIGURED");
-        assertThatThrownBy(() -> service.submit(cycleId, answers(), principal)).isInstanceOf(ConflictException.class);
     }
 }

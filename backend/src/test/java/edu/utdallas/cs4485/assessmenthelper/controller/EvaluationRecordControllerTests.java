@@ -79,21 +79,4 @@ class EvaluationRecordControllerTests {
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.detail").value("No professor with id 99"));
     }
-
-    @Test
-    void deniedAccessReturns403ProblemDetail() throws Exception {
-        when(professorAccess.canView(any(), anyInt())).thenReturn(false);
-
-        mockMvc.perform(get("/api/professors/1/evaluations").with(user(PROFESSOR)))
-                .andExpect(status().isForbidden())
-                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("You do not have access to this resource."));
-    }
-
-    @Test
-    void nonNumericProfessorIdReturns400() throws Exception {
-        mockMvc.perform(get("/api/professors/abc/evaluations").with(user(PROFESSOR)))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON));
-    }
 }

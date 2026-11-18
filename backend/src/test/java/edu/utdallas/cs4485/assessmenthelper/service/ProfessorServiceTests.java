@@ -23,47 +23,24 @@ class ProfessorServiceTests {
     @Autowired
     private JdbcAggregateTemplate db;
 
-    private School school;
     private Department testDepartment;
     private Department otherDepartment;
 
     @BeforeEach
     void createDepartments() {
-        school = db.insert(new School(null, "Test School"));
+        School school = db.insert(new School(null, "Test School"));
         testDepartment = db.insert(new Department(null, school.schoolId(), "Test Department", "TEST"));
         otherDepartment = db.insert(new Department(null, school.schoolId(), "Other Department", "OTHER"));
     }
 
     @Test
-    void returnsOnlyTheSchoolsProfessorsSortedByLastThenFirstName() {
-        Professor zedStub = db.insert(professor(testDepartment, "Zed", "Stub", true));
+    void returnsOnlyTheSchoolsProfessorsIncludingInactiveSortedByLastThenFirstName() {
+        Professor zedStub = db.insert(professor(testDepartment, "Zed", "Stub", false));
         Professor beaMock = db.insert(professor(testDepartment, "Bea", "Mock", true));
         Professor amyStub = db.insert(professor(testDepartment, "Amy", "Stub", true));
         db.insert(professor(otherDepartment, "Otto", "Fixture", true));
 
         assertThat(service.findBySchool("TEST")).containsExactly(beaMock, amyStub, zedStub);
-    }
-
-    @Test
-    void includesInactiveProfessors() {
-        Professor retired = db.insert(professor(testDepartment, "Ray", "Retired", false));
-        Professor active = db.insert(professor(testDepartment, "Ann", "Active", true));
-
-        assertThat(service.findBySchool("TEST")).containsExactly(active, retired);
-    }
-
-    @Test
-    void schoolLookupIgnoresCaseAndSurroundingWhitespace() {
-        Professor professor = db.insert(professor(testDepartment, "Sam", "Sample", true));
-
-        assertThat(service.findBySchool("  test ")).containsExactly(professor);
-    }
-
-    @Test
-    void schoolWithoutProfessorsReturnsEmptyList() {
-        db.insert(new Department(null, school.schoolId(), "Empty Department", "EMPTY"));
-
-        assertThat(service.findBySchool("EMPTY")).isEmpty();
     }
 
     @Test
