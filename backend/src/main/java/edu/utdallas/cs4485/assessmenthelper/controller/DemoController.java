@@ -1,5 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import edu.utdallas.cs4485.assessmenthelper.entity.Department;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.service.DemoService;
@@ -36,6 +37,21 @@ public class DemoController {
     @GetMapping("/accounts")
     public List<DemoService.Account> accounts() {
         return service.accounts();
+    }
+
+    @GetMapping("/departments")
+    public List<Department> departments() {
+        return service.departments();
+    }
+
+    @PostMapping("/professors")
+    public DemoService.Account addProfessor(@RequestBody DemoService.NewProfessor body) {
+        return service.addProfessor(body);
+    }
+
+    @PostMapping("/sections")
+    public DemoService.AddedSection addSection(@RequestBody DemoService.NewSection body) {
+        return service.addSection(body);
     }
 
     @PostMapping("/switch")
