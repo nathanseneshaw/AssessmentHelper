@@ -1,7 +1,7 @@
 import { mock, spyOn } from "bun:test";
 import type { Role } from "../navConfig";
 
-export const ACCOUNTS = {
+const ACCOUNTS = {
   ac: {
     password: "Committee123!",
     user: {

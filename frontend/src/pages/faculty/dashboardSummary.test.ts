@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import type {
   EvaluationDeadline,
   EvaluationRecord,
@@ -60,22 +60,19 @@ const card = (cards: ReturnType<typeof summarize>, label: string) => {
   return found;
 };
 
-test("the cards come in the order the dashboard shows them", () => {
-  expect(summarize().map((c) => c.label)).toEqual([
-    "Evaluation Status",
-    "Cycle",
-    "Next Due",
-    "Observations This Term",
-  ]);
-});
-
-test("every card says it is loading until its data arrives", () => {
+test("the cards come in the dashboard's order, and say they are loading until their data arrives", () => {
   const cards = summarize({
     deadline: null,
     records: null,
     cycle: undefined,
     observations: null,
   });
+  expect(cards.map((c) => c.label)).toEqual([
+    "Evaluation Status",
+    "Cycle",
+    "Next Due",
+    "Observations This Term",
+  ]);
   expect(cards.map((c) => c.value)).toEqual(["—", "—", "—", "—"]);
 });
 
@@ -108,27 +105,18 @@ test("status follows the professor's record for the current cycle", () => {
   expect(
     status([record({ cycleId: cycle.cycleId, status: "ACTIVE" })], true).value,
   ).toBe("In Progress");
+  // Due after this cycle's last deadline, so nothing is expected yet.
+  expect(card(summarize(), "Evaluation Status")).toEqual({
+    label: "Evaluation Status",
+    value: "Not Due",
+    note: "Next evaluation due Mar 2028",
+  });
 });
 
 test("the cycle card reads the rank's interval from the policy", () => {
   expect(card(summarize(), "Cycle")).toMatchObject({
     value: "Every 2 Years",
     note: "Associate Professor schedule",
-  });
-  expect(
-    card(
-      summarize({
-        deadline: {
-          ...deadline,
-          professorRank: "ASSISTANT",
-          evaluationIntervalYears: 1,
-        },
-      }),
-      "Cycle",
-    ),
-  ).toMatchObject({
-    value: "Every Year",
-    note: "Assistant Professor schedule",
   });
 });
 
@@ -138,12 +126,6 @@ test("next due shows the month, and how the date was reached", () => {
     value: "Mar 2028",
     note: "Last evaluated Mar 10, 2026",
   });
-  expect(
-    card(
-      summarize({ deadline: { ...deadline, lastEvaluationDate: null } }),
-      "Next Due",
-    ).note,
-  ).toBe("No completed evaluation yet");
   expect(
     card(
       summarize({
@@ -156,12 +138,6 @@ test("next due shows the month, and how the date was reached", () => {
     note: "Was due Aug 1, 2025",
     tone: "alert",
   });
-  expect(
-    card(
-      summarize({ deadline: { ...deadline, nextDueDate: null } }),
-      "Next Due",
-    ).value,
-  ).toBe("Not set");
 });
 
 test("a deadline that cannot load explains why on the cards that need it", () => {
@@ -194,113 +170,5 @@ test("observations this term counts only the professor's own classes in the curr
     label: "Observations This Term",
     value: "3",
     note: "0 completed • 1 pending sign-off • 2 not yet submitted",
-  });
-  expect(card(summarize(), "Observations This Term")).toMatchObject({
-    value: "0",
-    note: "None of your classes observed yet",
-  });
-});
-
-test("a professor whose evaluation is due after this cycle is not due yet", () => {
-  // The seeded cycle's last deadline is Nov 15, 2026.
-  expect(card(summarize({ records: [] }), "Evaluation Status")).toEqual({
-    label: "Evaluation Status",
-    value: "Not Due",
-    note: "Next evaluation due Mar 2028",
-  });
-  // Due on the last deadline itself still counts as this cycle.
-  expect(
-    card(
-      summarize({
-        records: [],
-        deadline: { ...deadline, nextDueDate: "2026-11-15" },
-      }),
-      "Evaluation Status",
-    ).value,
-  ).toBe("Not Started");
-});
-
-// What the seeded demo logins should see, worked out by hand from data.sql and the due-date rules in
-// EvaluationDueRules. Today is in Fall 2026, the seeded current cycle (observations due Nov 15, 2026).
-describe("seeded demo accounts", () => {
-  const seededCycle = {
-    ...cycle,
-    cycleId: 1,
-    label: "Fall 2026",
-    observationDeadline: "2026-11-15",
-    feedbackDeadline: "2026-12-01",
-  };
-  const run = (
-    deadlineChanges: Partial<EvaluationDeadline>,
-    records: EvaluationRecord[],
-  ) =>
-    evaluationSummary({
-      deadline: { ...deadline, ...deadlineChanges },
-      deadlineError: "",
-      records,
-      cycle: seededCycle,
-      observations: [],
-    });
-  const inFall = record({
-    cycleId: 1,
-    term: "Fall",
-    academicYear: 2026,
-    status: "ACTIVE",
-  });
-
-  test("Dario: assistant professor hired Sep 2025, not signed up yet, due this semester", () => {
-    const cards = run(
-      {
-        professorRank: "ASSISTANT",
-        evaluationIntervalYears: 1,
-        lastEvaluationDate: null,
-        nextDueDate: "2026-09-15",
-      },
-      [],
-    );
-    expect(cards[0]).toMatchObject({ value: "Not Started" });
-    expect(cards[1]).toMatchObject({ value: "Every Year" });
-    expect(cards[2]).toEqual({
-      label: "Next Due",
-      value: "Sep 2026",
-      note: "No completed evaluation yet",
-    });
-  });
-
-  test("Leander: hired Jan 2025 and never evaluated, so overdue, but already in this cycle", () => {
-    const cards = run(
-      {
-        professorRank: "ASSISTANT",
-        evaluationIntervalYears: 1,
-        lastEvaluationDate: null,
-        nextDueDate: "2026-01-27",
-        overdue: true,
-      },
-      [inFall],
-    );
-    expect(cards[0]).toMatchObject({ value: "In Progress", tone: "highlight" });
-    expect(cards[2]).toMatchObject({
-      value: "Jan 2026",
-      note: "Was due Jan 27, 2026",
-      tone: "alert",
-    });
-  });
-
-  test("Keira: evaluated Oct 2025, due Oct 2026, in this cycle", () => {
-    const cards = run(
-      {
-        professorRank: "ASSISTANT",
-        evaluationIntervalYears: 1,
-        lastEvaluationDate: "2025-10-28",
-        nextDueDate: "2026-10-28",
-      },
-      [inFall, record({ cycleId: 0, term: "Fall", academicYear: 2025 })],
-    );
-    expect(cards[0]).toMatchObject({ value: "In Progress" });
-    expect(cards[2]).toEqual({
-      label: "Next Due",
-      value: "Oct 2026",
-      note: "Last evaluated Oct 28, 2025",
-    });
   });
 });

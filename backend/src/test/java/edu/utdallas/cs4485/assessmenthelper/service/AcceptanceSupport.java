@@ -33,7 +33,7 @@ import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
  */
 abstract class AcceptanceSupport {
     static final String DEFAULT_NOW = "2026-11-04T16:15:42Z";
-    static final int KAIA = 12, LEANDER = 13, ARLO = 26, DARIO = 34, KEIRA = 41;
+    static final int LEANDER = 13, ARLO = 26, DARIO = 34, KEIRA = 41;
     static final String KAIA_EMAIL = "kaia.clearbrook@example.edu";
     static final String KEIRA_EMAIL = "keira.larkspur@example.edu";
     static final String LEANDER_EMAIL = "leander.coldwell@example.edu";

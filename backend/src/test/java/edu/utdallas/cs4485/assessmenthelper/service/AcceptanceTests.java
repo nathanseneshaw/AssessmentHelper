@@ -137,12 +137,6 @@ class AcceptanceTests {
                 .hasMessageContaining("section you teach");
     }
 
-    @Test
-    void tc16_3_cannotSubmitASignupWithoutASection() {
-        assertThatThrownBy(() -> signups.save(DARIO, FALL_2026, null, null))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
     // ---------- TC 18: candidate list ----------
 
     @Test

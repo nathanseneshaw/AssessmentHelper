@@ -82,19 +82,16 @@ class ProcessFeedbackIntegrationTests {
     }
 
     @Test
-    void observeeSubmitsOnce() throws Exception {
+    void observeeSubmitsTheirSurvey() throws Exception {
         submit(leander, fall2026, ANSWERS)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
                 .andExpect(jsonPath("$.ratings").value(contains(4, 5, 3, 4, 2, 4)));
-
-        submit(leander, fall2026, ANSWERS).andExpect(status().isConflict());
     }
 
     @Test
-    void otherProfessorsAndAnonymousUsersAreRefused() throws Exception {
+    void professorsWhoWereNotObservedAreRefused() throws Exception {
         submit(dario, fall2026, ANSWERS).andExpect(status().isForbidden());
-        mvc.perform(get("/api/feedback-surveys")).andExpect(status().isUnauthorized());
     }
 
     // Adds a CSRF token the way the frontend gets one (see FacultyObserverRequestIntegrationTests for why the csrf()

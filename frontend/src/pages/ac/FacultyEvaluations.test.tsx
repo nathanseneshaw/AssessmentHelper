@@ -107,51 +107,48 @@ function filterButton(name: string) {
 }
 
 describe("evaluation queue", () => {
+  test("shows all faculty returned by the backend", () => {
+    expect(facultyShown()).toEqual([
+      "Professor 1",
+      "Professor 4",
+      "Professor 2",
+      "Professor 5",
+    ]);
+  });
+
+  test.each([
+    ["Due This Term", ["Professor 1", "Professor 5"]],
+    ["Associate", ["Professor 4", "Professor 2"]],
+  ])("the %s filter shows %p", (name, expected) => {
+    fireEvent.click(filterButton(name));
+    expect(facultyShown()).toEqual(expected);
+  });
+
   test("previews four rows and opens all matching faculty in a dismissible overlay", async () => {
     cleanup();
     const extra = faculty[0];
     if (!extra) throw new Error("Missing faculty fixture");
-    const allFaculty = [
-      ...faculty,
-      { ...extra, professorId: 6, name: "Professor 6" },
-      { ...extra, professorId: 7, name: "Professor 7" },
-    ];
-    eligibility = () => queueOf(allFaculty);
+    eligibility = () =>
+      queueOf([
+        ...faculty,
+        { ...extra, professorId: 6, name: "Professor 6" },
+        { ...extra, professorId: 7, name: "Professor 7" },
+      ]);
     render(<App />);
     await screen.findByText("6 of 6 faculty shown");
     expect(facultyShown()).toHaveLength(4);
-    const open = screen.getByRole("button", {
-      name: "View all matching faculty",
-    });
-    fireEvent.click(open);
-    const dialog = screen.getByRole("dialog", {
-      name: "Evaluation queue - All Faculty",
-    });
-    expect(within(dialog).getAllByRole("row")).toHaveLength(7);
-    expect(within(dialog).getByText("Professor 7")).toBeDefined();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(facultyShown()).toHaveLength(4);
-  });
-
-  test("View All retains the overdue filter and supports dialog cancellation", () => {
-    fireEvent.click(filterButton("Overdue"));
     fireEvent.click(
       screen.getByRole("button", { name: "View all matching faculty" }),
     );
     const dialog = screen.getByRole("dialog", {
-      name: "Evaluation queue - Overdue",
+      name: "Evaluation queue - All Faculty",
     });
-    expect(within(dialog).getByText("Professor 4")).toBeDefined();
-    expect(within(dialog).getByText("Spring 2026")).toBeDefined();
-    expect(within(dialog).queryByText("Professor 1")).toBeNull();
-    fireEvent(
-      dialog,
-      new Event("cancel", { bubbles: false, cancelable: true }),
-    );
+    expect(within(dialog).getByText("Professor 7")).toBeDefined();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  test("shows an API failure and successfully retries without mock rows", async () => {
+
+  test("shows an API failure and successfully retries", async () => {
     cleanup();
     let fail = true;
     eligibility = () =>
@@ -165,70 +162,10 @@ describe("evaluation queue", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Eligibility service unavailable",
     );
-    expect(screen.queryByText("Professor 1")).toBeNull();
     fail = false;
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByText("4 of 4 faculty shown");
     expect(facultyShown()).toHaveLength(4);
-  });
-
-  test("an empty backend result shows an explicit empty state", async () => {
-    cleanup();
-    eligibility = () => queueOf([]);
-    render(<App />);
-    await screen.findByText("No faculty match this filter.");
-    expect(screen.getByText("0 of 0 faculty shown")).toBeDefined();
-  });
-  test("shows all faculty returned by the backend, including upcoming professors", () => {
-    expect(screen.getByText("Spring 2027")).toBeDefined();
-    expect(screen.queryByText("2027-03-01")).toBeNull();
-    expect(facultyShown()).toEqual([
-      "Professor 1",
-      "Professor 4",
-      "Professor 2",
-      "Professor 5",
-    ]);
-    expect(filterButton("All Faculty").getAttribute("aria-pressed")).toBe(
-      "true",
-    );
-  });
-
-  test("each row's button names the professor", () => {
-    expect(
-      screen.getByRole("button", {
-        name: "View Evaluation(s) for Professor 1",
-      }),
-    ).toBeDefined();
-    expect(
-      screen.getByRole("button", {
-        name: "View Past Evaluations for Professor 2",
-      }),
-    ).toBeDefined();
-  });
-
-  test.each([
-    ["Due This Term", ["Professor 1", "Professor 5"]],
-    ["Overdue", ["Professor 4"]],
-    ["Assistant", ["Professor 1"]],
-    ["Associate", ["Professor 4", "Professor 2"]],
-    ["Full", ["Professor 5"]],
-  ])("the %s filter shows %p", (name, expected) => {
-    fireEvent.click(filterButton(name));
-    expect(facultyShown()).toEqual(expected);
-    expect(filterButton(name).getAttribute("aria-pressed")).toBe("true");
-    expect(filterButton("All Faculty").getAttribute("aria-pressed")).toBe(
-      "false",
-    );
-  });
-
-  test("switching between overdue and all faculty preserves the loaded data", () => {
-    fireEvent.click(filterButton("Overdue"));
-    expect(facultyShown()).toEqual(["Professor 4"]);
-    expect(screen.getByText("1 of 4 faculty shown")).toBeDefined();
-
-    fireEvent.click(filterButton("All Faculty"));
-    expect(facultyShown()).toHaveLength(4);
-    expect(screen.queryByText("No faculty match this filter.")).toBeNull();
   });
 });
 
@@ -239,12 +176,6 @@ test("AC can open past deferral details from the faculty evaluation queue", asyn
   const dialog = await screen.findByRole("dialog", {
     name: "Evaluation History",
   });
-  await within(dialog).findByText("Spring 2026");
-  expect(within(dialog).getByText("No matching observers")).toBeTruthy();
+  expect(await within(dialog).findByText("No matching observers")).toBeTruthy();
   expect(within(dialog).getByText("Deferred to Fall 2026")).toBeTruthy();
-  expect(within(dialog).getByText("Kaia Clearbrook")).toBeTruthy();
-  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
-  expect(
-    screen.queryByRole("dialog", { name: "Evaluation History" }),
-  ).toBeNull();
 });

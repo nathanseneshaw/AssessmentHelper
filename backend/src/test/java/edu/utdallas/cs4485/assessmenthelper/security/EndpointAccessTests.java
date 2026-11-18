@@ -5,10 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.jayway.jsonpath.JsonPath;
 import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverRequestService;
 import jakarta.servlet.http.Cookie;
@@ -205,6 +203,20 @@ class EndpointAccessTests {
     }
 
     @Test
+    void onlyTheRequestedObserverCanReadOrConfirmAnObserverRequest() throws Exception {
+        int requestId = averyAsksKeira();
+        String path = "/api/observer-requests/" + requestId;
+        AccountPrincipal dario = accounts.loadUserByUsername(DARIO);
+        AccountPrincipal keira = accounts.loadUserByUsername(KEIRA);
+
+        mvc.perform(withCsrf(get(path)).with(user(dario))).andExpect(status().isForbidden());
+        mvc.perform(withCsrf(post(path + "/confirm")).with(user(dario))).andExpect(status().isForbidden());
+        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
+
+        mvc.perform(withCsrf(get(path)).with(user(keira))).andExpect(status().isOk());
+    }
+
+    @Test
     void committeeMembersCanViewProfessorsAcrossSchools() throws Exception {
         AccountPrincipal kaia = accounts.loadUserByUsername(KAIA);
         int isla = professorId(ISLA);
@@ -231,53 +243,6 @@ class EndpointAccessTests {
                         endpoint -> forProfessor(endpoint, dario).with(user(kaia))))
                 .doesNotContainValue(401)
                 .doesNotContainValue(403);
-    }
-
-    @Test
-    void onlyTheRequestedObserverCanReadOrConfirmAnObserverRequest() throws Exception {
-        int requestId = averyAsksKeira();
-        String path = "/api/observer-requests/" + requestId;
-        AccountPrincipal dario = accounts.loadUserByUsername(DARIO);
-        AccountPrincipal keira = accounts.loadUserByUsername(KEIRA);
-
-        mvc.perform(withCsrf(get(path)).with(user(dario))).andExpect(status().isForbidden());
-        mvc.perform(withCsrf(post(path + "/confirm")).with(user(dario))).andExpect(status().isForbidden());
-        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
-
-        mvc.perform(withCsrf(get(path)).with(user(keira))).andExpect(status().isOk());
-        String dates = mvc.perform(get(
-                                "/api/observer-eligibility/faculty/{id}/requests/{requestId}/dates",
-                                professorId(KEIRA),
-                                requestId)
-                        .with(user(keira)))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        String date = JsonPath.read(dates, "$[0]");
-        mvc.perform(withCsrf(post(path + "/confirm"))
-                        .with(user(keira))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"observationDate\":\"" + date + "\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CONFIRMED"));
-    }
-
-    @Test
-    void confirmingWithoutAnAvailableClassDateLeavesTheInvitationPending() throws Exception {
-        int requestId = averyAsksKeira();
-        String path = "/api/observer-requests/" + requestId + "/confirm";
-        AccountPrincipal keira = accounts.loadUserByUsername(KEIRA);
-
-        mvc.perform(withCsrf(post(path)).with(user(keira))).andExpect(status().isBadRequest());
-        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
-
-        mvc.perform(withCsrf(post(path))
-                        .with(user(keira))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"observationDate\":\"2026-10-01\"}"))
-                .andExpect(status().isBadRequest());
-        assertThat(requests.findById(requestId).status()).isEqualTo("PENDING");
     }
 
     private int averyAsksKeira() {

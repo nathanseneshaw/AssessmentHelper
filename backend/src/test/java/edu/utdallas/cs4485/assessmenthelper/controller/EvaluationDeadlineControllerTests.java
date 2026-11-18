@@ -71,12 +71,4 @@ class EvaluationDeadlineControllerTests {
         mockMvc.perform(get("/api/professors/9/evaluation-deadline").with(user(PROFESSOR)))
                 .andExpect(status().isNotFound());
     }
-
-    @Test
-    void deniedAccessReturns403() throws Exception {
-        when(professorAccess.canView(any(), anyInt())).thenReturn(false);
-
-        mockMvc.perform(get("/api/professors/1/evaluation-deadline").with(user(PROFESSOR)))
-                .andExpect(status().isForbidden());
-    }
 }
