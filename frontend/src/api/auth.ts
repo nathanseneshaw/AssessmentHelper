@@ -1,7 +1,7 @@
 import type { Role } from "../navConfig";
 import { ApiError, apiFetch } from "./client";
 
-interface CurrentUserResponse {
+export interface CurrentUserResponse {
   userId: number;
   professorId: number | null;
   schoolId: number | null;
@@ -20,7 +20,7 @@ export interface User {
 }
 
 // AC members also have the PROFESSOR role, but the app shows one view per user, so the AC view wins.
-function toUser({ roles, ...user }: CurrentUserResponse): User {
+export function toUser({ roles, ...user }: CurrentUserResponse): User {
   return { ...user, role: roles.includes("AC") ? "ac" : "professor" };
 }
 

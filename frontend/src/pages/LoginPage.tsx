@@ -2,6 +2,8 @@ import { type FormEvent, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { DemoTool } from "../demo/DemoTool";
+import { DEMO_MODE } from "../demo/demoMode";
 import { HOME_PATH } from "../navConfig";
 
 export function LoginPage() {
@@ -221,61 +223,9 @@ export function LoginPage() {
               </p>
             )}
           </form>
-          <details className="mt-6 rounded-xl border border-neutral-200 bg-neutral-50 text-sm text-neutral-600">
-            <summary className="min-h-11 cursor-pointer rounded-xl px-4 py-3 font-semibold text-neutral-800">
-              Demo accounts
-            </summary>
-            <div className="space-y-3 px-4 pb-4 leading-6">
-              <p>Sample accounts:</p>
-              <div>
-                <p className="font-semibold text-neutral-800">
-                  Faculty (Dario Hollowell)
-                </p>
-                <p className="break-all">dario.hollowell@example.edu</p>
-                <p>
-                  Password: <code>Faculty123!</code>
-                </p>
-              </div>
-              <div>
-                <p className="font-semibold text-neutral-800">
-                  Assessment Committee (Kaia Clearbrook)
-                </p>
-                <p className="break-all">kaia.clearbrook@example.edu</p>
-                <p>
-                  Password: <code>Committee123!</code>
-                </p>
-              </div>
-              <div>
-                <p className="font-semibold text-neutral-800">
-                  Faculty observer (Arlo Glimmerton)
-                </p>
-                <p className="break-all">arlo.glimmerton@example.edu</p>
-                <p>
-                  Password: <code>Faculty123!</code>
-                </p>
-              </div>
-              <div>
-                <p className="font-semibold text-neutral-800">
-                  Observation form observer (Keira Larkspur)
-                </p>
-                <p className="break-all">keira.larkspur@example.edu</p>
-                <p>
-                  Password: <code>Faculty123!</code>
-                </p>
-              </div>
-              <div>
-                <p className="font-semibold text-neutral-800">
-                  Observation form observee (Leander Coldwell)
-                </p>
-                <p className="break-all">leander.coldwell@example.edu</p>
-                <p>
-                  Password: <code>Faculty123!</code>
-                </p>
-              </div>
-            </div>
-          </details>
         </div>
       </section>
+      {DEMO_MODE && <DemoTool />}
     </main>
   );
 }

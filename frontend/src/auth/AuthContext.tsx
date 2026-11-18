@@ -11,12 +11,14 @@ import {
   logout as signOut,
   type User,
 } from "../api/auth";
+import { switchAccount as switchDemoAccount } from "../api/demo";
 
 interface AuthValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
+  switchAccount: (userId: number) => Promise<User>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -51,8 +53,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const switchAccount = async (userId: number) => {
+    const switched = await switchDemoAccount(userId);
+    setUser(switched);
+    return switched;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, logout, switchAccount }}
+    >
       {children}
     </AuthContext.Provider>
   );

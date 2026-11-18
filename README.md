@@ -93,7 +93,13 @@ Additional development tools:
 
 ## Demo Accounts
 
-The application includes sample accounts for testing. Open the drop down under the login to view login informaton.
+Sample professors sign in with their email and `Faculty123!`. The committee member, Kaia Clearbrook (`kaia.clearbrook@example.edu`), uses `Committee123!`.
+
+## Demo Mode
+
+Demo mode is off by default and has a setting on each side. Start the backend with `APP_DEMO_ENABLED=true ./gradlew bootRun` and the frontend with `BUN_PUBLIC_DEMO_MODE=true bun run dev`.
+
+With both on, a Demo button in the bottom-right corner of every page, including the login page, signs you in as or switches you to any account without a password. Alt+Shift+D hides or shows it. Keep the backend setting off anywhere real people sign in, because it lets anyone act as any account.
 
 ## Development Notes
 
