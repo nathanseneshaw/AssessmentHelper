@@ -26,15 +26,14 @@ const initial: EmailTemplate = {
   activeStatus: true,
   version: 0,
 };
-function install(save?: (init: RequestInit | undefined) => Response) {
+function install(save: (init: RequestInit | undefined) => Response) {
   fakeBackend({
     "/api/email-templates": () =>
       Response.json({
         templates: [initial],
         placeholders: ["lastName", "cycleLabel"],
       }),
-    "/api/email-templates/EVALUATION_DUE":
-      save ?? (() => Response.json({ ...initial, version: 1 })),
+    "/api/email-templates/EVALUATION_DUE": save,
     "/api/email-templates/preview": () =>
       Response.json({
         subject: "Hello Nguyen",

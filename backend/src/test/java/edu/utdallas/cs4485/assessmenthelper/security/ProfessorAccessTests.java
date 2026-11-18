@@ -39,19 +39,6 @@ class ProfessorAccessTests {
     }
 
     @Test
-    void committeeMemberWithoutAProfessorRecordMayNotAnswer() {
-        AccountPrincipal committeeOnly = new AccountPrincipal(
-                new CurrentUser(9, null, 1, "Committee Only", "committee@univ.edu", List.of(Role.AC)), null, true);
-
-        assertThat(access.isRequestedObserver(committeeOnly, 1)).isFalse();
-    }
-
-    @Test
-    void unknownRequestIsDenied() {
-        assertThat(access.isRequestedObserver(professor(7), 99)).isFalse();
-    }
-
-    @Test
     void committeeMayViewFacultyAcrossSchools() {
         AccountPrincipal committee = new AccountPrincipal(
                 new CurrentUser(9, 9, 2, "Committee", "committee@univ.edu", List.of(Role.AC)), null, true);

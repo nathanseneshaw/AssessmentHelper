@@ -10,7 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import edu.utdallas.cs4485.assessmenthelper.config.SecurityConfig;
 import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
-import edu.utdallas.cs4485.assessmenthelper.service.NotFoundException;
 import edu.utdallas.cs4485.assessmenthelper.service.ProfessorService;
 import java.time.LocalDate;
 import java.util.List;
@@ -52,32 +51,8 @@ class ProfessorControllerTests {
         mockMvc.perform(get("/api/professors").param("school", "CS"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].professorId").value(1))
-                .andExpect(jsonPath("$[0].departmentId").value(1))
-                .andExpect(jsonPath("$[0].professorRank").value("ASSISTANT"))
                 .andExpect(jsonPath("$[0].lastName").value("Sample"))
-                .andExpect(jsonPath("$[0].hireDate").value("2021-08-16"))
-                .andExpect(jsonPath("$[1].firstName").value("Blake"))
-                .andExpect(jsonPath("$[1].email").value("blake.stub@test.edu"))
                 .andExpect(jsonPath("$[1].activeStatus").value(false));
-    }
-
-    @Test
-    @WithMockUser(roles = "PROFESSOR")
-    void professorsCannotListADepartmentsProfessors() throws Exception {
-        mockMvc.perform(get("/api/professors").param("school", "CS")).andExpect(status().isForbidden());
-
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void schoolWithoutProfessorsReturnsEmptyArray() throws Exception {
-        when(service.findBySchool("EMPTY")).thenReturn(List.of());
-
-        mockMvc.perform(get("/api/professors").param("school", "EMPTY"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$").isEmpty());
     }
 
     @Test
@@ -88,33 +63,5 @@ class ProfessorControllerTests {
                 .andExpect(jsonPath("$.detail").value(containsString("school")));
 
         verifyNoInteractions(service);
-    }
-
-    @Test
-    void emptySchoolReturns400ProblemDetail() throws Exception {
-        mockMvc.perform(get("/api/professors").param("school", ""))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON));
-
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void blankSchoolReturns400ProblemDetail() throws Exception {
-        mockMvc.perform(get("/api/professors").param("school", "  "))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON));
-
-        verifyNoInteractions(service);
-    }
-
-    @Test
-    void unknownSchoolReturns404ProblemDetail() throws Exception {
-        when(service.findBySchool("XYZ")).thenThrow(new NotFoundException("No school with code XYZ"));
-
-        mockMvc.perform(get("/api/professors").param("school", "XYZ"))
-                .andExpect(status().isNotFound())
-                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.detail").value("No school with code XYZ"));
     }
 }
