@@ -28,6 +28,13 @@ const metrics: DashboardMetrics = {
   missingObservations: 1,
   surveyCompletion: { count: 2, total: 6 },
   surveyStatus: "CLOSED",
+  eligibilityAccuracy: {
+    incorrect: { count: 1, total: 8 },
+    samePerson: 0,
+    otherDepartment: 0,
+    differentLevel: 1,
+    scheduleConflict: 0,
+  },
 };
 
 const overdue: OverdueQueue = {
@@ -129,9 +136,10 @@ describe("Reports & KPIs", () => {
     await renderLoadedReports();
 
     expect(screen.getByText("38%")).toBeDefined();
-    expect(screen.getByText("5 of 13 due faculty signed up")).toBeDefined();
+    expect(screen.getByText("5 signed up / 13 due")).toBeDefined();
     expect(screen.getByText("50%")).toBeDefined();
-    expect(screen.getByText("17%")).toBeDefined();
+    expect(screen.getByText("0.2")).toBeDefined();
+    expect(screen.getByText("88%")).toBeDefined();
     expect(
       screen.getAllByRole("definition").map((el) => el.textContent),
     ).toEqual(["13", "1", "1", "8"]);
@@ -164,7 +172,7 @@ describe("Reports & KPIs", () => {
     const lines = file.text.trim().split("\n");
     expect(lines[0]).toBe('"Section","Metric","Value","Note"');
     expect(lines).toContain(
-      '"KPI","Assessment Participation Rate","38%","5 of 13 due faculty signed up"',
+      '"KPI","Assessment Participation Rate","38%","5 signed up / 13 due"',
     );
     expect(lines).toContain(
       '"Executive dashboard","Overdue evaluation count","8",""',

@@ -141,9 +141,11 @@ class AcDashboardIntegrationTests {
     void committeeSeesTheSeededCycleMetrics() throws Exception {
         metrics().andExpect(status().isOk()).andExpect(content().json("""
                         {"cycleId":1,"cycleLabel":"Fall 2026","facultyDue":13,"listSize":5,
-                        "participation":{"count":5,"total":13},"observerUtilization":{"count":1,"total":8},
-                        "listSufficiency":{"count":0,"total":8},"missingObservations":0,
-                        "surveyCompletion":{"count":0,"total":8},"surveyStatus":"NOT_OPEN"}
+                        "participation":{"count":8,"total":13},"observerUtilization":{"count":1,"total":8},
+                        "listSufficiency":{"count":8,"total":8},"missingObservations":0,
+                        "surveyCompletion":{"count":0,"total":8},"surveyStatus":"NOT_OPEN",
+                        "eligibilityAccuracy":{"incorrect":{"count":0,"total":1},"samePerson":0,
+                        "otherDepartment":0,"differentLevel":0,"scheduleConflict":0}}
                         """, JsonCompareMode.STRICT));
     }
 
@@ -158,10 +160,12 @@ class AcDashboardIntegrationTests {
                 .andExpect(jsonPath("$.surveyCompletion.count").value(0))
                 .andExpect(jsonPath("$.surveyCompletion.total").value(8));
 
+        // Only an observee whose observation was completed counts as having gone through the whole process.
+        setObservationStatus(LEANDER, "COMPLETED");
         submitFeedback(LEANDER);
         submitFeedback(ARLO);
         metrics()
-                .andExpect(jsonPath("$.surveyCompletion.count").value(2))
+                .andExpect(jsonPath("$.surveyCompletion.count").value(1))
                 .andExpect(jsonPath("$.surveyCompletion.total").value(8));
 
         // A deferred observee is not offered the survey, so neither their answer nor their place counts.
@@ -195,26 +199,26 @@ class AcDashboardIntegrationTests {
         setObservationStatus(LEANDER, "SUBMITTED");
         observations().andExpect(jsonPath(leander + ".status").value("PENDING_SIGN_OFF"));
 
-        // After the deadline every signup without a completed observation is missing.
+        // The KPI counts incomplete observations with an assigned observer.
         clock.set("2026-11-16T15:00:00Z");
-        expectMissing(8);
+        expectMissing(1);
         observations()
                 .andExpect(jsonPath(leander + ".status").value("MISSING"))
                 .andExpect(jsonPath(leander + ".missingReason").value("Not signed"));
 
         setObservationStatus(LEANDER, "COMPLETED");
-        expectMissing(7);
+        expectMissing(0);
         observations().andExpect(jsonPath(leander + ".status").value("COMPLETED"));
     }
 
     @Test
-    void listSufficiencyCountsListsFilledToTheListSize() throws Exception {
+    void listSufficiencyCountsEveryObserverMatch() throws Exception {
         // Leander's list is one candidate short of the list size until Arlo is added.
         db.insert(new ObserverMatch(
                 null, signupOf(db, LEANDER), observerOf(db, ARLO), LocalDate.parse("2026-10-26"), "PROPOSED"));
         metrics()
                 .andExpect(jsonPath("$.listSize").value(ObserverEligibilityService.LIST_SIZE))
-                .andExpect(jsonPath("$.listSufficiency.count").value(1))
+                .andExpect(jsonPath("$.listSufficiency.count").value(9))
                 .andExpect(jsonPath("$.listSufficiency.total").value(8));
     }
 

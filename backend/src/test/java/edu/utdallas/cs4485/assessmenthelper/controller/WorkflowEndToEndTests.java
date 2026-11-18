@@ -441,7 +441,7 @@ class WorkflowEndToEndTests {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        List<?> missing = JsonPath.read(tracking, "$.observations[?(@.status == 'MISSING')]");
+        List<?> missing = JsonPath.read(tracking, "$.observations[?(@.status == 'MISSING' && @.observerId != null)]");
         assertThat(missingObservations()).isEqualTo(missing.size()).isPositive();
         mvc.perform(as(KAIA, post("/api/ac-dashboard/observations/reminders"))).andExpect(status().isOk());
         assertThat(reminders(26, LocalDateTime.parse("2026-11-16T09:00:00")))

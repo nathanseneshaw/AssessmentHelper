@@ -3,7 +3,10 @@ import { Link } from "react-router-dom";
 import {
   type DashboardMetrics,
   getDashboardMetrics,
+  eligibilityAccuracy,
   getMissingSignups,
+  listSufficiency,
+  participationRate,
   type MissingSignups,
   rate,
   surveyCompletionRate,
@@ -71,12 +74,13 @@ function kpiGroups({
   return [
     {
       title: "Faculty evaluation",
-      grid: "sm:grid-cols-2",
+      grid: "sm:grid-cols-3",
       kpis: [
         metric("Faculty Due This Cycle", (loaded) => ({
           value: String(loaded.facultyDue),
           note: "Active faculty due for evaluation",
         })),
+        metric("Evaluation Eligibility Accuracy", eligibilityAccuracy, true),
         {
           label: "Overdue Evaluations",
           value: overdue ? String(overdue.count) : "—",
@@ -99,17 +103,11 @@ function kpiGroups({
       title: "Assessment participation",
       grid: "sm:grid-cols-2 xl:max-w-160",
       kpis: [
-        metric("Participation Rate", (loaded) =>
-          rate(
-            loaded.participation,
-            "due faculty signed up",
-            "No faculty are due this cycle",
-          ),
-        ),
+        metric("Participation Rate", participationRate),
         metric("Observer Utilization", (loaded) =>
           rate(
             loaded.observerUtilization,
-            "signups have an observer",
+            "signed-up professors took the observer role",
             "No signups this cycle",
           ),
         ),
@@ -119,13 +117,7 @@ function kpiGroups({
       title: "Recommendation engine",
       grid: "sm:grid-cols-2",
       kpis: [
-        metric("List Sufficiency Rate", (loaded) =>
-          rate(
-            loaded.listSufficiency,
-            `signups have a full list of ${loaded.listSize}`,
-            "No signups this cycle",
-          ),
-        ),
+        metric("List Sufficiency Rate", listSufficiency),
         {
           label: "Unmatched Faculty",
           value: unmatchedError

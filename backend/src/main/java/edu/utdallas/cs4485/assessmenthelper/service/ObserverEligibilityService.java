@@ -659,33 +659,75 @@ public class ObserverEligibilityService {
         List<Integer> result = new ArrayList<>();
         for (var row : pool) {
             int id = row.professorId();
-            var assignments = sections(id, c);
-            boolean teachesLevel = teachingHistory
-                    .findCourseNumbersTaught(id, c.startDate(), c.startDate().minusYears(2), target.departmentId())
-                    .stream()
-                    .anyMatch(n -> level(n) == targetLevel);
-            if (!teachesLevel) continue;
-            Set<DayOfWeek> blocked = EnumSet.noneOf(DayOfWeek.class);
-            boolean unknown = false;
-            for (Section taught : assignments) {
-                if (!validSchedule(taught)) {
-                    unknown = true;
-                    break;
-                }
-                if (taught.startTime().isBefore(signup.section().endTime())
-                        && signup.section().startTime().isBefore(taught.endTime()))
-                    blocked.addAll(days(taught.meetingDays()));
-            }
-            if (!unknown
-                    && hasMeeting(
-                            signup.section(),
-                            remainingDatesOnly && signup.windowStart().isBefore(LocalDate.now(clock))
-                                    ? LocalDate.now(clock)
-                                    : signup.windowStart(),
-                            signup.windowEnd(),
-                            blocked)) result.add(row.observerId());
+            if (teachesLevel(id, c, target.departmentId(), targetLevel)
+                    && scheduleWorks(signup, id, c, remainingDatesOnly)) result.add(row.observerId());
         }
         return result;
+    }
+
+    /** Rule (c): the observer taught a course at the same level, in the observee's department, in the last two years. */
+    private boolean teachesLevel(int professorId, Cycle c, int departmentId, int targetLevel) {
+        return teachingHistory
+                .findCourseNumbersTaught(
+                        professorId, c.startDate(), c.startDate().minusYears(2), departmentId)
+                .stream()
+                .anyMatch(n -> level(n) == targetLevel);
+    }
+
+    /** Rule (d): the observer is free, on at least one class date, for the observee's requested days and times. */
+    private boolean scheduleWorks(Signup signup, int professorId, Cycle c, boolean remainingDatesOnly) {
+        Set<DayOfWeek> blocked = EnumSet.noneOf(DayOfWeek.class);
+        for (Section taught : sections(professorId, c)) {
+            if (!validSchedule(taught)) return false;
+            if (taught.startTime().isBefore(signup.section().endTime())
+                    && signup.section().startTime().isBefore(taught.endTime()))
+                blocked.addAll(days(taught.meetingDays()));
+        }
+        return hasMeeting(
+                signup.section(),
+                remainingDatesOnly && signup.windowStart().isBefore(LocalDate.now(clock))
+                        ? LocalDate.now(clock)
+                        : signup.windowStart(),
+                signup.windowEnd(),
+                blocked);
+    }
+
+    /** Counts of observer assignments that break each eligibility rule. */
+    public record Audit(int checked, int samePerson, int otherDepartment, int differentLevel, int scheduleConflict) {
+        public int incorrect() {
+            return samePerson + otherDepartment + differentLevel + scheduleConflict;
+        }
+    }
+
+    /**
+     * Re-validates every observer assignment in the current cycle against the eligibility rules. Each assignment is
+     * counted once, under the first rule it breaks: (a) same professor, (b) other department, (c) different level,
+     * (d) schedule conflict.
+     */
+    public Audit audit() {
+        Cycle c = cycle();
+        Map<Integer, Signup> byId = new HashMap<>();
+        signups(c, false).forEach(s -> byId.put(s.signupId(), s));
+        int checked = 0, same = 0, department = 0, level = 0, schedule = 0;
+        for (var pair : observations.findAssignedPairs(c.cycleId())) {
+            Signup signup = byId.get(pair.signupId());
+            var observer = observers.findById(pair.observerId()).orElse(null);
+            if (signup == null || observer == null) continue;
+            var target = professors
+                    .findEligibilityTarget(
+                            signup.professorId(), signup.section().sectionId())
+                    .orElse(null);
+            var observerProfessor = professors.findById(observer.professorId()).orElse(null);
+            if (target == null || observerProfessor == null) continue;
+            checked++;
+            if (observer.professorId() == signup.professorId()) same++;
+            else if (!target.departmentId().equals(observerProfessor.departmentId())) department++;
+            else if (level(target.courseNumber()) < 0
+                    || !teachesLevel(observer.professorId(), c, target.departmentId(), level(target.courseNumber())))
+                level++;
+            else if (!scheduleWorks(signup, observer.professorId(), c, false)) schedule++;
+        }
+        return new Audit(checked, same, department, level, schedule);
     }
 
     static Set<DayOfWeek> days(String value) {

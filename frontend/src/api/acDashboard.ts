@@ -23,6 +23,20 @@ export interface DashboardMetrics {
   /** Observees who submitted the cycle's feedback survey, out of the active and completed observees it goes to. */
   surveyCompletion: Ratio;
   surveyStatus: Exclude<FeedbackSurvey["status"], "SUBMITTED">;
+  /** Observer assignments that break an eligibility rule, out of all assignments checked. */
+  eligibilityAccuracy: EligibilityAccuracy;
+}
+
+export interface EligibilityAccuracy {
+  incorrect: Ratio;
+  /** (a) not the same professor. */
+  samePerson: number;
+  /** (b) not a same-level professor from another department. */
+  otherDepartment: number;
+  /** (c) not a different-level professor from the same department. */
+  differentLevel: number;
+  /** (d) not a same-level professor who works during the requested days and times. */
+  scheduleConflict: number;
 }
 
 export function getDashboardMetrics(
@@ -62,6 +76,41 @@ export function rate({ count, total }: Ratio, counted: string, empty: string) {
     : {
         value: `${Math.round((count / total) * 100)}%`,
         note: `${count} of ${total} ${counted}`,
+      };
+}
+
+/** Participation Rate: professors who signed up / professors who were due. */
+export function participationRate({ participation }: DashboardMetrics) {
+  return participation.total === 0
+    ? { value: "—", note: "No faculty are due this cycle" }
+    : {
+        value: `${Math.round((participation.count / participation.total) * 100)}%`,
+        note: `${participation.count} signed up / ${participation.total} due`,
+      };
+}
+
+/** List Sufficiency: average observer matches per sign-up. */
+export function listSufficiency({
+  listSufficiency: { count, total },
+}: DashboardMetrics) {
+  return total === 0
+    ? { value: "—", note: "No signups this cycle" }
+    : {
+        value: (count / total).toFixed(1),
+        note: `${count} matches across ${total} signups`,
+      };
+}
+
+/** Evaluation Eligibility Accuracy: observer assignments that follow every rule. */
+export function eligibilityAccuracy({
+  eligibilityAccuracy: a,
+}: DashboardMetrics) {
+  const { count, total } = a.incorrect;
+  return total === 0
+    ? { value: "—", note: "No observer assignments to check" }
+    : {
+        value: `${Math.round(((total - count) / total) * 100)}%`,
+        note: `${count} incorrect of ${total} (same prof ${a.samePerson}, other dept ${a.otherDepartment}, different level ${a.differentLevel}, schedule ${a.scheduleConflict})`,
       };
 }
 

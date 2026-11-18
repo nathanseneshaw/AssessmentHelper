@@ -184,4 +184,15 @@ public interface ObservationRepository extends ListCrudRepository<Observation, I
             """)
     int scheduleAcceptedObservation(
             Integer signupId, Integer requestId, LocalDate observationDate, LocalTime startTime);
+
+    record AssignedPairRow(Integer signupId, Integer observerId) {}
+
+    /** Every (signup, observer) pair with an observation in the cycle, for auditing eligibility. */
+    @Query("""
+            SELECT o.signup_id, o.observer_id FROM observation o
+            JOIN evaluation_signup es ON es.signup_id=o.signup_id
+            JOIN observee oe ON oe.observee_id=es.observee_id
+            WHERE oe.cycle_id=:cycleId AND es.status<>'CANCELLED'
+            """)
+    List<AssignedPairRow> findAssignedPairs(Integer cycleId);
 }
