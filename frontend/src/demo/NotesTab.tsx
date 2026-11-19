@@ -77,7 +77,7 @@ export function NotesTab() {
         </button>
         <button
           type="button"
-          onClick={() => window.screenshotMarks?.clear()}
+          onClick={() => window.screenshotMarks?.clearAreas()}
           className="rounded-lg border border-line px-4 py-2 text-sm hover:bg-mist"
         >
           Clear boxes

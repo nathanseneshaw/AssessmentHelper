@@ -132,8 +132,9 @@ public class DemoService {
         String email = unused(
                 slug(first) + "." + slug(last),
                 "@example.edu",
+                255,
                 e -> professors.existsByEmailIgnoreCase(e) || accounts.existsByEmailIgnoreCase(e));
-        String username = unused(slug(first).charAt(0) + slug(last), "", accounts::existsByUsername);
+        String username = unused(slug(first).charAt(0) + slug(last), "", 100, accounts::existsByUsername);
         Professor professor = professors.save(new Professor(
                 null, department.departmentId(), input.rank(), first, last, email, input.hireDate(), true));
         UserAccount account = accounts.save(
@@ -158,9 +159,10 @@ public class DemoService {
         if (!number.matches("[1-9][0-9]{3}"))
             throw new IllegalArgumentException("Enter a four-digit course number, such as 4485.");
         String sectionNumber = text(input.sectionNumber(), "a section number", 20);
-        String days = text(input.meetingDays(), "the meeting days", 20).toUpperCase(Locale.ROOT);
-        if (ObserverEligibilityService.days(days).isEmpty())
-            throw new IllegalArgumentException("Enter meeting days such as MW or TR.");
+        var meetingDays = ObserverEligibilityService.days(text(input.meetingDays(), "the meeting days", 20));
+        if (meetingDays.isEmpty()) throw new IllegalArgumentException("Enter meeting days such as MW or TR.");
+        StringBuilder dayCodes = new StringBuilder();
+        meetingDays.forEach(day -> dayCodes.append("MTWRFSU".charAt(day.getValue() - 1)));
         if (input.startTime() == null
                 || input.endTime() == null
                 || !input.startTime().isBefore(input.endTime()))
@@ -184,7 +186,7 @@ public class DemoService {
                 course.courseId(),
                 cycle.semesterId(),
                 sectionNumber,
-                days,
+                dayCodes.toString(),
                 input.startTime(),
                 input.endTime(),
                 location));
@@ -215,9 +217,13 @@ public class DemoService {
         return slug.isEmpty() ? "professor" : slug;
     }
 
-    private static String unused(String base, String suffix, Predicate<String> taken) {
-        String candidate = base + suffix;
-        for (int n = 2; taken.test(candidate); n++) candidate = base + n + suffix;
-        return candidate;
+    private static String unused(String base, String suffix, int maxLength, Predicate<String> taken) {
+        String number = "";
+        for (int next = 2; ; next++) {
+            int baseLength = Math.min(base.length(), maxLength - number.length() - suffix.length());
+            String candidate = base.substring(0, baseLength) + number + suffix;
+            if (!taken.test(candidate)) return candidate;
+            number = Integer.toString(next);
+        }
     }
 }

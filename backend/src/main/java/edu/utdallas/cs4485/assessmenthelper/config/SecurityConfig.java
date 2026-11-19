@@ -1,7 +1,10 @@
 package edu.utdallas.cs4485.assessmenthelper.config;
 
 import edu.utdallas.cs4485.assessmenthelper.security.ApiAuthenticationHandler;
+import edu.utdallas.cs4485.assessmenthelper.security.DemoTabAuthenticationFilter;
+import edu.utdallas.cs4485.assessmenthelper.security.DemoTabSessions;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +15,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.savedrequest.NullRequestCache;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -24,7 +28,7 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain securityFilterChain(
-            HttpSecurity http, JsonMapper jsonMapper, @Value("${app.demo.enabled:false}") boolean demoEnabled) {
+            HttpSecurity http, JsonMapper jsonMapper, Optional<DemoTabSessions> demoSessions) {
         ApiAuthenticationHandler authenticationHandler = new ApiAuthenticationHandler(jsonMapper);
         http.authorizeHttpRequests(auth -> {
                     auth.requestMatchers(
@@ -36,7 +40,7 @@ public class SecurityConfig {
                                     "/error")
                             .permitAll();
                     // The login page's demo tool signs people in before they have a session.
-                    if (demoEnabled)
+                    if (demoSessions.isPresent())
                         auth.requestMatchers("/api/demo/accounts", "/api/demo/switch")
                                 .permitAll();
                     auth.requestMatchers("/api/**").authenticated().anyRequest().denyAll();
@@ -55,6 +59,8 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.spa().ignoringRequestMatchers("/h2-console/**"))
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
                 .cors(Customizer.withDefaults());
+        demoSessions.ifPresent(sessions ->
+                http.addFilterAfter(new DemoTabAuthenticationFilter(sessions), SecurityContextHolderFilter.class));
         return http.build();
     }
 

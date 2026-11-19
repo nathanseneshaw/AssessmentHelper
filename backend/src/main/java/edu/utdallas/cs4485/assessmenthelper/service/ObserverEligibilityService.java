@@ -501,6 +501,9 @@ public class ObserverEligibilityService {
                 || dates.observationDeadline() == null
                 || dates.feedbackDeadline() == null)
             throw new IllegalArgumentException("All three deadlines are required.");
+        validateDeadlineChange("Signup", previous.signupDeadline(), dates.signupDeadline());
+        validateDeadlineChange("Observation", previous.observationDeadline(), dates.observationDeadline());
+        validateDeadlineChange("Feedback", previous.feedbackDeadline(), dates.feedbackDeadline());
         if (dates.signupDeadline().isBefore(previous.startDate())
                 || !dates.observationDeadline().isAfter(dates.signupDeadline())
                 || !dates.feedbackDeadline().isAfter(dates.observationDeadline()))
@@ -529,6 +532,14 @@ public class ObserverEligibilityService {
         evaluationCycles.updateDeadlines(
                 cycleId, dates.signupDeadline(), dates.observationDeadline(), dates.feedbackDeadline());
         return cycle(cycleId);
+    }
+
+    private void validateDeadlineChange(String name, LocalDate previous, LocalDate proposed) {
+        if (previous == null || previous.equals(proposed)) return;
+        if (LocalDate.now(clock).isAfter(previous))
+            throw new ConflictException(name + " deadline has passed and cannot be changed.");
+        if (proposed.isBefore(previous))
+            throw new IllegalArgumentException(name + " deadline can only be extended to a later date.");
     }
 
     private static LocalDate windowStart(Cycle c) {

@@ -3,23 +3,18 @@ package edu.utdallas.cs4485.assessmenthelper.controller;
 import edu.utdallas.cs4485.assessmenthelper.entity.Department;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
+import edu.utdallas.cs4485.assessmenthelper.security.DemoTabAuthenticationFilter;
+import edu.utdallas.cs4485.assessmenthelper.security.DemoTabSessions;
 import edu.utdallas.cs4485.assessmenthelper.service.DemoEvaluationService;
 import edu.utdallas.cs4485.assessmenthelper.service.DemoService;
 import edu.utdallas.cs4485.assessmenthelper.service.DemoStateService;
 import edu.utdallas.cs4485.assessmenthelper.service.MissingObservationService;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.context.SecurityContextHolderStrategy;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,6 +28,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class DemoController {
     public record SwitchBody(Integer userId) {}
 
+    public record SwitchResult(CurrentUser user, String token) {}
+
     public record Completed(int observationId) {}
 
     public record MoveDate(LocalDate date) {}
@@ -40,13 +37,14 @@ public class DemoController {
     public record Reset(boolean signedOut) {}
 
     private final DemoService service;
+    private final DemoTabSessions sessions;
     private final DemoEvaluationService evaluations;
     private final DemoStateService state;
-    private final SecurityContextHolderStrategy contextHolder = SecurityContextHolder.getContextHolderStrategy();
-    private final SecurityContextRepository contextRepository = new HttpSessionSecurityContextRepository();
 
-    public DemoController(DemoService service, DemoEvaluationService evaluations, DemoStateService state) {
+    public DemoController(
+            DemoService service, DemoTabSessions sessions, DemoEvaluationService evaluations, DemoStateService state) {
         this.service = service;
+        this.sessions = sessions;
         this.evaluations = evaluations;
         this.state = state;
     }
@@ -99,24 +97,21 @@ public class DemoController {
     @PostMapping("/reset")
     public Reset reset(@AuthenticationPrincipal AccountPrincipal principal, HttpServletRequest request) {
         if (state.reset(principal.user().userId())) return new Reset(false);
-        contextHolder.clearContext();
+        String token = request.getHeader(DemoTabAuthenticationFilter.HEADER);
+        if (token != null) {
+            sessions.end(token);
+            return new Reset(true);
+        }
         HttpSession session = request.getSession(false);
         if (session != null) session.invalidate();
         return new Reset(true);
     }
 
     @PostMapping("/switch")
-    public CurrentUser switchAccount(
-            @RequestBody SwitchBody body, HttpServletRequest request, HttpServletResponse response) {
+    public SwitchResult switchAccount(@RequestBody SwitchBody body) {
         if (body == null || body.userId() == null)
             throw new IllegalArgumentException("Choose an account to switch to.");
         AccountPrincipal principal = service.principal(body.userId());
-        SecurityContext context = contextHolder.createEmptyContext();
-        context.setAuthentication(
-                UsernamePasswordAuthenticationToken.authenticated(principal, null, principal.getAuthorities()));
-        contextHolder.setContext(context);
-        if (request.getSession(false) != null) request.changeSessionId();
-        contextRepository.saveContext(context, request, response);
-        return principal.user();
+        return new SwitchResult(principal.user(), sessions.start(principal));
     }
 }
