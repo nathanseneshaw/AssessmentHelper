@@ -3,13 +3,15 @@ import { createPortal } from "react-dom";
 
 /**
  * What to mark: the element `selector` matches, or the innermost element whose text is exactly `text`. `closest`
- * then moves up to an ancestor, such as the card or section around a heading.
+ * then moves up to an ancestor, such as the card or section around a heading. An `area` in page coordinates, such as a
+ * box drawn in the demo tool, is marked as it is.
  */
 export interface Mark {
   selector?: string;
   text?: string;
   closest?: string;
   label?: string;
+  area?: { left: number; top: number; width: number; height: number };
 }
 
 interface Box {
@@ -23,7 +25,12 @@ interface Box {
 
 declare global {
   interface Window {
-    screenshotMarks?: { show: (marks: Mark[]) => void; clear: () => void };
+    screenshotMarks?: {
+      show: (marks: Mark[]) => void;
+      add: (mark: Mark) => void;
+      clear: () => void;
+      clearAreas: () => void;
+    };
   }
 }
 
@@ -50,6 +57,8 @@ function target(mark: Mark): Element | null {
 
 function measure(marks: Mark[]): Box[] {
   return marks.flatMap((mark, index) => {
+    if (mark.area)
+      return [{ key: `${index}`, label: mark.label, ...mark.area }];
     const rect = target(mark)?.getBoundingClientRect();
     if (!rect) return [];
     return [
@@ -76,7 +85,17 @@ export function ScreenshotMarks() {
   const [boxes, setBoxes] = useState<Box[]>([]);
 
   useEffect(() => {
-    window.screenshotMarks = { show: setMarks, clear: () => setMarks([]) };
+    window.screenshotMarks = {
+      show: setMarks,
+      add: (mark) => setMarks((current) => [...current, mark]),
+      clear: () => setMarks([]),
+      clearAreas: () =>
+        setMarks((current) =>
+          current.some((mark) => mark.area)
+            ? current.filter((mark) => !mark.area)
+            : current,
+        ),
+    };
     return () => {
       delete window.screenshotMarks;
     };

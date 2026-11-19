@@ -32,9 +32,15 @@ test("marks elements found by text or selector and clears them", async () => {
       { selector: "#sign", label: "New: sign off" },
     ]),
   );
+  act(() =>
+    window.screenshotMarks?.add({
+      area: { left: 10, top: 20, width: 100, height: 50 },
+      label: "Drawn",
+    }),
+  );
 
   await waitFor(() =>
-    expect(labels()).toEqual(["New: sign-offs", "New: sign off"]),
+    expect(labels()).toEqual(["New: sign-offs", "New: sign off", "Drawn"]),
   );
   const marks = document.querySelector("[data-screenshot-marks]");
   expect(marks?.getAttribute("aria-hidden")).toBe("true");
