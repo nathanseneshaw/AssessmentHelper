@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { type DemoAccount, getDemoAccounts } from "../api/demo";
 import { useAuth } from "../auth/AuthContext";
 import { AccountsTab } from "./AccountsTab";
 import { AddDataTab } from "./AddDataTab";
 import { EvaluationsTab } from "./EvaluationsTab";
+import { NotesTab } from "./NotesTab";
 
 const HIDDEN_KEY = "demoToolHidden";
 
@@ -11,6 +13,7 @@ const TABS = [
   { id: "accounts", label: "Accounts" },
   { id: "data", label: "Add data" },
   { id: "evaluations", label: "Evaluations" },
+  { id: "notes", label: "Notes" },
 ] as const;
 
 type Tab = (typeof TABS)[number]["id"];
@@ -38,6 +41,12 @@ export function DemoTool({
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("accounts");
   const tabs = user ? TABS : TABS.filter(({ id }) => id === "accounts");
+  const { pathname } = useLocation();
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: boxes drawn on the Notes tab belong to one page and account.
+  useEffect(() => {
+    window.screenshotMarks?.clearAreas();
+  }, [pathname, user?.userId]);
 
   // The backend only serves the demo endpoints when its own demo setting is on.
   useEffect(() => {
@@ -118,6 +127,7 @@ export function DemoTool({
             {tab === "evaluations" && (
               <EvaluationsTab onDataChanged={onDataChanged} />
             )}
+            {tab === "notes" && <NotesTab />}
           </div>
         </section>
       )}
