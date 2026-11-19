@@ -90,7 +90,8 @@ test("cards show the live metrics and the overdue count", async () => {
   await waitFor(() => expect(kpi("Faculty Due This Cycle")).toBe("13"));
   expect(kpi("Participation Rate")).toBe("15%");
   expect(kpi("Observer Utilization")).toBe("17%");
-  expect(kpi("List Sufficiency Rate")).toBe("33%");
+  expect(kpi("List Sufficiency Rate")).toBe("0.3");
+  expect(kpi("Evaluation Eligibility Accuracy")).toBe("88%");
   expect(kpi("Survey Completion Rate")).toBe("44%");
   expect(kpi("Missing Observations")).toBe("3");
   await waitFor(() => expect(kpi("Overdue Evaluations")).toBe("1"));

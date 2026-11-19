@@ -58,7 +58,12 @@ public class AcDashboardService {
             Ratio listSufficiency,
             int missingObservations,
             Ratio surveyCompletion,
-            String surveyStatus) {}
+            String surveyStatus,
+            Accuracy eligibilityAccuracy) {}
+
+    /** incorrect = observer assignments that break an eligibility rule, out of all assignments checked. */
+    public record Accuracy(
+            Ratio incorrect, int samePerson, int otherDepartment, int differentLevel, int scheduleConflict) {}
 
     /**
      * AWAITING_OBSERVER: no observer has accepted yet. PENDING_SIGN_OFF: submitted but unsigned.
@@ -106,23 +111,30 @@ public class AcDashboardService {
         if (ac.cycle().cycleId() != due.cycleId())
             throw new ConflictException("The evaluation cycle changed. Refresh the dashboard.");
         var signedUp = Set.copyOf(signupRepository.findSignedUpProfessorIds(due.cycleId()));
-        int participating = (int) due.faculty().stream()
-                .filter(f -> signedUp.contains(f.professorId()))
-                .count();
+        // Participation Rate: professors who signed up this cycle / professors who were due.
+        int participating = signedUp.size();
         var tracked = tracked(due.cycleId());
-        int observed = (int) tracked.stream()
+        // Observer Utilization: distinct professors who took the observer role, from every observation row
+        // (a signup can have several), not just the representative row kept in tracked().
+        int observerProfessors = (int) trackedRows(due.cycleId()).stream()
                 .filter(o -> o.observerId() != null && o.status() != Status.DEFERRED)
+                .map(TrackedObservation::observerId)
+                .distinct()
                 .count();
-        int missing =
-                (int) tracked.stream().filter(o -> o.status() == Status.MISSING).count();
+        // Missing Observation Count: approved appointments (an observer accepted) that did not complete.
+        // Signups that never got an observer are reported as unmatched instead.
+        int missing = (int) tracked.stream()
+                .filter(o -> o.status() == Status.MISSING && o.observerId() != null)
+                .count();
         var activeSignups = ac.matchingCases().stream()
                 .filter(c -> !"DEFERRED".equals(c.status()))
                 .map(ObserverEligibilityService.MatchingCase::signupId)
                 .collect(java.util.stream.Collectors.toSet());
-        int fullLists = (int) ac.signups().stream()
+        // List Sufficiency: average observer matches per sign-up (total matches / sign-ups).
+        int matches = ac.signups().stream()
                 .filter(s -> activeSignups.contains(s.signupId()))
-                .filter(s -> s.candidates().size() >= ObserverEligibilityService.LIST_SIZE)
-                .count();
+                .mapToInt(s -> s.candidates().size())
+                .sum();
         int signups = activeSignups.size();
         var counts = observeeRepository.countSurveyCompletion(due.cycleId());
         var survey = new Ratio(counts.submitted(), counts.offered());
@@ -132,12 +144,22 @@ public class AcDashboardService {
                 due.count(),
                 ObserverEligibilityService.LIST_SIZE,
                 new Ratio(participating, due.count()),
-                new Ratio(observed, signups),
-                new Ratio(fullLists, signups),
+                new Ratio(observerProfessors, signups),
+                new Ratio(matches, signups),
                 missing,
                 survey,
                 ProcessFeedbackService.window(
-                        ac.cycle().observationDeadline(), ac.cycle().feedbackDeadline(), LocalDate.now(clock)));
+                        ac.cycle().observationDeadline(), ac.cycle().feedbackDeadline(), LocalDate.now(clock)),
+                accuracy(observers.audit()));
+    }
+
+    private static Accuracy accuracy(ObserverEligibilityService.Audit a) {
+        return new Accuracy(
+                new Ratio(a.incorrect(), a.checked()),
+                a.samePerson(),
+                a.otherDepartment(),
+                a.differentLevel(),
+                a.scheduleConflict());
     }
 
     @Transactional(readOnly = true)
@@ -193,8 +215,27 @@ public class AcDashboardService {
                 null, professorId, o.signupId(), "Reminder from the Assessment Committee: " + reminder, now));
     }
 
-    // Track all non-cancelled signups, including those awaiting a generated observer list.
+    // One entry per non-cancelled signup. A signup can have several observation rows (several observers may accept);
+    // keep the most advanced one so a completed observation is never reported as missing.
     private List<TrackedObservation> tracked(int cycleId) {
+        var bySignup = new java.util.LinkedHashMap<Integer, TrackedObservation>();
+        for (var o : trackedRows(cycleId)) bySignup.merge(o.signupId(), o, (a, b) -> rank(b) < rank(a) ? b : a);
+        return List.copyOf(bySignup.values());
+    }
+
+    private static int rank(TrackedObservation o) {
+        return switch (o.status()) {
+            case COMPLETED -> 0;
+            case PENDING_SIGN_OFF -> 1;
+            case SCHEDULED -> 2;
+            case MISSING -> o.observerId() != null ? 3 : 4;
+            case AWAITING_OBSERVER -> 5;
+            case DEFERRED -> 6;
+        };
+    }
+
+    // Every row, including repeated signups when more than one observation exists.
+    private List<TrackedObservation> trackedRows(int cycleId) {
         LocalDate today = LocalDate.now(clock);
         return signupRepository.findTrackedObservations(cycleId).stream()
                 .map(r -> {
