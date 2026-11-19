@@ -8,6 +8,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { ScreenshotMarks } from "./components/ScreenshotMarks";
+import { DEMO_MODE } from "./demo/demoMode";
 
 const elem = document.getElementById("root");
 if (!elem) {
@@ -16,6 +18,9 @@ if (!elem) {
 const app = (
   <StrictMode>
     <App />
+    {(process.env.NODE_ENV !== "production" || DEMO_MODE) && (
+      <ScreenshotMarks />
+    )}
   </StrictMode>
 );
 
