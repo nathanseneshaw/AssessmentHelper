@@ -8,6 +8,9 @@ import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.ListCrudRepository;
 
 public interface CourseSectionRepository extends ListCrudRepository<CourseSection, Integer> {
+    Optional<CourseSection> findFirstByCourseIdAndSemesterIdAndSectionNumberOrderBySectionId(
+            Integer courseId, Integer semesterId, String sectionNumber);
+
     @Query("""
             SELECT s.* FROM course_section s
             WHERE (:semesterId IS NULL OR s.semester_id = :semesterId)

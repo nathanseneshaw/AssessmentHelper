@@ -11,6 +11,10 @@ import org.springframework.data.repository.ListCrudRepository;
 public interface ProfessorRepository extends ListCrudRepository<Professor, Integer> {
     List<Professor> findByDepartmentIdOrderByLastNameAscFirstNameAsc(Integer departmentId);
 
+    Optional<Professor> findByEmailIgnoreCase(String email);
+
+    boolean existsByEmailIgnoreCase(String email);
+
     // Serialize signup changes for a professor, including creation of their observee row.
     @Lock(LockMode.PESSIMISTIC_WRITE)
     Optional<Professor> findForUpdateByProfessorId(Integer professorId);

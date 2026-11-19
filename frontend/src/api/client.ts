@@ -1,3 +1,5 @@
+import { DEMO_SESSION_HEADER, getDemoSession } from "../demo/tabSession";
+
 const DEFAULT_API_URL = "http://localhost:8080";
 const CSRF_COOKIE = "XSRF-TOKEN";
 const CSRF_HEADER = "X-XSRF-TOKEN";
@@ -30,6 +32,8 @@ export async function apiFetch<T>(
   init: RequestInit = {},
 ): Promise<T> {
   const headers = new Headers(init.headers);
+  const demoSession = getDemoSession();
+  if (demoSession !== null) headers.set(DEMO_SESSION_HEADER, demoSession);
   if (!SAFE_METHODS.has((init.method ?? "GET").toUpperCase())) {
     const token = await csrfToken();
     if (token) {
