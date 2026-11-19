@@ -93,11 +93,12 @@ public class CsvImportService {
             if (!header.contains(column)) errors.add(new RowError(null, column, "Missing column '" + column + "'."));
         if (!errors.isEmpty()) return new ImportResult(false, 0, errors);
 
-        List<Row> rows = records.subList(1, records.size()).stream()
-                .map(record -> row(header, record))
-                .toList();
+        List<CSVRecord> rows = records.subList(1, records.size());
         transaction.executeWithoutResult(status -> {
-            rows.forEach(row -> importer.accept(row, errors));
+            for (CSVRecord record : rows) {
+                if (record.size() == header.size()) importer.accept(row(header, record), errors);
+                else errors.add(cellCountError(record, header.size()));
+            }
             if (!errors.isEmpty()) status.setRollbackOnly();
         });
         return new ImportResult(errors.isEmpty(), rows.size(), errors);
@@ -105,8 +106,20 @@ public class CsvImportService {
 
     private static Row row(List<String> header, CSVRecord record) {
         Map<String, String> cells = new HashMap<>();
-        for (int i = 0; i < Math.min(header.size(), record.size()); i++) cells.put(header.get(i), record.get(i));
-        return new Row(Math.toIntExact(record.getRecordNumber()), cells);
+        for (int i = 0; i < header.size(); i++) cells.put(header.get(i), record.get(i));
+        return new Row(rowNumber(record), cells);
+    }
+
+    private static RowError cellCountError(CSVRecord record, int columnCount) {
+        String counts = "This row has " + record.size() + " cells, but the header has " + columnCount + " columns. ";
+        String hint = record.size() > columnCount
+                ? "If a value contains a comma, put it in double quotes, like \"Smith, Jr.\"."
+                : "Each blank cell still needs its comma.";
+        return new RowError(rowNumber(record), null, counts + hint);
+    }
+
+    private static int rowNumber(CSVRecord record) {
+        return Math.toIntExact(record.getRecordNumber());
     }
 
     private static ImportResult failed(String message) {

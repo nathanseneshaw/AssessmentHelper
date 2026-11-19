@@ -123,6 +123,21 @@ class ProfessorCsvImportTests {
     }
 
     @Test
+    void anExtraCommaIsAnErrorInsteadOfDroppingTheLastCell() {
+        ImportResult result = save(HEADER, ORLA_ROW, WREN + ",Wren,Quillfeather,CS,,,,true");
+
+        assertThat(result.saved()).isFalse();
+        assertThat(result.errors())
+                .containsExactly(new RowError(
+                        3,
+                        null,
+                        "This row has 8 cells, but the header has 7 columns. "
+                                + "If a value contains a comma, put it in double quotes, like \"Smith, Jr.\"."));
+        assertThat(professor(ORLA)).isEmpty();
+        assertThat(professors.findById(wren.professorId())).contains(wren);
+    }
+
+    @Test
     void theHeaderMustHaveTheTemplatesColumns() {
         ImportResult result = save("email,first_name,department_code,hire_dat", ORLA + ",Orla,MATH,2019-08-15");
 
