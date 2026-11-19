@@ -28,6 +28,12 @@ export function CycleDeadlines({
     ["observationDeadline", "Observation Deadline"],
     ["feedbackDeadline", "Feedback/Survey Deadline"],
   ] as const;
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
   async function save() {
     if (!cycle || !draft || busy) return;
@@ -101,7 +107,8 @@ export function CycleDeadlines({
         >
           <p className="mb-4 text-sm">
             Changes apply to everyone in this evaluation cycle. Signup must be
-            before observation, and observation before feedback.
+            before observation, and observation before feedback. Deadlines can
+            only be extended and cannot be changed after they pass.
           </p>
           <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-3">
             {fields.map(([key, label]) => (
@@ -114,12 +121,16 @@ export function CycleDeadlines({
                   type="date"
                   required
                   value={draft[key]}
-                  min={key === "signupDeadline" ? cycle.startDate : undefined}
+                  min={cycle[key] || (key === "signupDeadline" ? cycle.startDate : undefined)}
+                  disabled={!!cycle[key] && cycle[key] < today}
                   onChange={(e) =>
                     setDraft({ ...draft, [key]: e.target.value })
                   }
                   className="rounded border border-line bg-white p-2 font-normal"
                 />
+                {!!cycle[key] && cycle[key] < today && (
+                  <span className="font-normal">Deadline passed; changes are locked.</span>
+                )}
               </label>
             ))}
           </fieldset>

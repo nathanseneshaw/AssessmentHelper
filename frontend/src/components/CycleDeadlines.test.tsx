@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Cycle } from "../api/observerEligibility";
 import { fakeBackend, resetBackend } from "../test/fakeBackend";
@@ -11,6 +11,7 @@ let failure: boolean;
 let saved: number;
 
 beforeEach(() => {
+  setSystemTime(new Date("2026-10-21T15:00:00Z"));
   cycle = { ...fixture, feedbackDeadline: "2026-12-01" };
   sent = [];
   failure = false;
@@ -33,6 +34,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setSystemTime();
   cleanup();
   resetBackend();
 });
@@ -74,7 +76,7 @@ test("failed changes keep the dates editable and show the server explanation", a
   failure = true;
   open();
   fireEvent.change(screen.getByLabelText("Observation Deadline"), {
-    target: { value: "2026-11-02" },
+    target: { value: "2026-11-20" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save Deadlines" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
@@ -82,8 +84,18 @@ test("failed changes keep the dates editable and show the server explanation", a
   );
   expect(
     (screen.getByLabelText("Observation Deadline") as HTMLInputElement).value,
-  ).toBe("2026-11-02");
+  ).toBe("2026-11-20");
   expect(saved).toBe(0);
+});
+
+test("locks only passed deadlines and sets the current date as the minimum", () => {
+  setSystemTime(new Date("2026-11-01T15:00:00Z"));
+  open();
+  expect((screen.getByLabelText(/Sign-up Deadline/) as HTMLInputElement).disabled).toBe(true);
+  const observation = screen.getByLabelText("Observation Deadline") as HTMLInputElement;
+  expect(observation.disabled).toBe(false);
+  expect(observation.min).toBe("2026-11-15");
+  expect(screen.getByText("Deadline passed; changes are locked.")).toBeTruthy();
 });
 
 test("cancel discards draft dates without saving", () => {

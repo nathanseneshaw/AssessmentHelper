@@ -349,11 +349,11 @@ class ObserverEligibilityServiceTests {
 
     @Test
     void deadlinesUpdateCycleAndDefaultWindows() {
-        var updated = service.updateDeadlines(1, deadlines("2026-10-30", "2026-11-20", "2026-12-05"));
-        assertThat(updated.signupDeadline()).isEqualTo(LocalDate.parse("2026-10-30"));
+        var updated = service.updateDeadlines(1, deadlines("2026-11-01", "2026-11-20", "2026-12-05"));
+        assertThat(updated.signupDeadline()).isEqualTo(LocalDate.parse("2026-11-01"));
         assertThat(updated.observationDeadline()).isEqualTo(LocalDate.parse("2026-11-20"));
         assertThat(updated.feedbackDeadline()).isEqualTo(LocalDate.parse("2026-12-05"));
-        assertThat(list(KEIRA_SIGNUP).windowStart()).isEqualTo(LocalDate.parse("2026-10-31"));
+        assertThat(list(KEIRA_SIGNUP).windowStart()).isEqualTo(LocalDate.parse("2026-11-02"));
         assertThat(list(KEIRA_SIGNUP).windowEnd()).isEqualTo(LocalDate.parse("2026-11-20"));
     }
 
@@ -362,10 +362,24 @@ class ObserverEligibilityServiceTests {
         assertThatThrownBy(() -> service.updateDeadlines(1, deadlines("2026-11-01", "2026-10-31", "2026-12-01")))
                 .isInstanceOf(IllegalArgumentException.class);
         // Leander's observation is scheduled for Nov 4.
-        assertThatThrownBy(() -> service.updateDeadlines(1, deadlines("2026-10-31", "2026-11-02", "2026-12-01")))
+        assertThatThrownBy(() -> service.updateDeadlines(1, deadlines("2026-11-04", "2026-11-15", "2026-12-01")))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("existing observation date");
         assertThat(service.cycle().observationDeadline()).isEqualTo(LocalDate.parse("2026-11-15"));
+    }
+
+    @Test
+    void deadlinesCanOnlyBeExtendedBeforeOrOnTheirDeadline() {
+        assertThatThrownBy(() -> service.updateDeadlines(1, deadlines("2026-10-30", "2026-11-15", "2026-12-01")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("only be extended");
+        db.update(withSignupDeadline(db.findById(1, EvaluationCycle.class), LocalDate.parse("2026-10-20")));
+        assertThatThrownBy(() -> service.updateDeadlines(1, deadlines("2026-10-31", "2026-11-15", "2026-12-01")))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("has passed");
+        var updated = service.updateDeadlines(1, deadlines("2026-10-20", "2026-11-20", "2026-12-01"));
+        assertThat(updated.observationDeadline()).isEqualTo(LocalDate.parse("2026-11-20"));
+        db.update(withSignupDeadline(db.findById(1, EvaluationCycle.class), LocalDate.parse("2026-10-21")));
+        assertThat(service.updateDeadlines(1, deadlines("2026-10-22", "2026-11-20", "2026-12-01"))
+                .signupDeadline()).isEqualTo(LocalDate.parse("2026-10-22"));
     }
 
     int signup(int professorId, int sectionId) {
