@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
 import { type DemoAccount, getDemoAccounts } from "../api/demo";
+import { useAuth } from "../auth/AuthContext";
 import { AccountsTab } from "./AccountsTab";
+import { AddDataTab } from "./AddDataTab";
 
 const HIDDEN_KEY = "demoToolHidden";
 
-const TABS = [{ id: "accounts", label: "Accounts" }] as const;
+const TABS = [
+  { id: "accounts", label: "Accounts" },
+  { id: "data", label: "Add data" },
+] as const;
 
 type Tab = (typeof TABS)[number]["id"];
 
@@ -18,13 +23,19 @@ function isToggleShortcut(e: KeyboardEvent) {
   );
 }
 
-export function DemoTool() {
+export function DemoTool({
+  onDataChanged = () => undefined,
+}: {
+  onDataChanged?: () => void;
+}) {
+  const { user } = useAuth();
   const [accounts, setAccounts] = useState<DemoAccount[] | null>(null);
   const [hidden, setHidden] = useState(
     () => sessionStorage.getItem(HIDDEN_KEY) === "true",
   );
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("accounts");
+  const tabs = user ? TABS : TABS.filter(({ id }) => id === "accounts");
 
   // The backend only serves the demo endpoints when its own demo setting is on.
   useEffect(() => {
@@ -73,7 +84,7 @@ export function DemoTool() {
             </button>
           </header>
           <div role="tablist" className="flex gap-1 border-line border-b px-3">
-            {TABS.map(({ id, label }) => (
+            {tabs.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
@@ -91,6 +102,15 @@ export function DemoTool() {
               <AccountsTab
                 accounts={accounts}
                 onSwitched={() => setOpen(false)}
+              />
+            )}
+            {tab === "data" && (
+              <AddDataTab
+                accounts={accounts}
+                onAccountAdded={(account) =>
+                  setAccounts([...accounts, account])
+                }
+                onDataChanged={onDataChanged}
               />
             )}
           </div>
