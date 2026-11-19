@@ -7,6 +7,7 @@ import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withPlan;
 import static edu.utdallas.cs4485.assessmenthelper.TestFixtures.withStatus;
 import static java.util.Comparator.comparing;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -135,6 +136,15 @@ class ObservationWorkflowIntegrationTests {
                 .filter(ObservationCriterion::selected)
                 .map(ObservationCriterion::criterionId)
                 .toList();
+    }
+
+    @Test
+    void aPastCycleObservationCannotBeModified() {
+        int previous = observationOf(db, "devika.stonebridge@example.edu", "Spring", 2026);
+        var observer = principal(db, "arlo.glimmerton@example.edu", 1, Role.PROFESSOR);
+        assertThatThrownBy(() -> service.start(previous, observer))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("read-only");
     }
 
     @Test

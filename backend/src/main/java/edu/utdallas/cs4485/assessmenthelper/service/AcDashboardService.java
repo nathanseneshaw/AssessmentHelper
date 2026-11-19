@@ -108,11 +108,25 @@ public class AcDashboardService {
     public Metrics metrics() {
         var due = eligibility.findDue();
         var ac = observers.acState();
+        return metrics(due, ac, observers.audit());
+    }
+
+    @Transactional(readOnly = true)
+    public Metrics metrics(int cycleId) {
+        return metrics(eligibility.findDue(cycleId), observers.acState(cycleId), observers.audit(cycleId));
+    }
+
+    private Metrics metrics(
+            EvaluationEligibilityService.Queue due,
+            ObserverEligibilityService.AcState ac,
+            ObserverEligibilityService.Audit audit) {
         if (ac.cycle().cycleId() != due.cycleId())
             throw new ConflictException("The evaluation cycle changed. Refresh the dashboard.");
         var signedUp = Set.copyOf(signupRepository.findSignedUpProfessorIds(due.cycleId()));
-        // Participation Rate: professors who signed up this cycle / professors who were due.
-        int participating = signedUp.size();
+        // Count only due professors who signed up, not all signups in the cycle.
+        int participating = (int) due.faculty().stream()
+                .filter(person -> signedUp.contains(person.professorId()))
+                .count();
         var tracked = tracked(due.cycleId());
         // Observer Utilization: distinct professors who took the observer role, from every observation row
         // (a signup can have several), not just the representative row kept in tracked().
@@ -150,7 +164,7 @@ public class AcDashboardService {
                 survey,
                 ProcessFeedbackService.window(
                         ac.cycle().observationDeadline(), ac.cycle().feedbackDeadline(), LocalDate.now(clock)),
-                accuracy(observers.audit()));
+                accuracy(audit));
     }
 
     private static Accuracy accuracy(ObserverEligibilityService.Audit a) {
@@ -165,6 +179,12 @@ public class AcDashboardService {
     @Transactional(readOnly = true)
     public Observations observations() {
         var cycle = observers.cycle();
+        return new Observations(cycle.cycleId(), cycle.label(), cycle.observationDeadline(), tracked(cycle.cycleId()));
+    }
+
+    @Transactional(readOnly = true)
+    public Observations observations(int cycleId) {
+        var cycle = observers.cycle(cycleId);
         return new Observations(cycle.cycleId(), cycle.label(), cycle.observationDeadline(), tracked(cycle.cycleId()));
     }
 

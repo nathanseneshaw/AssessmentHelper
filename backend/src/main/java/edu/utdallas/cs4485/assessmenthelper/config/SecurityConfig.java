@@ -43,6 +43,7 @@ public class SecurityConfig {
                     if (demoSessions.isPresent())
                         auth.requestMatchers("/api/demo/accounts", "/api/demo/switch")
                                 .permitAll();
+                    auth.requestMatchers("/api/ac/cycles", "/api/ac/cycles/**").hasRole("AC");
                     auth.requestMatchers("/api/**").authenticated().anyRequest().denyAll();
                 })
                 // Setting loginPage also turns off Spring's generated HTML login page.

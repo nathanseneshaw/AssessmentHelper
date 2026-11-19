@@ -8,6 +8,7 @@ import {
   rankLabel,
   sendNotification,
 } from "../../api/evaluationEligibility";
+import { useCycleReadOnly } from "../../layouts/CycleAccess";
 
 const secondary =
   "rounded-md border border-line bg-[#f7f6f2] px-6 py-2 text-sm hover:bg-mist disabled:opacity-50";
@@ -31,6 +32,7 @@ export function OverdueEvaluations({
   onClose: () => void;
   onNotified: (professorId: number, sentAt: string) => void;
 }) {
+  const readOnly = useCycleReadOnly();
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const [faculty, setFaculty] = useState<OverdueFaculty | null>(null);
@@ -343,6 +345,7 @@ export function OverdueEvaluations({
                       <button
                         type="button"
                         data-professor-id={person.professorId}
+                        disabled={readOnly}
                         className={primary}
                         aria-label={`${person.lastNotifiedAt ? "Follow up with" : "Notify"} ${person.name}`}
                         onClick={() => void compose(person)}

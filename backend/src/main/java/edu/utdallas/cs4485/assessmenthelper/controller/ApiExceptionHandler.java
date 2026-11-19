@@ -1,6 +1,7 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
 import edu.utdallas.cs4485.assessmenthelper.service.ConflictException;
+import edu.utdallas.cs4485.assessmenthelper.service.CycleImportException;
 import edu.utdallas.cs4485.assessmenthelper.service.NotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -11,6 +12,14 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @ExceptionHandler(CycleImportException.class)
+    ProblemDetail handleCycleImport(CycleImportException e) {
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+        problem.setProperty("fileKind", e.fileKind());
+        problem.setProperty("errors", e.result().errors());
+        return problem;
+    }
 
     @ExceptionHandler(NotFoundException.class)
     ProblemDetail handleNotFound(NotFoundException e) {

@@ -70,6 +70,12 @@ export function fakeBackend(routes: Record<string, Route> = {}) {
         signedInUser = null;
         return new Response(null, { status: 204 });
       default:
+        if (path === "/api/ac/cycles" && !routes[path])
+          return Response.json([
+            { cycleId: 1, term: "Fall", year: 2026, period: "CURRENT" },
+          ]);
+        if (/^\/api\/ac\/cycles\/\d+\/readiness$/.test(path) && !routes[path])
+          return Response.json({ state: "READY", reason: null });
         if (path === "/api/email-templates" && !routes[path])
           return Response.json({ templates: [], placeholders: [] });
         return (

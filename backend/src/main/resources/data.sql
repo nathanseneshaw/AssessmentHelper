@@ -2235,6 +2235,17 @@ JOIN professor op ON op.email = h.observer_email
 JOIN observer ob ON ob.professor_id = op.professor_id AND ob.cycle_id = o.cycle_id;
 DROP TABLE demo_history;
 
+-- Historical Spring signups need a matching window so reports can include their completed observations.
+-- The seed has no recommendation history, so no observer recommendations are invented here.
+INSERT INTO observer_list_state (signup_id, window_start, window_end)
+SELECT es.signup_id, DATEADD('DAY', 1, c.signup_deadline), c.observation_deadline
+FROM evaluation_signup es
+JOIN observee o ON o.observee_id = es.observee_id
+JOIN evaluation_cycle c ON c.cycle_id = o.cycle_id
+JOIN semester s ON s.semester_id = c.semester_id
+WHERE s.term = 'Spring' AND s.academic_year = 2026
+  AND NOT EXISTS (SELECT 1 FROM observer_list_state ls WHERE ls.signup_id = es.signup_id);
+
 -- Completed demo observations need answers, or a committee member who opens one sees "No response" everywhere.
 INSERT INTO observation_response (observation_id, criterion_id, rating, comments)
 SELECT o.observation_id, c.criterion_id,
@@ -2299,3 +2310,19 @@ If you have already completed the required sign-up, no further action is needed 
 
 Thank you,
 Assessment Committee');
+
+-- The sample historical cycle uses its actual Spring 2026 teaching roster. Professor records without
+-- a rank or hire date remain in the roster; their eligibility is reported as unconfigured.
+INSERT INTO cycle_professor_roster
+    (cycle_id, professor_id, department_id, professor_rank, first_name, last_name, email, hire_date, active_status, new_professor)
+SELECT DISTINCT c.cycle_id, p.professor_id, p.department_id, p.professor_rank, p.first_name, p.last_name,
+       p.email, p.hire_date, p.active_status, FALSE
+FROM evaluation_cycle c
+JOIN semester s ON s.semester_id = c.semester_id
+JOIN course_section cs ON cs.semester_id = s.semester_id
+JOIN teaching_history t ON t.section_id = cs.section_id
+JOIN professor p ON p.professor_id = t.professor_id
+WHERE s.term = 'Spring' AND s.academic_year = 2026
+  AND (p.hire_date IS NULL OR p.hire_date <= s.end_date);
+
+INSERT INTO cycle_setup_lock (lock_id) VALUES (1);

@@ -20,6 +20,7 @@ import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { ObservationRecord } from "../../components/ObservationRecord";
 import { PageHeader } from "../../components/PageHeader";
 import { clockTime, shortDate } from "../../format";
+import { useCycleReadOnly } from "../../layouts/CycleAccess";
 
 type Reading = Pick<Kpi, "value" | "note">;
 
@@ -301,6 +302,7 @@ function ObservationDetails({
 }
 
 export function AcObservations() {
+  const readOnly = useCycleReadOnly();
   const [data, setData] = useState<ObservationTracking | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
@@ -369,6 +371,7 @@ export function AcObservations() {
             tone="orange"
             className="min-w-52.5"
             disabled={
+              readOnly ||
               reminding ||
               !observations.some(
                 (o) => o.status !== "COMPLETED" && o.status !== "DEFERRED",

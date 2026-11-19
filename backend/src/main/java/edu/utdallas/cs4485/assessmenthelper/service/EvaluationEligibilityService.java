@@ -96,8 +96,18 @@ public class EvaluationEligibilityService {
     }
 
     @Transactional(readOnly = true)
+    public Queue findOverdue(int cycleId) {
+        return findQueue(false, cycleId);
+    }
+
+    @Transactional(readOnly = true)
     public Queue findDue() {
         return findQueue(true);
+    }
+
+    @Transactional(readOnly = true)
+    public Queue findDue(int cycleId) {
+        return findQueue(true, cycleId);
     }
 
     @Transactional(readOnly = true)
@@ -105,52 +115,92 @@ public class EvaluationEligibilityService {
         return findQueue(null);
     }
 
+    @Transactional(readOnly = true)
+    public Queue findAll(int cycleId) {
+        return findQueue(null, cycleId);
+    }
+
     /** Both queues use one calculation so due always takes precedence over overdue. */
     private Queue findQueue(Boolean due) {
+        return findQueue(due, null);
+    }
+
+    private Queue findQueue(Boolean due, Integer selectedCycleId) {
         LocalDate today = LocalDate.now(clock);
+        var futureOnly = java.util.Set.copyOf(cycles.findFutureOnlyProfessorIds(today));
         List<Professor> activeProfessors = professors.findAll().stream()
                 .filter(professor -> Boolean.TRUE.equals(professor.activeStatus()))
+                .filter(professor -> !futureOnly.contains(professor.professorId()))
                 .toList();
         var activeIds = activeProfessors.stream().map(Professor::professorId).collect(Collectors.toSet());
         var semesterMap =
                 semesters.findAll().stream().collect(Collectors.toMap(Semester::semesterId, Function.identity()));
+        var cycleMap =
+                cycles.findAll().stream().collect(Collectors.toMap(EvaluationCycle::cycleId, Function.identity()));
         var current = semesterMap.values().stream()
                 .filter(s -> s.startDate() != null
                         && s.endDate() != null
                         && !today.isBefore(s.startDate())
                         && !today.isAfter(s.endDate()))
                 .toList();
-        if (current.size() != 1)
-            throw conflict("No unique semester contains today's date. Configure semester dates first.");
-        Semester semester = current.getFirst();
-        var cycleMap =
-                cycles.findAll().stream().collect(Collectors.toMap(EvaluationCycle::cycleId, Function.identity()));
-        var currentCycles = cycleMap.values().stream()
-                .filter(c -> c.semesterId().equals(semester.semesterId()))
-                .toList();
-        if (currentCycles.size() != 1)
-            throw conflict("Configure exactly one evaluation cycle for the current semester.");
-        EvaluationCycle cycle = currentCycles.getFirst();
+        EvaluationCycle cycle;
+        Semester semester;
+        if (selectedCycleId != null) {
+            cycle = cycleMap.get(selectedCycleId);
+            if (cycle == null) throw new NotFoundException("Evaluation cycle not found.");
+            semester = semesterMap.get(cycle.semesterId());
+            if (semester == null || semester.startDate() == null || semester.endDate() == null)
+                throw conflict("The cycle's semester dates are not configured.");
+        } else {
+            if (current.isEmpty()) throw conflict("There is no current evaluation cycle.");
+            if (current.size() != 1)
+                throw conflict("No unique semester contains today's date. Configure semester dates first.");
+            semester = current.getFirst();
+            var currentCycles = cycleMap.values().stream()
+                    .filter(c -> c.semesterId().equals(semester.semesterId()))
+                    .toList();
+            if (currentCycles.isEmpty()) throw conflict("There is no current evaluation cycle.");
+            if (currentCycles.size() != 1)
+                throw conflict("Configure exactly one evaluation cycle for the current semester.");
+            cycle = currentCycles.getFirst();
+        }
+        var roster = cycles.findRosterProfessors(cycle.cycleId());
+        LocalDate cutoff =
+                roster.isEmpty() ? semester.endDate() : semester.startDate().minusDays(1);
+        LocalDate asOf = today.isAfter(cutoff) ? cutoff : today;
+        if (!roster.isEmpty()) {
+            activeProfessors = roster.stream()
+                    .filter(professor -> Boolean.TRUE.equals(professor.activeStatus()))
+                    .toList();
+            activeIds = activeProfessors.stream().map(Professor::professorId).collect(Collectors.toSet());
+        }
         var policyMap = policies.findAll().stream()
                 .collect(Collectors.toMap(EvaluationPolicy::professorRank, Function.identity()));
         var signupMap =
                 signups.findAll().stream().collect(Collectors.toMap(EvaluationSignup::signupId, Function.identity()));
         Map<Integer, LocalDateTime> completionByObservee = new HashMap<>();
+        var completedAfterAsOf = new java.util.HashSet<Integer>();
         for (Observation observation : observations.findAll()) {
             var signup = signupMap.get(observation.signupId());
             if (signup != null
                     && observation.completedAt() != null
-                    && !observation.completedAt().toLocalDate().isAfter(today)) {
+                    && observation.completedAt().toLocalDate().isAfter(asOf))
+                completedAfterAsOf.add(signup.observeeId());
+            if (signup != null
+                    && observation.completedAt() != null
+                    && !observation.completedAt().toLocalDate().isAfter(asOf)) {
                 completionByObservee.merge(
                         signup.observeeId(), observation.completedAt(), (a, b) -> a.isAfter(b) ? a : b);
             }
         }
         Map<Integer, LocalDate> lastCompleted = new HashMap<>();
         Map<Integer, String> lastCycle = new HashMap<>();
-        for (Observee observee : observees.findAll()) {
+        var allObservees = observees.findAll();
+        for (Observee observee : allObservees) {
             if (!activeIds.contains(observee.professorId()) || !"COMPLETED".equalsIgnoreCase(observee.status()))
                 continue;
             LocalDateTime completedAt = completionByObservee.get(observee.observeeId());
+            if (completedAt == null && completedAfterAsOf.contains(observee.observeeId())) continue;
             if (completedAt == null)
                 throw conflict("Completed evaluation for professor " + observee.professorId()
                         + " is missing its observation completion date.");
@@ -163,6 +213,24 @@ public class EvaluationEligibilityService {
                 lastCycle.put(observee.professorId(), pastSemester == null ? date.toString() : label(pastSemester));
             }
         }
+        Map<Integer, LocalDate> lastIncomplete = new HashMap<>();
+        if (!roster.isEmpty()) {
+            for (Observee observee : allObservees) {
+                if (!activeIds.contains(observee.professorId())
+                        || "DEFERRED".equalsIgnoreCase(observee.status())
+                        || "CANCELLED".equalsIgnoreCase(observee.status())) continue;
+                var earlierCycle = cycleMap.get(observee.cycleId());
+                var earlierSemester = earlierCycle == null ? null : semesterMap.get(earlierCycle.semesterId());
+                if (earlierSemester == null
+                        || earlierSemester.endDate() == null
+                        || !earlierSemester.endDate().isBefore(semester.startDate())) continue;
+                var completed = completionByObservee.get(observee.observeeId());
+                if ("COMPLETED".equalsIgnoreCase(observee.status())
+                        && completed != null
+                        && !completed.toLocalDate().isAfter(earlierSemester.endDate())) continue;
+                lastIncomplete.merge(observee.professorId(), earlierSemester.endDate(), (a, b) -> a.isAfter(b) ? a : b);
+            }
+        }
         Map<Integer, LocalDateTime> notifiedAt = new HashMap<>();
         for (var notification : notifications.findAll()) {
             if (cycle.cycleId().equals(notification.cycleId()))
@@ -172,12 +240,28 @@ public class EvaluationEligibilityService {
         List<Faculty> faculty = new ArrayList<>();
         for (Professor professor : activeProfessors) {
             var policy = policyMap.get(professor.professorRank());
+            LocalDate anchor = lastCompleted.getOrDefault(professor.professorId(), professor.hireDate());
+            if (!roster.isEmpty() && (policy == null || anchor == null)) {
+                if (due == null)
+                    faculty.add(new Faculty(
+                            professor.professorId(),
+                            professor.firstName() + " " + professor.lastName(),
+                            professor.lastName(),
+                            professor.professorRank(),
+                            professor.email(),
+                            lastCycle.getOrDefault(professor.professorId(), "Never evaluated"),
+                            null,
+                            null,
+                            0,
+                            notifiedAt.get(professor.professorId()),
+                            "Unconfigured"));
+                continue;
+            }
             if (policy == null)
                 throw conflict("Professor " + professor.professorId() + " needs an evaluation policy for their rank.");
             if (!EvaluationDueRules.applies(professor, policy)) continue;
             Integer interval = policy.evaluationIntervalYears();
             if (interval == null || interval < 1) throw conflict("Evaluation intervals must be positive.");
-            LocalDate anchor = lastCompleted.getOrDefault(professor.professorId(), professor.hireDate());
             if (anchor == null)
                 throw conflict(
                         "Professor " + professor.professorId() + " needs a hire date or completed evaluation date.");
@@ -185,7 +269,7 @@ public class EvaluationEligibilityService {
             LocalDate last = lastCompleted.get(professor.professorId());
             LocalDate target = deferred.stream()
                     .filter(d -> d.professorId().equals(professor.professorId())
-                            && !d.deferredAt().toLocalDate().isAfter(today)
+                            && !d.deferredAt().toLocalDate().isAfter(asOf)
                             && (last == null || last.isBefore(d.deferredAt().toLocalDate())))
                     .map(d -> semesterMap.get(d.targetSemesterId()))
                     .filter(java.util.Objects::nonNull)
@@ -193,6 +277,16 @@ public class EvaluationEligibilityService {
                     .max(Comparator.naturalOrder())
                     .orElse(null);
             result = EvaluationDueRules.deferred(result, target, semester);
+            // A roster-backed cycle keeps an outstanding obligation overdue, even when a later
+            // recurrence would otherwise fall in this semester. An explicit deferral still applies.
+            if (!roster.isEmpty() && target == null && result.firstDue().isBefore(semester.startDate())) {
+                result = new EvaluationDueRules.Result(result.firstDue(), result.firstDue(), false, true);
+            }
+            LocalDate incomplete = lastIncomplete.get(professor.professorId());
+            if (target == null && incomplete != null && (last == null || last.isBefore(incomplete))) {
+                LocalDate overdueDate = result.firstDue().isBefore(incomplete) ? result.firstDue() : incomplete;
+                result = new EvaluationDueRules.Result(result.firstDue(), overdueDate, false, true);
+            }
             boolean dueThisCycle = result.dueThisCycle();
             boolean overdue = result.overdue();
             if (due == null || (due ? dueThisCycle : overdue)) {

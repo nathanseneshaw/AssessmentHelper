@@ -17,7 +17,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 @DataJdbcTest
-@Import({CsvImportService.class, ProfessorCsvImporter.class, SectionCsvImporter.class})
+@Import({
+    CsvImportService.class,
+    ProfessorCsvImporter.class,
+    SectionCsvImporter.class,
+    edu.utdallas.cs4485.assessmenthelper.config.ClockConfig.class
+})
 class ProfessorCsvImportTests {
 
     private static final String HEADER = "email,first_name,last_name,department_code,rank,hire_date,active";

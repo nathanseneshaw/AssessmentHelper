@@ -43,6 +43,7 @@ import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 @Import({
     ObserverEligibilityService.class,
     EvaluationSignupService.class,
+    CycleReadinessService.class,
     ObserverRequestService.class,
     ObserverEligibilityServiceTests.Time.class
 })
@@ -366,6 +367,9 @@ class ObserverEligibilityServiceTests {
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("existing observation date");
         assertThat(service.cycle().observationDeadline()).isEqualTo(LocalDate.parse("2026-11-15"));
+        assertThatThrownBy(() -> service.updateDeadlines(1, deadlines("2026-10-31", "2026-11-20", "2027-01-01")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("semester end");
     }
 
     @Test

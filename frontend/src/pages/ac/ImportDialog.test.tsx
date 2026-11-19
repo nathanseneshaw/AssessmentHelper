@@ -8,7 +8,6 @@ import {
   within,
 } from "@testing-library/react";
 import { App } from "../../App";
-import { API_URL } from "../../api/client";
 import type { ImportResult } from "../../api/imports";
 import { metrics } from "../../test/acDashboardFixtures";
 import { fakeBackend, resetBackend, signInAs } from "../../test/fakeBackend";
@@ -133,15 +132,15 @@ test("the dialog offers both import types with their templates", async () => {
     within(dialog).getByRole("radio", { name: "Class sections" }),
   ).toBeDefined();
   expect(
-    within(dialog)
-      .getByRole("link", { name: "Download template for professors" })
-      .getAttribute("href"),
-  ).toBe(`${API_URL}/api/imports/professors/template`);
+    within(dialog).getByRole("button", {
+      name: "Download template for professors",
+    }),
+  ).toBeDefined();
   expect(
-    within(dialog)
-      .getByRole("link", { name: "Download template for class sections" })
-      .getAttribute("href"),
-  ).toBe(`${API_URL}/api/imports/sections/template`);
+    within(dialog).getByRole("button", {
+      name: "Download template for class sections",
+    }),
+  ).toBeDefined();
   expect(button(dialog, "Import").disabled).toBe(true);
   pick(dialog, csvFile());
   expect(button(dialog, "Import").disabled).toBe(false);

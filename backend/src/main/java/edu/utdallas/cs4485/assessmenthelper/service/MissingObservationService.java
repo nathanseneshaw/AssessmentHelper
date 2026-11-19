@@ -64,7 +64,15 @@ public class MissingObservationService {
      */
     @Transactional(readOnly = true)
     public MissingSignups findMissingSignups() {
-        var cycle = eligibility.cycle();
+        return findMissingSignups(eligibility.cycle());
+    }
+
+    @Transactional(readOnly = true)
+    public MissingSignups findMissingSignups(int cycleId) {
+        return findMissingSignups(eligibility.cycle(cycleId));
+    }
+
+    private MissingSignups findMissingSignups(ObserverEligibilityService.Cycle cycle) {
         LocalDate deadline = cycle.observationDeadline();
         if (deadline == null || !LocalDate.now(clock).isAfter(deadline)) {
             return new MissingSignups(cycle.cycleId(), cycle.label(), deadline, List.of());

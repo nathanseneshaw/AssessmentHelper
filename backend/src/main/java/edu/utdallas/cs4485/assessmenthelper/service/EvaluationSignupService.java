@@ -29,6 +29,7 @@ public class EvaluationSignupService {
     private final Clock clock;
     private final ObserverRequestContextRepository requestContext;
     private final ObserverEligibilityService eligibility;
+    private final CycleReadinessService readiness;
 
     public EvaluationSignupService(
             ProfessorRepository professors,
@@ -40,7 +41,8 @@ public class EvaluationSignupService {
             EvaluationSignupRepository signups,
             Clock clock,
             ObserverRequestContextRepository requestContext,
-            ObserverEligibilityService eligibility) {
+            ObserverEligibilityService eligibility,
+            CycleReadinessService readiness) {
         this.professors = professors;
         this.semesters = semesters;
         this.cycles = cycles;
@@ -51,6 +53,7 @@ public class EvaluationSignupService {
         this.clock = clock;
         this.requestContext = requestContext;
         this.eligibility = eligibility;
+        this.readiness = readiness;
     }
 
     @Transactional(readOnly = true)
@@ -80,13 +83,24 @@ public class EvaluationSignupService {
         if (sectionId == null || sectionId <= 0) {
             throw new IllegalArgumentException("A valid sectionId is required.");
         }
+        // Readiness may activate roster profiles in a separate transaction, so finalize it before locking a professor.
+        var cycle = openCycle(semesterId);
         var professor = professors
                 .findForUpdateByProfessorId(professorId)
                 .orElseThrow(() -> new NotFoundException("No professor with id " + professorId));
-        if (!Boolean.TRUE.equals(professor.activeStatus())) {
-            throw new ConflictException("This professor is not active.");
+        var roster = cycles.findRosterProfessors(cycle.cycleId());
+        if (roster.isEmpty()) {
+            if (!Boolean.TRUE.equals(professor.activeStatus()))
+                throw new ConflictException("This professor is not active.");
+        } else {
+            var rosterProfessor = roster.stream()
+                    .filter(entry -> entry.professorId().equals(professorId))
+                    .findFirst()
+                    .orElseThrow(
+                            () -> new ConflictException("This professor is not on the semester's faculty roster."));
+            if (!Boolean.TRUE.equals(rosterProfessor.activeStatus()))
+                throw new ConflictException("This professor is not active for this semester.");
         }
-        var cycle = openCycle(semesterId);
         var section = sections.findById(sectionId)
                 .orElseThrow(() -> new NotFoundException("No section with id " + sectionId));
         if (!section.semesterId().equals(semesterId)) {
@@ -124,9 +138,15 @@ public class EvaluationSignupService {
     }
 
     private EvaluationCycle openCycle(Integer semesterId) {
-        if (!semesters.existsById(semesterId)) {
-            throw new NotFoundException("No semester with id " + semesterId);
-        }
+        var semester = semesters
+                .findById(semesterId)
+                .orElseThrow(() -> new NotFoundException("No semester with id " + semesterId));
+        LocalDate today = LocalDate.now(clock);
+        if (semester.startDate() == null
+                || semester.endDate() == null
+                || today.isBefore(semester.startDate())
+                || today.isAfter(semester.endDate()))
+            throw new ConflictException("Evaluation sign-up is not open for this semester.");
         var open = cycles.findAll().stream()
                 .filter(cycle -> cycle.semesterId().equals(semesterId) && "OPEN".equals(cycle.status()))
                 .toList();
@@ -136,6 +156,8 @@ public class EvaluationSignupService {
                             ? "Evaluation sign-up is not open for this semester."
                             : "More than one evaluation cycle is open for this semester. Contact the committee.");
         }
+        if (!"READY".equals(readiness.check(open.getFirst().cycleId()).state()))
+            throw new ConflictException("Evaluation sign-up is unavailable because the cycle did not pass readiness.");
         return open.getFirst();
     }
 

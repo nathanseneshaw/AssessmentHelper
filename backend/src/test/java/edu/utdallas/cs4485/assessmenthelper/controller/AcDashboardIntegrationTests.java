@@ -23,12 +23,14 @@ import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
 import edu.utdallas.cs4485.assessmenthelper.entity.ObserverListState;
 import edu.utdallas.cs4485.assessmenthelper.entity.ObserverMatch;
 import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.Role;
+import edu.utdallas.cs4485.assessmenthelper.service.EvaluationEligibilityService;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverEligibilityService;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
@@ -115,6 +117,70 @@ class AcDashboardIntegrationTests {
     private MockMvc mvc;
 
     @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    @Autowired
+    private EvaluationEligibilityService eligibility;
+
+    @Autowired
+    private EvaluationSignupRepository signups;
+
+    @Test
+    void observationsCanBeReadForAnExplicitPastCycle() throws Exception {
+        Integer cycleId = jdbc.queryForObject("""
+                SELECT c.cycle_id FROM evaluation_cycle c JOIN semester s ON s.semester_id = c.semester_id
+                WHERE s.term = 'Spring' AND s.academic_year = 2026
+                """, Integer.class);
+        mvc.perform(get("/api/ac-dashboard/cycles/" + cycleId + "/observations").with(user(KAIA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cycleId").value(cycleId))
+                .andExpect(jsonPath("$.cycleLabel").value("Spring 2026"));
+        mvc.perform(get("/api/cycles/" + cycleId + "/missing-observations").with(user(KAIA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cycleId").value(cycleId))
+                .andExpect(jsonPath("$.cycleLabel").value("Spring 2026"));
+        mvc.perform(get("/api/ac-dashboard/cycles/" + cycleId + "/metrics").with(user(KAIA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cycleId").value(cycleId));
+        String before = mvc.perform(
+                        get("/api/evaluation-eligibility/cycles/" + cycleId).with(user(KAIA)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        jdbc.update(
+                "UPDATE professor SET first_name = 'Changed' WHERE professor_id IN "
+                        + "(SELECT professor_id FROM cycle_professor_roster WHERE cycle_id = ?)",
+                cycleId);
+        String after = mvc.perform(
+                        get("/api/evaluation-eligibility/cycles/" + cycleId).with(user(KAIA)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(after).isEqualTo(before);
+    }
+
+    @Test
+    void pastCycleParticipationCountsOnlySignedUpDueFaculty() throws Exception {
+        Integer cycleId = jdbc.queryForObject("""
+                SELECT c.cycle_id FROM evaluation_cycle c JOIN semester s ON s.semester_id = c.semester_id
+                WHERE s.term = 'Spring' AND s.academic_year = 2026
+                """, Integer.class);
+        var due = eligibility.findDue(cycleId);
+        var signedUp = signups.findSignedUpProfessorIds(cycleId);
+        long signedUpDue = due.faculty().stream()
+                .filter(person -> signedUp.contains(person.professorId()))
+                .count();
+        assertThat(signedUp.size()).isGreaterThan(due.count());
+        mvc.perform(get("/api/ac-dashboard/cycles/" + cycleId + "/metrics").with(user(KAIA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.facultyDue").value(due.count()))
+                .andExpect(jsonPath("$.participation.count").value(signedUpDue))
+                .andExpect(jsonPath("$.participation.total").value(due.count()));
+    }
+
+    @Autowired
     private JdbcAggregateTemplate db;
 
     @Autowired
@@ -141,7 +207,7 @@ class AcDashboardIntegrationTests {
     void committeeSeesTheSeededCycleMetrics() throws Exception {
         metrics().andExpect(status().isOk()).andExpect(content().json("""
                         {"cycleId":1,"cycleLabel":"Fall 2026","facultyDue":13,"listSize":5,
-                        "participation":{"count":8,"total":13},"observerUtilization":{"count":1,"total":8},
+                        "participation":{"count":5,"total":13},"observerUtilization":{"count":1,"total":8},
                         "listSufficiency":{"count":8,"total":8},"missingObservations":0,
                         "surveyCompletion":{"count":0,"total":8},"surveyStatus":"NOT_OPEN",
                         "eligibilityAccuracy":{"incorrect":{"count":0,"total":1},"samePerson":0,

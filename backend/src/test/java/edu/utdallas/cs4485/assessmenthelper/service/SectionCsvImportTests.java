@@ -22,7 +22,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 @DataJdbcTest
-@Import({CsvImportService.class, ProfessorCsvImporter.class, SectionCsvImporter.class})
+@Import({
+    CsvImportService.class,
+    ProfessorCsvImporter.class,
+    SectionCsvImporter.class,
+    edu.utdallas.cs4485.assessmenthelper.config.ClockConfig.class
+})
 class SectionCsvImportTests {
 
     private static final String HEADER = "course_prefix,course_number,course_name,course_level,department_code,"
@@ -83,7 +88,7 @@ class SectionCsvImportTests {
 
     @Test
     void importingTheSameRowAgainChangesNothing() {
-        String row = "CS,1337,,,,Fall,2022,0L1,,,,," + TAMSIN;
+        String row = "CS,4390,Computer Networks,,,Fall,2026,001,,,,," + TAMSIN;
         save(HEADER, row);
         long courseCount = courses.count();
         long sectionCount = sections.count();
@@ -95,6 +100,15 @@ class SectionCsvImportTests {
         assertThat(courses.count()).isEqualTo(courseCount);
         assertThat(sections.count()).isEqualTo(sectionCount);
         assertThat(teachingHistory.count()).isEqualTo(assignmentCount);
+    }
+
+    @Test
+    void sectionsForAPastEvaluationCycleAreReadOnly() {
+        var result = save(HEADER, "CS,1337,,,,Fall,2022,0L1,,,,," + TAMSIN);
+        assertThat(result.saved()).isFalse();
+        assertThat(result.errors())
+                .extracting(RowError::message)
+                .contains("Sections in a past evaluation cycle are read-only.");
     }
 
     @Test

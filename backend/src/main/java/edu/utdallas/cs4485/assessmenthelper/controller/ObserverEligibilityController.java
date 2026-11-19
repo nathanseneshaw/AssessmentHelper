@@ -1,5 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import edu.utdallas.cs4485.assessmenthelper.service.CycleDashboardSnapshotService;
 import edu.utdallas.cs4485.assessmenthelper.service.ObserverEligibilityService;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -14,9 +15,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/observer-eligibility")
 public class ObserverEligibilityController {
     private final ObserverEligibilityService service;
+    private final CycleDashboardSnapshotService snapshots;
 
-    public ObserverEligibilityController(ObserverEligibilityService service) {
+    public ObserverEligibilityController(ObserverEligibilityService service, CycleDashboardSnapshotService snapshots) {
         this.service = service;
+        this.snapshots = snapshots;
     }
 
     public record ResponseBody(Boolean accept, java.time.LocalDate observationDate) {}
@@ -33,6 +36,12 @@ public class ObserverEligibilityController {
     @PreAuthorize("hasRole('AC')")
     public ObserverEligibilityService.AcState ac() {
         return service.acState();
+    }
+
+    @GetMapping("/ac/cycles/{cycleId}")
+    @PreAuthorize("hasRole('AC')")
+    public ObserverEligibilityService.AcState acCycle(@PathVariable int cycleId) {
+        return snapshots.get(cycleId).matching();
     }
 
     @PostMapping("/generate")

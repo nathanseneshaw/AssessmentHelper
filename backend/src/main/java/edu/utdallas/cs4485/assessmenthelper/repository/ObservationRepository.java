@@ -26,17 +26,22 @@ public interface ObservationRepository extends ListCrudRepository<Observation, I
             SELECT o.observation_id, o.signup_id, o.status, o.template_id, o.observation_date,
             o.start_time AS observation_start, o.observer_signed_at, o.observee_signed_at, o.observee_comments,
             de.school_id AS observee_school_id, oe.cycle_id, sm.term, sm.academic_year,
-            pe.professor_id AS observee_professor_id, pe.first_name || ' ' || pe.last_name AS observee_name,
+            pe.professor_id AS observee_professor_id,
+            COALESCE(rpe.first_name, pe.first_name) || ' ' || COALESCE(rpe.last_name, pe.last_name) AS observee_name,
             de.department_name AS observee_department,
-            po.professor_id AS observer_professor_id, po.first_name || ' ' || po.last_name AS observer_name,
+            po.professor_id AS observer_professor_id,
+            COALESCE(rpo.first_name, po.first_name) || ' ' || COALESCE(rpo.last_name, po.last_name) AS observer_name,
             dp.department_name AS observer_department, s.section_id, s.section_number, s.meeting_days,
             s.start_time AS section_start, s.end_time AS section_end, s.location,
             c.course_code, c.course_number, c.course_name
             FROM observation o
             JOIN observer ob ON ob.observer_id=o.observer_id JOIN professor po ON po.professor_id=ob.professor_id
-            JOIN department dp ON dp.department_id=po.department_id
             JOIN evaluation_signup es ON es.signup_id=o.signup_id JOIN observee oe ON oe.observee_id=es.observee_id
-            JOIN professor pe ON pe.professor_id=oe.professor_id JOIN department de ON de.department_id=pe.department_id
+            JOIN professor pe ON pe.professor_id=oe.professor_id
+            LEFT JOIN cycle_professor_roster rpe ON rpe.cycle_id=oe.cycle_id AND rpe.professor_id=pe.professor_id
+            LEFT JOIN cycle_professor_roster rpo ON rpo.cycle_id=oe.cycle_id AND rpo.professor_id=po.professor_id
+            JOIN department de ON de.department_id=COALESCE(rpe.department_id, pe.department_id)
+            JOIN department dp ON dp.department_id=COALESCE(rpo.department_id, po.department_id)
             JOIN course_section s ON s.section_id=es.section_id JOIN course c ON c.course_id=s.course_id
             JOIN semester sm ON sm.semester_id=s.semester_id
             """;

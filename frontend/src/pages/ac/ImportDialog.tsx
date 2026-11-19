@@ -3,9 +3,9 @@ import { ApiError } from "../../api/client";
 import {
   type ImportKind,
   type ImportResult,
-  importTemplateUrl,
   uploadImport,
 } from "../../api/imports";
+import { TemplateDownload } from "./TemplateDownload";
 
 const KINDS: { kind: ImportKind; label: string; description: string }[] = [
   {
@@ -126,13 +126,10 @@ export function ImportDialog({
                   </span>
                 </span>
               </label>
-              <a
-                href={importTemplateUrl(option.kind)}
-                aria-label={`Download template for ${option.label.toLowerCase()}`}
+              <TemplateDownload
+                kind={option.kind}
                 className="ml-7 text-brand-green text-sm underline hover:no-underline sm:ml-0"
-              >
-                Download template
-              </a>
+              />
             </li>
           ))}
         </ul>
