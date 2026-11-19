@@ -18,8 +18,13 @@ import {
 import { DemoTool } from "./DemoTool";
 
 const DEMO_ACCOUNTS = [
-  { userId: 1, name: "Alice Alice", email: "alice@utdallas.edu" },
-  { userId: 2, name: "Bob Bob", email: "bob@utdallas.edu" },
+  {
+    userId: 1,
+    professorId: 1,
+    name: "Alice Alice",
+    email: "alice@utdallas.edu",
+  },
+  { userId: 2, professorId: 2, name: "Bob Bob", email: "bob@utdallas.edu" },
 ].map((account) => ({
   ...account,
   department: "Computer Science",
@@ -40,7 +45,7 @@ function renderTool() {
             element={
               <>
                 <Location />
-                <DemoTool />
+                <DemoTool onDataChanged={() => undefined} />
               </>
             }
           />
