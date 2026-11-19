@@ -6,6 +6,8 @@ import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.ListCrudRepository;
 
 public interface SemesterRepository extends ListCrudRepository<Semester, Integer> {
+    Optional<Semester> findFirstByTermIgnoreCaseAndAcademicYearOrderBySemesterId(String term, Integer academicYear);
+
     @Query("""
             SELECT s.semester_id FROM semester s WHERE s.start_date >
             (SELECT current_sem.end_date FROM semester current_sem WHERE current_sem.semester_id=:semesterId)

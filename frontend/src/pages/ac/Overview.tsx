@@ -20,6 +20,7 @@ import {
 } from "../../api/evaluationEligibility";
 import {
   type AcState,
+  observerChanged,
   unmatchedSignups,
   useObserverData,
 } from "../../api/observerEligibility";
@@ -27,6 +28,7 @@ import { ActionButton } from "../../components/ActionButton";
 import { CycleDeadlines } from "../../components/CycleDeadlines";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
+import { ImportDialog } from "./ImportDialog";
 import { OverdueEvaluations } from "./OverdueEvaluations";
 import { UnmatchedFaculty } from "./UnmatchedFaculty";
 
@@ -190,6 +192,7 @@ export function AcOverview() {
   } = useObserverData<AcState>("/ac");
   const unmatchedFaculty = matching ? unmatchedSignups(matching) : [];
   const [unmatchedOpen, setUnmatchedOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [queue, setQueue] = useState<OverdueQueue | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -260,6 +263,15 @@ export function AcOverview() {
       <PageHeader
         title="Assessment Committee Dashboard"
         subtitle={queue?.cycleLabel ?? "Assessment overview"}
+        action={
+          <ActionButton
+            tone="orange"
+            onClick={() => setImportOpen(true)}
+            className="min-w-36 justify-center"
+          >
+            Upload CSV
+          </ActionButton>
+        }
       />
       {error && (
         <p role="alert" className="mt-4 text-sm text-brand-red">
@@ -481,6 +493,12 @@ export function AcOverview() {
           error={matchingError}
           onRetry={reloadMatching}
           onClose={() => setUnmatchedOpen(false)}
+        />
+      )}
+      {importOpen && (
+        <ImportDialog
+          onClose={() => setImportOpen(false)}
+          onImported={observerChanged}
         />
       )}
     </div>
