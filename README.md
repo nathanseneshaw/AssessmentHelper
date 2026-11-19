@@ -99,7 +99,7 @@ Sample professors sign in with their email and `Faculty123!`. The committee memb
 
 Demo mode is off by default and has a setting on each side. Start the backend with `APP_DEMO_ENABLED=true ./gradlew bootRun` and the frontend with `BUN_PUBLIC_DEMO_MODE=true bun run dev`.
 
-With both on, a Demo button in the bottom-right corner of every page, including the login page, signs you in as or switches you to any account without a password. Once you're signed in, it also adds professors and course sections. Alt+Shift+D hides or shows it. Keep the backend setting off anywhere real people sign in, because it lets anyone act as any account.
+With both on, a Demo button in the bottom-right corner of every page, including the login page, signs you in as or switches you to any account without a password. Once you're signed in, it also adds professors and course sections and completes open evaluations in one step. Alt+Shift+D hides or shows it. Keep the backend setting off anywhere real people sign in, because it lets anyone act as any account.
 
 Switching accounts applies only to the tab using the Demo button. Signing out of a password session leaves demo tabs signed in. Demo sessions expire after 30 minutes of inactivity.
 

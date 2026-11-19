@@ -4,10 +4,13 @@ import edu.utdallas.cs4485.assessmenthelper.entity.Department;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.DemoTabSessions;
+import edu.utdallas.cs4485.assessmenthelper.service.DemoEvaluationService;
 import edu.utdallas.cs4485.assessmenthelper.service.DemoService;
+import edu.utdallas.cs4485.assessmenthelper.service.MissingObservationService;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,12 +24,16 @@ public class DemoController {
 
     public record SwitchResult(CurrentUser user, String token) {}
 
+    public record Completed(int observationId) {}
+
     private final DemoService service;
     private final DemoTabSessions sessions;
+    private final DemoEvaluationService evaluations;
 
-    public DemoController(DemoService service, DemoTabSessions sessions) {
+    public DemoController(DemoService service, DemoTabSessions sessions, DemoEvaluationService evaluations) {
         this.service = service;
         this.sessions = sessions;
+        this.evaluations = evaluations;
     }
 
     @GetMapping("/accounts")
@@ -47,6 +54,21 @@ public class DemoController {
     @PostMapping("/sections")
     public DemoService.AddedSection addSection(@RequestBody DemoService.NewSection body) {
         return service.addSection(body);
+    }
+
+    @GetMapping("/evaluations")
+    public List<MissingObservationService.MissingSignup> openEvaluations() {
+        return evaluations.open();
+    }
+
+    @PostMapping("/evaluations/{signupId}/step")
+    public DemoEvaluationService.Step step(@PathVariable int signupId) {
+        return evaluations.step(signupId);
+    }
+
+    @PostMapping("/evaluations/{signupId}/complete")
+    public Completed complete(@PathVariable int signupId) {
+        return new Completed(evaluations.complete(signupId));
     }
 
     @PostMapping("/switch")

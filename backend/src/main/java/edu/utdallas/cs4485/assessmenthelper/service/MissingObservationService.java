@@ -69,7 +69,14 @@ public class MissingObservationService {
         if (deadline == null || !LocalDate.now(clock).isAfter(deadline)) {
             return new MissingSignups(cycle.cycleId(), cycle.label(), deadline, List.of());
         }
-        List<MissingSignup> rows = signupRepository.findMissingSignups(cycle.cycleId()).stream()
+        return new MissingSignups(
+                cycle.cycleId(), cycle.label(), deadline, withoutCompletedObservation(cycle.cycleId()));
+    }
+
+    /** Every non-cancelled signup in the cycle without a COMPLETED observation, whatever the date. */
+    @Transactional(readOnly = true)
+    public List<MissingSignup> withoutCompletedObservation(int cycleId) {
+        List<MissingSignup> rows = signupRepository.findMissingSignups(cycleId).stream()
                 .map(this::missingSignup)
                 .toList();
         // The last row is the newest submitted observation, or the newest observation if none were submitted.
@@ -77,7 +84,7 @@ public class MissingObservationService {
         for (var row : rows) {
             representative.put(row.signupId(), row);
         }
-        return new MissingSignups(cycle.cycleId(), cycle.label(), deadline, List.copyOf(representative.values()));
+        return List.copyOf(representative.values());
     }
 
     private MissingSignup missingSignup(MissingSignupRow row) {

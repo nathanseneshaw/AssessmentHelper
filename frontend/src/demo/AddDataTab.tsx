@@ -13,17 +13,13 @@ import {
   getDepartments,
 } from "../api/demo";
 import { getEvaluationPolicies } from "../api/evaluations";
+import { attempt, type Outcome, OutcomeText } from "./outcome";
 
 const LABEL = "block font-semibold text-sm";
 const FIELD =
   "mt-1 w-full rounded-lg border border-line bg-white px-3 py-2 text-sm";
 const SUBMIT =
   "mt-3 rounded-lg bg-brand-green px-4 py-2 font-semibold text-sm text-white hover:opacity-90 disabled:opacity-50";
-
-interface Outcome {
-  error: boolean;
-  text: string;
-}
 
 type Field = HTMLInputElement | HTMLSelectElement;
 
@@ -35,29 +31,6 @@ function twoYearsAgo() {
 
 function idOrNull(value: string) {
   return value ? Number(value) : null;
-}
-
-function OutcomeText({ outcome }: { outcome: Outcome | null }) {
-  if (!outcome) return null;
-  return (
-    <p
-      role={outcome.error ? "alert" : "status"}
-      className={`mt-2 text-sm ${outcome.error ? "text-brand-red" : "text-brand-green"}`}
-    >
-      {outcome.text}
-    </p>
-  );
-}
-
-async function attempt(
-  action: () => Promise<string>,
-  fallback: string,
-): Promise<Outcome> {
-  try {
-    return { error: false, text: await action() };
-  } catch (e) {
-    return { error: true, text: e instanceof Error ? e.message : fallback };
-  }
 }
 
 function ProfessorForm({

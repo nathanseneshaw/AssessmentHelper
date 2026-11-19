@@ -329,6 +329,12 @@ public class ObserverEligibilityService {
                 .toList();
     }
 
+    /** Observers who pass the eligibility rules on any day of the signup's window, including days already past. */
+    public List<Integer> eligibleObserverIdsInWholeWindow(int signupId) {
+        Cycle c = cycle(cycleIdOf(signupId));
+        return eligible(managedSignup(signupId, c), c, false);
+    }
+
     private List<String> qualifyingCourses(int professorId, int signupId) {
         return evaluationSignups.findQualifyingCourses(professorId, signupId).stream()
                 .map(r -> level(r.courseNumber()) == level(r.targetNumber())
