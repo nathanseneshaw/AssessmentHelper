@@ -1,6 +1,8 @@
 import { Fragment } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { DemoTool } from "../demo/DemoTool";
+import { DEMO_MODE } from "../demo/demoMode";
 import { BREADCRUMB } from "../navConfig";
 
 export function AppLayout() {
@@ -41,8 +43,9 @@ export function AppLayout() {
 
       {/* AC pages render their own tabs under the title, via PageHeader. */}
       <main className="px-5 pt-9 pb-10 sm:px-10">
-        <Outlet />
+        <Outlet key={user.userId} />
       </main>
+      {DEMO_MODE && <DemoTool />}
     </div>
   );
 }
