@@ -39,6 +39,7 @@ import org.springframework.context.annotation.Import;
 @Import({
     ObserverEligibilityService.class,
     EvaluationSignupService.class,
+    CycleReadinessService.class,
     ObserverRequestService.class,
     AcceptanceTests.Time.class
 })

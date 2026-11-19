@@ -2,12 +2,12 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   type DashboardMetrics,
-  getDashboardMetrics,
   eligibilityAccuracy,
+  getDashboardMetrics,
   getMissingSignups,
   listSufficiency,
-  participationRate,
   type MissingSignups,
+  participationRate,
   rate,
   surveyCompletionRate,
   useDashboardRefresh,
@@ -28,6 +28,7 @@ import { ActionButton } from "../../components/ActionButton";
 import { CycleDeadlines } from "../../components/CycleDeadlines";
 import { type Kpi, KpiCard } from "../../components/KpiCard";
 import { PageHeader } from "../../components/PageHeader";
+import { useCycleReadOnly } from "../../layouts/CycleAccess";
 import { ImportDialog } from "./ImportDialog";
 import { OverdueEvaluations } from "./OverdueEvaluations";
 import { UnmatchedFaculty } from "./UnmatchedFaculty";
@@ -185,6 +186,7 @@ function ListRow({ cells, status }: { cells: string[]; status: ReactNode }) {
 }
 
 export function AcOverview() {
+  const readOnly = useCycleReadOnly();
   const {
     data: matching,
     error: matchingError,
@@ -266,6 +268,7 @@ export function AcOverview() {
         action={
           <ActionButton
             tone="orange"
+            disabled={readOnly}
             onClick={() => setImportOpen(true)}
             className="min-w-36 justify-center"
           >

@@ -54,6 +54,7 @@ import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
     EvaluationRecordService.class,
     ObserverEligibilityService.class,
     EvaluationSignupService.class,
+    CycleReadinessService.class,
     FacultyDashboardServiceTests.Time.class
 })
 class FacultyDashboardServiceTests {

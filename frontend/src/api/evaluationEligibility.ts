@@ -4,11 +4,11 @@ export interface OverdueFaculty {
   professorId: number;
   name: string;
   lastName: string;
-  rank: string;
+  rank: string | null;
   email: string;
   lastEvaluationCycle: string;
-  nextDueDate: string;
-  nextDueSemester?: string;
+  nextDueDate: string | null;
+  nextDueSemester?: string | null;
   intervalYears: number;
   lastNotifiedAt: string | null;
 }
@@ -32,7 +32,8 @@ export type EligibilityStatus =
   | "Due"
   | "Overdue"
   | "Upcoming"
-  | "Due next semester";
+  | "Due next semester"
+  | "Unconfigured";
 export interface EvaluationFaculty extends OverdueFaculty {
   status: EligibilityStatus;
 }
@@ -83,6 +84,7 @@ export function getNotificationPreview(
   );
 }
 
-export function rankLabel(rank: string) {
+export function rankLabel(rank: string | null) {
+  if (!rank) return "—";
   return `${rank.charAt(0)}${rank.slice(1).toLowerCase()} Professor`;
 }

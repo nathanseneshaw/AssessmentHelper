@@ -1,6 +1,7 @@
 package edu.utdallas.cs4485.assessmenthelper.repository;
 
 import edu.utdallas.cs4485.assessmenthelper.entity.EvaluationCycle;
+import edu.utdallas.cs4485.assessmenthelper.entity.Professor;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -11,6 +12,26 @@ import org.springframework.data.relational.repository.Lock;
 import org.springframework.data.repository.ListCrudRepository;
 
 public interface EvaluationCycleRepository extends ListCrudRepository<EvaluationCycle, Integer> {
+    @Query("SELECT professor_id FROM cycle_professor_roster WHERE cycle_id = :cycleId")
+    List<Integer> findRosterProfessorIds(Integer cycleId);
+
+    @Query("""
+            SELECT professor_id, department_id, professor_rank, first_name, last_name, email, hire_date, active_status
+            FROM cycle_professor_roster WHERE cycle_id = :cycleId
+            """)
+    List<Professor> findRosterProfessors(Integer cycleId);
+
+    @Query("""
+            SELECT origin.professor_id FROM cycle_professor_origin origin
+            WHERE NOT EXISTS (
+                SELECT 1 FROM cycle_professor_roster earlier
+                JOIN evaluation_cycle ec ON ec.cycle_id = earlier.cycle_id
+                JOIN semester es ON es.semester_id = ec.semester_id
+                WHERE earlier.professor_id = origin.professor_id AND es.start_date <= :today
+            )
+            """)
+    List<Integer> findFutureOnlyProfessorIds(LocalDate today);
+
     @Lock(LockMode.PESSIMISTIC_WRITE)
     Optional<EvaluationCycle> findForUpdateByCycleId(Integer cycleId);
 

@@ -1,4 +1,4 @@
-import { API_URL, apiFetch } from "./client";
+import { apiFetch, apiFetchBlob } from "./client";
 
 export type ImportKind = "professors" | "sections";
 
@@ -26,6 +26,14 @@ export function uploadImport(
   });
 }
 
-export function importTemplateUrl(kind: ImportKind): string {
-  return `${API_URL}/api/imports/${kind}/template`;
+export async function downloadImportTemplate(kind: ImportKind): Promise<void> {
+  const blob = await apiFetchBlob(`/api/imports/${kind}/template`);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${kind}-template.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }

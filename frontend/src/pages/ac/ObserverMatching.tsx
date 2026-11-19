@@ -13,6 +13,7 @@ import {
   useObserverData,
 } from "../../api/observerEligibility";
 import { PageHeader } from "../../components/PageHeader";
+import { useCycleReadOnly } from "../../layouts/CycleAccess";
 
 const secondaryButton =
   "rounded-lg border border-line px-5 py-3 text-sm font-medium hover:bg-mist disabled:cursor-not-allowed disabled:opacity-50";
@@ -241,6 +242,7 @@ function AssignObserver({
 }
 
 export function AcObserverMatching() {
+  const readOnly = useCycleReadOnly();
   const { data, error, reload } = useObserverData<AcState>("/ac");
   const [params] = useSearchParams();
   const [selected, setSelected] = useState<number | null>(
@@ -347,7 +349,7 @@ export function AcObserverMatching() {
           <button
             type="button"
             className={observerButton}
-            disabled={busy || !data?.cycle?.requestsOpen || !!error}
+            disabled={readOnly || busy || !data?.cycle?.requestsOpen || !!error}
             onClick={() => void act(false)}
           >
             Generate Matches
@@ -448,7 +450,7 @@ export function AcObserverMatching() {
                 <button
                   type="button"
                   className={`${observerButton} mt-4 cursor-pointer shadow-sm`}
-                  disabled={busy || !!error}
+                  disabled={readOnly || busy || !!error}
                   onClick={() => {
                     setDeferring(true);
                     setDeferReason("No matching observers");
@@ -653,6 +655,7 @@ export function AcObserverMatching() {
                     type="button"
                     className={observerButton}
                     disabled={
+                      readOnly ||
                       busy ||
                       !!error ||
                       !data.cycle.requestsOpen ||
@@ -676,6 +679,7 @@ export function AcObserverMatching() {
                   type="button"
                   className={observerButton}
                   disabled={
+                    readOnly ||
                     busy ||
                     !!error ||
                     signup.released ||
@@ -694,6 +698,7 @@ export function AcObserverMatching() {
                   type="button"
                   className={assignButton}
                   disabled={
+                    readOnly ||
                     busy ||
                     !!error ||
                     !!signup.observerName ||

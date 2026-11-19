@@ -234,12 +234,13 @@ public class ObserverEligibilityService {
     public Cycle cycle() {
         LocalDate today = LocalDate.now(clock);
         var rows = evaluationCycles.findEligibilityCyclesContaining(today);
+        if (rows.isEmpty()) throw new ConflictException("There is no current evaluation cycle.");
         if (rows.size() != 1)
             throw new ConflictException("Configure exactly one current semester and evaluation cycle.");
         return cycle(rows.getFirst());
     }
 
-    private Cycle cycle(int cycleId) {
+    public Cycle cycle(int cycleId) {
         return evaluationCycles
                 .findEligibilityCycle(cycleId)
                 .map(this::cycle)
@@ -257,7 +258,9 @@ public class ObserverEligibilityService {
     // Serializes pool changes and request transitions, including concurrent duplicate submissions.
     private Cycle lockCycle(int cycleId) {
         evaluationCycles.findForUpdateByCycleId(cycleId).orElseThrow();
-        return cycle(cycleId);
+        Cycle selected = cycle(cycleId);
+        if (!isCurrent(selected)) throw new ConflictException("This evaluation cycle is read-only.");
+        return selected;
     }
 
     private Person person(int id) {
@@ -386,6 +389,11 @@ public class ObserverEligibilityService {
         return acState(cycle());
     }
 
+    /** Read the matching state for a specific cycle without changing the current cycle. */
+    public AcState acState(int cycleId) {
+        return acState(cycle(cycleId));
+    }
+
     private AcState acState(Cycle c) {
         // Acceptance can create several observation rows for a signup. Count that signup only once.
         Map<Integer, Signup> distinctSignups = new LinkedHashMap<>();
@@ -479,7 +487,7 @@ public class ObserverEligibilityService {
                             deferred == null
                                     && c.signupDeadline() != null
                                     && LocalDate.now(clock).isAfter(c.signupDeadline())
-                                    && c.cycleId() == cycle().cycleId()
+                                    && isCurrent(c)
                                     && !matched
                                     && !pending
                                     && eligible(s, c, false).isEmpty(),
@@ -487,6 +495,11 @@ public class ObserverEligibilityService {
                 })
                 .toList();
         return new AcState(c, rows, cases);
+    }
+
+    private boolean isCurrent(Cycle candidate) {
+        var rows = evaluationCycles.findEligibilityCyclesContaining(LocalDate.now(clock));
+        return rows.size() == 1 && rows.getFirst().cycleId().equals(candidate.cycleId());
     }
 
     public record Deadlines(LocalDate signupDeadline, LocalDate observationDeadline, LocalDate feedbackDeadline) {}
@@ -509,6 +522,11 @@ public class ObserverEligibilityService {
                 || !dates.feedbackDeadline().isAfter(dates.observationDeadline()))
             throw new IllegalArgumentException(
                     "Signup must be on or after semester start, observation must be after signup, and feedback must be after observation.");
+        var semester = semesters
+                .findById(previous.semesterId())
+                .orElseThrow(() -> new NotFoundException("Semester not found."));
+        if (semester.endDate() == null || dates.feedbackDeadline().isAfter(semester.endDate()))
+            throw new IllegalArgumentException("All deadlines must be on or before the semester end date.");
         int scheduledOutside = observations.countScheduledOutsideDeadlines(
                 cycleId, dates.signupDeadline(), dates.observationDeadline());
         if (scheduledOutside > 0)
@@ -722,7 +740,14 @@ public class ObserverEligibilityService {
      * (d) schedule conflict.
      */
     public Audit audit() {
-        Cycle c = cycle();
+        return audit(cycle());
+    }
+
+    public Audit audit(int cycleId) {
+        return audit(cycle(cycleId));
+    }
+
+    private Audit audit(Cycle c) {
         Map<Integer, Signup> byId = new HashMap<>();
         signups(c, false).forEach(s -> byId.put(s.signupId(), s));
         int checked = 0, same = 0, department = 0, level = 0, schedule = 0;

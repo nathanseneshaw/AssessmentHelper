@@ -9,11 +9,14 @@ import edu.utdallas.cs4485.assessmenthelper.entity.TeachingHistory;
 import edu.utdallas.cs4485.assessmenthelper.repository.CourseRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.CourseSectionRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.DepartmentRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.TeachingHistoryRepository;
 import edu.utdallas.cs4485.assessmenthelper.service.CsvImportService.Row;
 import edu.utdallas.cs4485.assessmenthelper.service.ImportResult.RowError;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -48,6 +51,8 @@ class SectionCsvImporter {
     private final DepartmentRepository departments;
     private final ProfessorRepository professors;
     private final TeachingHistoryRepository teachingHistory;
+    private final EvaluationCycleRepository cycles;
+    private final Clock clock;
 
     SectionCsvImporter(
             CourseRepository courses,
@@ -55,13 +60,17 @@ class SectionCsvImporter {
             SemesterRepository semesters,
             DepartmentRepository departments,
             ProfessorRepository professors,
-            TeachingHistoryRepository teachingHistory) {
+            TeachingHistoryRepository teachingHistory,
+            EvaluationCycleRepository cycles,
+            Clock clock) {
         this.courses = courses;
         this.sections = sections;
         this.semesters = semesters;
         this.departments = departments;
         this.professors = professors;
         this.teachingHistory = teachingHistory;
+        this.cycles = cycles;
+        this.clock = clock;
     }
 
     void importRow(Row row, List<RowError> errors) {
@@ -127,6 +136,15 @@ class SectionCsvImporter {
                 ? semesters.findFirstByTermIgnoreCaseAndAcademicYearOrderBySemesterId(term, Integer.valueOf(year))
                 : Optional.empty();
         if (semester.isEmpty()) errors.add(row.error("term", "No " + term + " " + year + " semester exists."));
+        if (semester.isPresent()
+                && semester.get().endDate() != null
+                && LocalDate.now(clock).isAfter(semester.get().endDate())
+                && cycles.findAll().stream()
+                        .anyMatch(cycle ->
+                                cycle.semesterId().equals(semester.get().semesterId()))) {
+            errors.add(row.error("term", "Sections in a past evaluation cycle are read-only."));
+            return null;
+        }
         return semester.orElse(null);
     }
 

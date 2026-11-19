@@ -3,6 +3,7 @@ import {
   getDemoSession,
   rejectDemoSession,
 } from "../demo/tabSession";
+import { selectedCyclePath } from "./cycleSelection";
 
 const DEFAULT_API_URL = "http://localhost:8080";
 const CSRF_COOKIE = "XSRF-TOKEN";
@@ -25,6 +26,11 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly problems: {
+      row: number | null;
+      column: string | null;
+      message: string;
+    }[] = [],
   ) {
     super(message);
     this.name = "ApiError";
@@ -35,6 +41,17 @@ export async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  const response = await apiResponse(path, init);
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
+}
+
+export async function apiFetchBlob(path: string): Promise<Blob> {
+  return (await apiResponse(path, {})).blob();
+}
+
+async function apiResponse(path: string, init: RequestInit): Promise<Response> {
+  path = selectedCyclePath(path, (init.method ?? "GET").toUpperCase());
   const headers = new Headers(init.headers);
   const demoSession = getDemoSession();
   if (demoSession !== null) headers.set(DEMO_SESSION_HEADER, demoSession);
@@ -57,12 +74,10 @@ export async function apiFetch<T>(
     ) {
       rejectDemoSession(demoSession);
     }
-    throw new ApiError(response.status, await errorMessage(response));
+    const problem = await errorDetails(response);
+    throw new ApiError(response.status, problem.message, problem.errors);
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
+  return response;
 }
 
 // The backend keeps its CSRF token in a cookie that this page can read, because browsers share cookies
@@ -84,14 +99,20 @@ function readCookie(name: string): string | undefined {
   return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : undefined;
 }
 
-async function errorMessage(response: Response): Promise<string> {
+async function errorDetails(response: Response): Promise<{
+  message: string;
+  errors: { row: number | null; column: string | null; message: string }[];
+}> {
   const problem = (await response.json().catch(() => null)) as {
     title?: string;
     detail?: string;
+    errors?: { row: number | null; column: string | null; message: string }[];
   } | null;
-  return (
-    problem?.detail ??
-    problem?.title ??
-    `Request failed with status ${response.status}`
-  );
+  return {
+    message:
+      problem?.detail ??
+      problem?.title ??
+      `Request failed with status ${response.status}`,
+    errors: Array.isArray(problem?.errors) ? problem.errors : [],
+  };
 }

@@ -1,5 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import edu.utdallas.cs4485.assessmenthelper.service.CycleDashboardSnapshotService;
 import edu.utdallas.cs4485.assessmenthelper.service.MissingObservationService;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -10,9 +11,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class MissingObservationController {
     private final MissingObservationService service;
+    private final CycleDashboardSnapshotService snapshots;
 
-    public MissingObservationController(MissingObservationService service) {
+    public MissingObservationController(MissingObservationService service, CycleDashboardSnapshotService snapshots) {
         this.service = service;
+        this.snapshots = snapshots;
     }
 
     @GetMapping("/api/professors/{professorId}/missing-observations")
@@ -26,5 +29,11 @@ public class MissingObservationController {
     @PreAuthorize("hasRole('AC')")
     public MissingObservationService.MissingSignups missingSignups() {
         return service.findMissingSignups();
+    }
+
+    @GetMapping("/api/cycles/{cycleId}/missing-observations")
+    @PreAuthorize("hasRole('AC')")
+    public MissingObservationService.MissingSignups missingSignupsForCycle(@PathVariable int cycleId) {
+        return snapshots.get(cycleId).missing();
     }
 }

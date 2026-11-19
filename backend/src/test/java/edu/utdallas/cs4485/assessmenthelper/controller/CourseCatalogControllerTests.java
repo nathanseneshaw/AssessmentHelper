@@ -13,8 +13,12 @@ import edu.utdallas.cs4485.assessmenthelper.repository.CourseRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.CourseSectionRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
+import edu.utdallas.cs4485.assessmenthelper.service.CycleReadinessService;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,8 +53,17 @@ class CourseCatalogControllerTests {
     @MockitoBean
     private UserDetailsService userDetailsService;
 
+    @MockitoBean
+    private Clock clock;
+
+    @MockitoBean
+    private CycleReadinessService readiness;
+
     @BeforeEach
     void threeSemestersWithOneOpenCycle() {
+        when(clock.instant()).thenReturn(Instant.parse("2026-10-01T12:00:00Z"));
+        when(clock.getZone()).thenReturn(ZoneOffset.UTC);
+        when(readiness.check(11)).thenReturn(new CycleReadinessService.Readiness("READY", null));
         when(semesters.findAll())
                 .thenReturn(List.of(
                         new Semester(1, "Fall", 2025, LocalDate.of(2025, 8, 25), LocalDate.of(2025, 12, 16)),

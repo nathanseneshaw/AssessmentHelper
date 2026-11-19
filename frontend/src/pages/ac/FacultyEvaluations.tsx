@@ -4,9 +4,14 @@ import { ActionButton } from "../../components/ActionButton";
 import { FacultyEvaluationHistory } from "../../components/FacultyEvaluationHistory";
 import { PageHeader } from "../../components/PageHeader";
 
-type Rank = "Assistant" | "Associate" | "Full";
+type Rank = "Assistant" | "Associate" | "Full" | "—";
 // Shown in capitals; stored in sentence case so screen readers say the word.
-type Status = "Due" | "Upcoming" | "Overdue" | "Due next semester";
+type Status =
+  | "Due"
+  | "Upcoming"
+  | "Overdue"
+  | "Due next semester"
+  | "Unconfigured";
 
 interface QueueRow {
   professorId: number;
@@ -39,6 +44,7 @@ const STATUS_COLORS: Record<Status, string> = {
   Upcoming: "text-brand-green",
   "Due next semester": "text-brand-green",
   Overdue: "text-brand-red",
+  Unconfigured: "text-muted",
 };
 
 // Each column's share of the table width, measured from the mockup.
@@ -131,19 +137,20 @@ export function AcFacultyEvaluations() {
           result.faculty.map((faculty) => ({
             professorId: faculty.professorId,
             name: faculty.name,
-            rank: (
-              {
-                ASSISTANT: "Assistant",
-                ASSOCIATE: "Associate",
-                FULL: "Full",
-              } as const
-            )[faculty.rank as "ASSISTANT" | "ASSOCIATE" | "FULL"],
+            rank:
+              (
+                {
+                  ASSISTANT: "Assistant",
+                  ASSOCIATE: "Associate",
+                  FULL: "Full",
+                } as const
+              )[faculty.rank as "ASSISTANT" | "ASSOCIATE" | "FULL"] ?? "—",
             lastEvaluation: faculty.lastEvaluationCycle,
             nextDue:
               faculty.nextDueSemester ??
               (faculty.status === "Due"
                 ? result.cycleLabel
-                : faculty.nextDueDate),
+                : (faculty.nextDueDate ?? "—")),
             status: faculty.status,
             action:
               faculty.status === "Upcoming"

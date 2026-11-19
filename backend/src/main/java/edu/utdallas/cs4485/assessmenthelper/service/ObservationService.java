@@ -3,6 +3,7 @@ package edu.utdallas.cs4485.assessmenthelper.service;
 import edu.utdallas.cs4485.assessmenthelper.entity.ObservationResponse;
 import edu.utdallas.cs4485.assessmenthelper.entity.Observee;
 import edu.utdallas.cs4485.assessmenthelper.entity.ObserverNotification;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationSignupRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObservationAuditLogRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObservationRepository;
@@ -11,6 +12,7 @@ import edu.utdallas.cs4485.assessmenthelper.repository.ObservationResponseReposi
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserveeRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ObserverNotificationRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.ProfessorRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationTemplateService.Criterion;
 import edu.utdallas.cs4485.assessmenthelper.service.ObservationTemplateService.Template;
@@ -52,6 +54,8 @@ public class ObservationService {
     private final EvaluationSignupRepository signups;
     private final ObserveeRepository observees;
     private final Clock clock;
+    private final EvaluationCycleRepository cycles;
+    private final SemesterRepository semesters;
 
     public ObservationService(
             ObservationRepository observations,
@@ -62,7 +66,9 @@ public class ObservationService {
             ObservationTemplateService templates,
             EvaluationSignupRepository signups,
             ObserveeRepository observees,
-            Clock clock) {
+            Clock clock,
+            EvaluationCycleRepository cycles,
+            SemesterRepository semesters) {
         this.observations = observations;
         this.observationResponses = observationResponses;
         this.auditLog = auditLog;
@@ -72,6 +78,8 @@ public class ObservationService {
         this.signups = signups;
         this.observees = observees;
         this.clock = clock;
+        this.cycles = cycles;
+        this.semesters = semesters;
     }
 
     /**
@@ -221,7 +229,22 @@ public class ObservationService {
     private Row lock(int observationId) {
         if (observations.findForUpdateByObservationId(observationId).isEmpty())
             throw new NotFoundException("Observation not found.");
-        return find(observationId);
+        Row row = find(observationId);
+        requireCurrentCycle(row);
+        return row;
+    }
+
+    private void requireCurrentCycle(Row row) {
+        var cycle =
+                cycles.findById(row.cycleId()).orElseThrow(() -> new NotFoundException("Evaluation cycle not found."));
+        var semester =
+                semesters.findById(cycle.semesterId()).orElseThrow(() -> new NotFoundException("Semester not found."));
+        LocalDate today = LocalDate.now(clock);
+        if (semester.startDate() == null
+                || semester.endDate() == null
+                || today.isBefore(semester.startDate())
+                || today.isAfter(semester.endDate()))
+            throw new ConflictException("This evaluation cycle is read-only.");
     }
 
     private static boolean isObserver(Row o, AccountPrincipal principal) {
@@ -397,6 +420,7 @@ public class ObservationService {
         if (!principal.isCommitteeMember() || principal.user().professorId() == null)
             throw new AccessDeniedException("Only Assessment Committee members can forward a record.");
         Row o = find(observationId);
+        requireCurrentCycle(o);
         if (!o.locked()) throw new ConflictException("Only a locked record can be forwarded.");
         if (!committeeMayRead(o, principal))
             throw new AccessDeniedException("Only committee members can forward completed records.");

@@ -6,6 +6,7 @@ import {
   observerButton,
   observerChanged,
 } from "../api/observerEligibility";
+import { useCycleReadOnly } from "../layouts/CycleAccess";
 
 type Dates = Pick<
   Cycle,
@@ -19,6 +20,7 @@ export function CycleDeadlines({
   cycle?: Cycle;
   onSaved: () => void;
 }) {
+  const readOnly = useCycleReadOnly();
   const [draft, setDraft] = useState<Dates | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -67,7 +69,7 @@ export function CycleDeadlines({
         <h2 className="font-semibold text-brand-green">
           {cycle?.label ?? "Current cycle"} deadlines
         </h2>
-        {cycle && !draft && (
+        {cycle && !draft && !readOnly && (
           <button
             type="button"
             className={observerButton}
