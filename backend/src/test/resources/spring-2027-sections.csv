@@ -1,0 +1,7 @@
+course_prefix,course_number,course_name,course_level,department_code,term,year,section,days,start_time,end_time,location,instructor_email
+CS,3345,Data Structures and Algorithms,UNDERGRADUATE,CS,Spring,2027,901,MW,08:30,09:45,ECSW 1.100,leander.coldwell@example.edu
+CS,3345,Data Structures and Algorithms,UNDERGRADUATE,CS,Spring,2027,902,MW,10:00,11:15,ECSW 1.100,avery.hazelwood@example.edu
+CS,3345,Data Structures and Algorithms,UNDERGRADUATE,CS,Spring,2027,903,TR,13:00,14:15,ECSW 1.100,dario.hollowell@example.edu
+CS,2336,Computer Science II,UNDERGRADUATE,CS,Spring,2027,901,MW,13:00,14:15,ECSW 1.110,mira.marchbank@example.edu
+CS,2336,Computer Science II,UNDERGRADUATE,CS,Spring,2027,902,TR,10:00,11:15,ECSW 1.110,elio.harrowgate@example.edu
+CS,4390,Computer Networks,UNDERGRADUATE,CS,Spring,2027,901,TR,14:30,15:45,ECSW 1.110,ansel.ashcombe@example.edu

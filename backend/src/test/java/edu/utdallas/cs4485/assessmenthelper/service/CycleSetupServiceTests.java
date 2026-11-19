@@ -77,10 +77,14 @@ class CycleSetupServiceTests {
 
     @Test
     void providedSpring2027SampleFilesCreateACycle() throws Exception {
-        var cycle = service.create(
-                setup,
-                java.nio.file.Files.readAllBytes(java.nio.file.Path.of("../sample-data/spring-2027-professors.csv")),
-                java.nio.file.Files.readAllBytes(java.nio.file.Path.of("../sample-data/spring-2027-sections.csv")));
+        byte[] professors;
+        byte[] sections;
+        try (var professorFile = getClass().getResourceAsStream("/spring-2027-professors.csv");
+                var sectionFile = getClass().getResourceAsStream("/spring-2027-sections.csv")) {
+            professors = java.util.Objects.requireNonNull(professorFile).readAllBytes();
+            sections = java.util.Objects.requireNonNull(sectionFile).readAllBytes();
+        }
+        var cycle = service.create(setup, professors, sections);
         assertThat(cycles.findRosterProfessorIds(cycle.cycleId())).hasSize(6);
     }
 
