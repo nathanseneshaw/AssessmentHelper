@@ -95,20 +95,18 @@ public class DemoController {
     }
 
     @PostMapping("/reset")
-    public Reset reset(@AuthenticationPrincipal AccountPrincipal principal, HttpServletRequest request) {
-        if (state.reset(principal.user().userId())) return new Reset(false);
+    public synchronized Reset reset(@AuthenticationPrincipal AccountPrincipal principal, HttpServletRequest request) {
+        if (state.reset(principal.user())) return new Reset(false);
         String token = request.getHeader(DemoTabAuthenticationFilter.HEADER);
-        if (token != null) {
-            sessions.end(token);
-            return new Reset(true);
+        if (token == null) {
+            HttpSession session = request.getSession(false);
+            if (session != null) session.invalidate();
         }
-        HttpSession session = request.getSession(false);
-        if (session != null) session.invalidate();
         return new Reset(true);
     }
 
     @PostMapping("/switch")
-    public SwitchResult switchAccount(@RequestBody SwitchBody body) {
+    public synchronized SwitchResult switchAccount(@RequestBody SwitchBody body) {
         if (body == null || body.userId() == null)
             throw new IllegalArgumentException("Choose an account to switch to.");
         AccountPrincipal principal = service.principal(body.userId());

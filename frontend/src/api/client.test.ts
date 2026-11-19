@@ -1,4 +1,10 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import {
+  clearDemoSession,
+  DEMO_SESSION_REJECTED,
+  getDemoSession,
+  setDemoSession,
+} from "../demo/tabSession";
 import { API_URL, ApiError, apiFetch } from "./client";
 
 function respondWith(response: Response) {
@@ -15,11 +21,28 @@ function sentHeaders(call: Parameters<typeof fetch> | undefined): Headers {
 }
 
 afterEach(() => {
+  clearDemoSession();
   mock.restore();
   setCookie("XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT");
 });
 
 describe("apiFetch", () => {
+  test("signs out a tab whose demo token was rejected", async () => {
+    setDemoSession("removed-account-token");
+    respondWith(new Response(null, { status: 401 }));
+    const rejected = mock();
+    window.addEventListener(DEMO_SESSION_REJECTED, rejected, { once: true });
+    try {
+      await expect(apiFetch("/api/auth/me")).rejects.toMatchObject({
+        status: 401,
+      });
+      expect(getDemoSession()).toBe("signed-out");
+      expect(rejected).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(DEMO_SESSION_REJECTED, rejected);
+    }
+  });
+
   test("sends the request to the backend with cookies and returns the parsed JSON", async () => {
     const fetchSpy = respondWith(Response.json([{ professorRank: "FULL" }]));
 

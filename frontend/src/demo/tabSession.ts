@@ -1,6 +1,7 @@
 const STORAGE_KEY = "demoTabSession";
 
 export const DEMO_SESSION_HEADER = "X-Demo-Session";
+export const DEMO_SESSION_REJECTED = "demo-session-rejected";
 
 export function getDemoSession(): string | null {
   try {
@@ -21,4 +22,10 @@ export function clearDemoSession() {
 export function signOutDemoSession() {
   // Keep this tab signed out even if the browser still has a regular session.
   setDemoSession("signed-out");
+}
+
+export function rejectDemoSession(token: string) {
+  if (token === "signed-out" || getDemoSession() !== token) return;
+  signOutDemoSession();
+  window.dispatchEvent(new Event(DEMO_SESSION_REJECTED));
 }

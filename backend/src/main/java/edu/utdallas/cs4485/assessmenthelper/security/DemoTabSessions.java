@@ -4,6 +4,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -21,8 +23,11 @@ public class DemoTabSessions {
     private final LinkedHashMap<String, Session> sessions = new LinkedHashMap<>(16, 0.75f, true);
     private final Clock clock = Clock.systemUTC();
 
-    public synchronized void end(String token) {
-        sessions.remove(token);
+    public synchronized void retainAccounts(Map<Integer, String> activeAccounts) {
+        sessions.values().removeIf(session -> {
+            CurrentUser user = ((AccountPrincipal) session.authentication().getPrincipal()).user();
+            return !Objects.equals(activeAccounts.get(user.userId()), user.email());
+        });
     }
 
     public synchronized String start(AccountPrincipal principal) {

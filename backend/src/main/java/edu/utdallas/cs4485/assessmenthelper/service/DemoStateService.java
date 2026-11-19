@@ -3,11 +3,15 @@ package edu.utdallas.cs4485.assessmenthelper.service;
 import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
 import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.UserAccountRepository;
+import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
+import edu.utdallas.cs4485.assessmenthelper.security.DemoTabSessions;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.boot.jdbc.init.DataSourceScriptDatabaseInitializer;
@@ -26,6 +30,7 @@ public class DemoStateService {
     private final ObserverEligibilityService eligibility;
     private final SemesterRepository semesters;
     private final UserAccountRepository accounts;
+    private final DemoTabSessions sessions;
     private final DataSource dataSource;
     private final DataSourceScriptDatabaseInitializer initializer;
 
@@ -36,6 +41,7 @@ public class DemoStateService {
             ObserverEligibilityService eligibility,
             SemesterRepository semesters,
             UserAccountRepository accounts,
+            DemoTabSessions sessions,
             DataSource dataSource,
             DataSourceScriptDatabaseInitializer initializer) {
         this.time = time;
@@ -44,6 +50,7 @@ public class DemoStateService {
         this.eligibility = eligibility;
         this.semesters = semesters;
         this.accounts = accounts;
+        this.sessions = sessions;
         this.dataSource = dataSource;
         this.initializer = initializer;
     }
@@ -51,12 +58,12 @@ public class DemoStateService {
     public record DemoDate(
             LocalDate today, long daysAhead, LocalDate earliest, LocalDate latest, int expiredRequests) {}
 
-    public DemoDate date() {
+    public synchronized DemoDate date() {
         return date(0);
     }
 
     // Every screen needs an evaluation cycle on the app's date, and the seed data only has an open one this semester.
-    public DemoDate moveTo(LocalDate date) {
+    public synchronized DemoDate moveTo(LocalDate date) {
         if (date == null) throw new IllegalArgumentException("Choose a date.");
         LocalDate today = LocalDate.now(clock);
         long days = ChronoUnit.DAYS.between(today, date);
@@ -87,10 +94,14 @@ public class DemoStateService {
     }
 
     /** Returns whether the given account still exists once the seed data is back. */
-    public boolean reset(int userId) {
+    public synchronized boolean reset(CurrentUser caller) {
         new ResourceDatabasePopulator(new ClassPathResource("demo-reset.sql")).execute(dataSource);
         initializer.initializeDatabase();
         time.reset();
-        return accounts.existsById(userId);
+        var activeAccounts = accounts.findAll().stream()
+                .filter(account -> Boolean.TRUE.equals(account.isActive()))
+                .collect(Collectors.toMap(account -> account.userId(), account -> account.email()));
+        sessions.retainAccounts(activeAccounts);
+        return Objects.equals(activeAccounts.get(caller.userId()), caller.email());
     }
 }

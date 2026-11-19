@@ -12,6 +12,7 @@ import {
   type User,
 } from "../api/auth";
 import { switchAccount as switchDemoAccount } from "../api/demo";
+import { DEMO_SESSION_REJECTED } from "../demo/tabSession";
 
 interface AuthValue {
   user: User | null;
@@ -29,6 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    const signOutRejectedSession = () => setUser(null);
+    window.addEventListener(DEMO_SESSION_REJECTED, signOutRejectedSession);
     getCurrentUser()
       .catch(() => null)
       .then((current) => {
@@ -39,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     return () => {
       cancelled = true;
+      window.removeEventListener(DEMO_SESSION_REJECTED, signOutRejectedSession);
     };
   }, []);
 
