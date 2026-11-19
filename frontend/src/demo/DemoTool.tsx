@@ -160,7 +160,7 @@ export function DemoTool({
           )}
           <div
             role="tablist"
-            className="flex gap-1 overflow-x-auto border-line border-b px-2"
+            className="flex shrink-0 gap-1 overflow-x-auto border-line border-b px-2"
           >
             {tabs.map(({ id, label }) => (
               <button
