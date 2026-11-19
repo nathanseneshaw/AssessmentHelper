@@ -64,16 +64,12 @@ class EvaluationPolicyControllerTests {
     }
 
     @Test
-    void frontendOriginIsAllowedByCors() throws Exception {
+    void corsAllowsOnlyTheFrontendOrigin() throws Exception {
         mockMvc.perform(options("/api/evaluation-policies")
                         .header(HttpHeaders.ORIGIN, "http://localhost:3000")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"));
-    }
-
-    @Test
-    void otherOriginsAreRejectedByCors() throws Exception {
         mockMvc.perform(options("/api/evaluation-policies")
                         .header(HttpHeaders.ORIGIN, "http://example.com")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))

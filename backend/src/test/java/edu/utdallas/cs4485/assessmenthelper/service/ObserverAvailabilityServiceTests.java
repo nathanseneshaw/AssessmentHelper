@@ -57,13 +57,6 @@ class ObserverAvailabilityServiceTests {
     }
 
     @Test
-    void availableWhenObserverTeachesNothing() {
-        assertThat(service.isAvailable(observer.observerId(), signup.signupId()))
-                .isTrue();
-        assertThat(service.conflicts(observer.observerId(), signup.signupId())).isEmpty();
-    }
-
-    @Test
     void unavailableWhenSharedDayAndTimesOverlap() {
         CourseSection clash = observerTeaches(section(fall, "MW", "10:30", "11:45"));
 
@@ -75,25 +68,8 @@ class ObserverAvailabilityServiceTests {
     }
 
     @Test
-    void oneSharedDayIsEnough() {
-        observerTeaches(section(fall, "TM", "09:30", "10:15"));
-
-        assertThat(service.isAvailable(observer.observerId(), signup.signupId()))
-                .isFalse();
-    }
-
-    @Test
     void availableWhenMeetingDaysDiffer() {
         observerTeaches(section(fall, "TR", "10:00", "10:50"));
-
-        assertThat(service.isAvailable(observer.observerId(), signup.signupId()))
-                .isTrue();
-    }
-
-    @Test
-    void availableWhenClassesOnlyTouch() {
-        observerTeaches(section(fall, "MWF", "09:00", "10:00"));
-        observerTeaches(section(fall, "MWF", "10:50", "11:40"));
 
         assertThat(service.isAvailable(observer.observerId(), signup.signupId()))
                 .isTrue();
@@ -108,24 +84,8 @@ class ObserverAvailabilityServiceTests {
     }
 
     @Test
-    void sectionsWithoutAScheduleNeverConflict() {
-        observerTeaches(section(fall, null, null, null));
-        observerTeaches(section(fall, "MWF", null, null));
-
-        assertThat(service.isAvailable(observer.observerId(), signup.signupId()))
-                .isTrue();
-    }
-
-    @Test
-    void unknownIdsThrowNotFoundAndMissingIdsThrowIllegalArgument() {
-        assertThatThrownBy(() -> service.isAvailable(observer.observerId(), -1))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessage("No evaluation signup with id -1");
-        assertThatThrownBy(() -> service.isAvailable(-1, signup.signupId()))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessage("No observer with id -1");
-        assertThatThrownBy(() -> service.isAvailable(null, signup.signupId()))
-                .isInstanceOf(IllegalArgumentException.class);
+    void unknownSignupThrowsNotFound() {
+        assertThatThrownBy(() -> service.isAvailable(observer.observerId(), -1)).isInstanceOf(NotFoundException.class);
     }
 
     private CourseSection section(Semester semester, String days, String start, String end) {

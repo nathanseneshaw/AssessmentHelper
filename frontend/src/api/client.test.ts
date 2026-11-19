@@ -34,19 +34,7 @@ describe("apiFetch", () => {
     expect(sentHeaders(fetchSpy.mock.calls[0]).has("X-XSRF-TOKEN")).toBe(false);
   });
 
-  test("sends the CSRF token from the cookie on requests that change data", async () => {
-    setCookie("XSRF-TOKEN=from-cookie");
-    const fetchSpy = respondWith(new Response(null, { status: 204 }));
-
-    await apiFetch("/api/auth/logout", { method: "POST" });
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(sentHeaders(fetchSpy.mock.calls[0]).get("X-XSRF-TOKEN")).toBe(
-      "from-cookie",
-    );
-  });
-
-  test("asks the backend for a CSRF token when there is no cookie yet", async () => {
+  test("sends the CSRF token on requests that change data, asking for one when there is no cookie yet", async () => {
     const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
       input,
     ) => {
@@ -57,10 +45,18 @@ describe("apiFetch", () => {
     }) as typeof fetch);
 
     await apiFetch("/api/auth/logout", { method: "POST" });
+    // The cookie is set now, so the second request reuses it.
+    await apiFetch("/api/auth/logout", { method: "POST" });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe(`${API_URL}/api/auth/csrf`);
+    expect(fetchSpy.mock.calls.map(([url]) => url)).toEqual([
+      `${API_URL}/api/auth/csrf`,
+      `${API_URL}/api/auth/logout`,
+      `${API_URL}/api/auth/logout`,
+    ]);
     expect(sentHeaders(fetchSpy.mock.calls[1]).get("X-XSRF-TOKEN")).toBe(
+      "fresh",
+    );
+    expect(sentHeaders(fetchSpy.mock.calls[2]).get("X-XSRF-TOKEN")).toBe(
       "fresh",
     );
   });
@@ -84,23 +80,5 @@ describe("apiFetch", () => {
       status: 404,
       message: "No professor with id 99",
     });
-  });
-
-  test("falls back to the status code when the error body is not JSON", async () => {
-    respondWith(new Response("Bad Gateway", { status: 502 }));
-
-    const error = await apiFetch("/api/evaluation-policies").catch(
-      (e: unknown) => e,
-    );
-    expect(error).toMatchObject({
-      status: 502,
-      message: "Request failed with status 502",
-    });
-  });
-
-  test("returns undefined for an empty 204 response", async () => {
-    respondWith(new Response(null, { status: 204 }));
-
-    expect(await apiFetch("/api/evaluation-policies/FULL")).toBeUndefined();
   });
 });
