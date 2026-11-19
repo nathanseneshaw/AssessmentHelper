@@ -1,5 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { NotesTab } from "../demo/NotesTab";
 import { ScreenshotMarks } from "./ScreenshotMarks";
 
 afterEach(cleanup);
@@ -15,6 +23,7 @@ function page() {
         Sign off
       </button>
       <ScreenshotMarks />
+      <NotesTab />
     </>
   );
 }
@@ -45,6 +54,11 @@ test("marks elements found by text or selector and clears them", async () => {
   const marks = document.querySelector("[data-screenshot-marks]");
   expect(marks?.getAttribute("aria-hidden")).toBe("true");
   expect(screen.getByTestId("card").contains(marks)).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "Clear boxes" }));
+  await waitFor(() =>
+    expect(labels()).toEqual(["New: sign-offs", "New: sign off"]),
+  );
 
   act(() => window.screenshotMarks?.clear());
   await waitFor(() =>
