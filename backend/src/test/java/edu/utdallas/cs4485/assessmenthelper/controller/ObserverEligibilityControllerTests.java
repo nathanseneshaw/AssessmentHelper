@@ -215,7 +215,7 @@ class ObserverEligibilityControllerTests {
                         as(KAIA, put("/api/observer-eligibility/cycles/1/deadlines"))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
-                                        "{\"signupDeadline\":\"2026-10-30\",\"observationDeadline\":\"2026-11-20\",\"feedbackDeadline\":\"2026-12-05\"}"))
+                                        "{\"signupDeadline\":\"2026-10-31\",\"observationDeadline\":\"2026-11-20\",\"feedbackDeadline\":\"2026-12-05\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.feedbackDeadline").value("2026-12-05"));
     }

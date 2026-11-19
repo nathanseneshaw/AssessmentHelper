@@ -1697,7 +1697,7 @@ INSERT INTO teaching_history (professor_id, section_id) VALUES
 
 -- Fall 2026 is the current cycle. It is inserted first, so it is evaluation cycle 1.
 INSERT INTO evaluation_cycle (semester_id, signup_deadline, observation_deadline, feedback_deadline, status)
-SELECT semester_id, DATE '2026-10-31', DATE '2026-11-15', DATE '2026-12-01', 'OPEN'
+SELECT semester_id, DATE '2026-10-31', DATE '2026-12-10', DATE '2026-12-11', 'OPEN'
 FROM semester WHERE term = 'Fall' AND academic_year = 2026;
 CREATE LOCAL TEMPORARY TABLE demo_cycle AS
 SELECT c.cycle_id, c.semester_id FROM evaluation_cycle c JOIN semester s ON s.semester_id = c.semester_id
@@ -2001,8 +2001,9 @@ JOIN course co ON co.course_id = cs.course_id AND co.course_number = '3345'
 GROUP BY o.observee_id;
 
 INSERT INTO observer_list_state (signup_id, window_start, window_end)
-SELECT es.signup_id, DATE '2026-11-01', DATE '2026-11-15'
-FROM evaluation_signup es JOIN observee o ON o.observee_id = es.observee_id JOIN demo_cycle c ON c.cycle_id = o.cycle_id;
+SELECT es.signup_id, DATEADD('DAY', 1, ec.signup_deadline), ec.observation_deadline
+FROM evaluation_signup es JOIN observee o ON o.observee_id = es.observee_id JOIN demo_cycle c ON c.cycle_id = o.cycle_id
+JOIN evaluation_cycle ec ON ec.cycle_id = c.cycle_id;
 DROP TABLE demo_signup;
 
 -- The committee has already sent Leander's and Avery's lists. Leander asked Keira, who accepted, so his observation

@@ -110,7 +110,7 @@ export function eligibilityAccuracy({
     ? { value: "—", note: "No observer assignments to check" }
     : {
         value: `${Math.round(((total - count) / total) * 100)}%`,
-        note: `${count} incorrect of ${total} (same prof ${a.samePerson}, other dept ${a.otherDepartment}, different level ${a.differentLevel}, schedule ${a.scheduleConflict})`,
+        note: `${count} incorrect of ${total} (same prof ${a.samePerson}, other dept ${a.otherDepartment}, different level ${a.differentLevel}, schedule conflict ${a.scheduleConflict})`,
       };
 }
 
