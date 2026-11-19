@@ -121,7 +121,10 @@ export function CycleDeadlines({
                   type="date"
                   required
                   value={draft[key]}
-                  min={cycle[key] || (key === "signupDeadline" ? cycle.startDate : undefined)}
+                  min={
+                    cycle[key] ||
+                    (key === "signupDeadline" ? cycle.startDate : undefined)
+                  }
                   disabled={!!cycle[key] && cycle[key] < today}
                   onChange={(e) =>
                     setDraft({ ...draft, [key]: e.target.value })
@@ -129,7 +132,9 @@ export function CycleDeadlines({
                   className="rounded border border-line bg-white p-2 font-normal"
                 />
                 {!!cycle[key] && cycle[key] < today && (
-                  <span className="font-normal">Deadline passed; changes are locked.</span>
+                  <span className="font-normal">
+                    Deadline passed; changes are locked.
+                  </span>
                 )}
               </label>
             ))}

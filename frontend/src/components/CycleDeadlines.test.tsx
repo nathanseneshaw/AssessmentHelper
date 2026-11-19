@@ -91,8 +91,12 @@ test("failed changes keep the dates editable and show the server explanation", a
 test("locks only passed deadlines and sets the current date as the minimum", () => {
   setSystemTime(new Date("2026-11-01T15:00:00Z"));
   open();
-  expect((screen.getByLabelText(/Sign-up Deadline/) as HTMLInputElement).disabled).toBe(true);
-  const observation = screen.getByLabelText("Observation Deadline") as HTMLInputElement;
+  expect(
+    (screen.getByLabelText(/Sign-up Deadline/) as HTMLInputElement).disabled,
+  ).toBe(true);
+  const observation = screen.getByLabelText(
+    "Observation Deadline",
+  ) as HTMLInputElement;
   expect(observation.disabled).toBe(false);
   expect(observation.min).toBe("2026-11-15");
   expect(screen.getByText("Deadline passed; changes are locked.")).toBeTruthy();
