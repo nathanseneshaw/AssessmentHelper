@@ -21,6 +21,7 @@ repositories {
 dependencies {
 	implementation(libs.bundles.spring.boot.starters)
 	implementation(libs.springdoc.openapi.starter.webmvc.ui)
+	implementation(libs.commons.csv)
 	developmentOnly(libs.spring.boot.devtools)
 	implementation(libs.h2)
 	annotationProcessor(libs.spring.boot.configuration.processor)

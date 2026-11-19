@@ -1,3 +1,4 @@
+import { setDemoSession } from "../demo/tabSession";
 import { type CurrentUserResponse, toUser, type User } from "./auth";
 import { apiFetch } from "./client";
 
@@ -65,9 +66,12 @@ export function getDemoAccounts(signal?: AbortSignal): Promise<DemoAccount[]> {
 }
 
 export async function switchAccount(userId: number): Promise<User> {
-  return toUser(
-    await postJson<CurrentUserResponse>("/api/demo/switch", { userId }),
-  );
+  const { user, token } = await postJson<{
+    user: CurrentUserResponse;
+    token: string;
+  }>("/api/demo/switch", { userId });
+  setDemoSession(token);
+  return toUser(user);
 }
 
 export function getDepartments(signal?: AbortSignal): Promise<Department[]> {

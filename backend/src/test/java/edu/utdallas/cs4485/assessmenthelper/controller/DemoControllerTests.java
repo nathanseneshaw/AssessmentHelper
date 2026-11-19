@@ -1,5 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -7,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import edu.utdallas.cs4485.assessmenthelper.repository.UserAccountRepository;
+import edu.utdallas.cs4485.assessmenthelper.security.DemoTabAuthenticationFilter;
 import edu.utdallas.cs4485.assessmenthelper.service.DemoService;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
@@ -96,7 +98,7 @@ class DemoControllerTests {
                                 "/api/demo/sections",
                                 "{\"professorId\":" + professorId + ",\"departmentId\":1,\"courseNumber\":\"4390\","
                                         + "\"courseName\":\"Computer Networks\",\"sectionNumber\":\"001\","
-                                        + "\"meetingDays\":\"MW\",\"startTime\":\"10:00\",\"endTime\":\"11:15\"}")
+                                        + "\"meetingDays\":\"Thursday\",\"startTime\":\"10:00\",\"endTime\":\"11:15\"}")
                         .session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.label").value("CS 4390.001"));
@@ -106,7 +108,8 @@ class DemoControllerTests {
                         .param("professorId", String.valueOf(professorId))
                         .session(jo))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].sectionNumber").value("001"));
+                .andExpect(jsonPath("$[0].sectionNumber").value("001"))
+                .andExpect(jsonPath("$[0].meetingDays").value("R"));
     }
 
     @Test
@@ -133,21 +136,77 @@ class DemoControllerTests {
     }
 
     @Test
-    void switchingSignsInWithoutAPasswordAndSwitchesAgain() throws Exception {
+    void duplicateLongNamesGetDistinctUsernamesWithinTheDatabaseLimit() throws Exception {
+        MockHttpSession session = signInAsDario();
+        String lastName = "a".repeat(100);
+        String body =
+                "{\"firstName\":\"Jo\",\"lastName\":\"" + lastName + "\",\"departmentId\":1,\"rank\":\"ASSISTANT\"}";
+
+        mvc.perform(postJson("/api/demo/professors", body).session(session)).andExpect(status().isOk());
+        mvc.perform(postJson("/api/demo/professors", body).session(session)).andExpect(status().isOk());
+
+        assertThat(accounts.existsByUsername("j" + "a".repeat(99))).isTrue();
+        assertThat(accounts.existsByUsername("j" + "a".repeat(98) + "2")).isTrue();
+    }
+
+    @Test
+    void switchingOneTabKeepsTheOtherTabsAccount() throws Exception {
         int kaia = accounts.findByEmailIgnoreCase(KAIA).orElseThrow().userId();
         int dario = accounts.findByEmailIgnoreCase(DARIO).orElseThrow().userId();
 
-        MockHttpSession session =
-                (MockHttpSession) mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + kaia + "}"))
-                        .andExpect(status().isOk())
-                        .andExpect(jsonPath("$.roles").value(contains("AC", "PROFESSOR")))
-                        .andReturn()
-                        .getRequest()
-                        .getSession(false);
-        mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + dario + "}").session(session))
-                .andExpect(status().isOk());
+        var first = mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + kaia + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.roles").value(contains("AC", "PROFESSOR")))
+                .andReturn();
+        assertThat(first.getRequest().getSession(false)).isNull();
+        String aliceTab = JsonPath.read(first.getResponse().getContentAsString(), "$.token");
+
+        var second = mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + dario + "}")
+                        .header(DemoTabAuthenticationFilter.HEADER, aliceTab))
+                .andExpect(status().isOk())
+                .andReturn();
+        String bobTab = JsonPath.read(second.getResponse().getContentAsString(), "$.token");
+
+        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, bobTab))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(DARIO));
+        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, aliceTab))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(KAIA));
+        mvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void demoTabSurvivesSigningOutOfThePasswordSession() throws Exception {
+        var login = mvc.perform(withCsrf(MockMvcRequestBuilders.post("/api/auth/login")
+                        .param("email", DARIO)
+                        .param("password", "Faculty123!")))
+                .andExpect(status().isOk())
+                .andReturn();
+        var session = (MockHttpSession) login.getRequest().getSession(false);
+        int kaia = accounts.findByEmailIgnoreCase(KAIA).orElseThrow().userId();
+
+        var switched = mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + kaia + "}")
+                        .session(session))
+                .andExpect(status().isOk())
+                .andReturn();
+        String tabToken = JsonPath.read(switched.getResponse().getContentAsString(), "$.token");
+
+        mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, tabToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(KAIA));
         mvc.perform(get("/api/auth/me").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value(DARIO));
+        mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, "expired"))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(withCsrf(MockMvcRequestBuilders.post("/api/auth/logout").session(session)))
+                .andExpect(status().isNoContent());
+        assertThat(session.isInvalid()).isTrue();
+        mvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, tabToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(KAIA));
     }
 }
