@@ -5,7 +5,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import edu.utdallas.cs4485.assessmenthelper.repository.UserAccountRepository;
+import edu.utdallas.cs4485.assessmenthelper.security.DemoTabAuthenticationFilter;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,21 +47,58 @@ class DemoControllerTests {
     }
 
     @Test
-    void switchingSignsInWithoutAPasswordAndSwitchesAgain() throws Exception {
+    void switchingOneTabKeepsTheOtherTabsAccount() throws Exception {
         int kaia = accounts.findByEmailIgnoreCase(KAIA).orElseThrow().userId();
         int dario = accounts.findByEmailIgnoreCase(DARIO).orElseThrow().userId();
 
-        MockHttpSession session =
-                (MockHttpSession) mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + kaia + "}"))
-                        .andExpect(status().isOk())
-                        .andExpect(jsonPath("$.roles").value(contains("AC", "PROFESSOR")))
-                        .andReturn()
-                        .getRequest()
-                        .getSession(false);
-        mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + dario + "}").session(session))
-                .andExpect(status().isOk());
+        var first = mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + kaia + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.roles").value(contains("AC", "PROFESSOR")))
+                .andReturn();
+        var session = (MockHttpSession) first.getRequest().getSession(false);
+        String aliceTab = JsonPath.read(first.getResponse().getContentAsString(), "$.token");
+
+        var second = mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + dario + "}")
+                        .session(session)
+                        .header(DemoTabAuthenticationFilter.HEADER, aliceTab))
+                .andExpect(status().isOk())
+                .andReturn();
+        String bobTab = JsonPath.read(second.getResponse().getContentAsString(), "$.token");
+
+        mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, bobTab))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(DARIO));
+        mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, aliceTab))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(KAIA));
+        mvc.perform(get("/api/auth/me").session(session)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, aliceTab))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void switchingDoesNotReplaceThePasswordSession() throws Exception {
+        var login = mvc.perform(withCsrf(MockMvcRequestBuilders.post("/api/auth/login")
+                        .param("email", DARIO)
+                        .param("password", "Faculty123!")))
+                .andExpect(status().isOk())
+                .andReturn();
+        var session = (MockHttpSession) login.getRequest().getSession(false);
+        int kaia = accounts.findByEmailIgnoreCase(KAIA).orElseThrow().userId();
+
+        var switched = mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + kaia + "}")
+                        .session(session))
+                .andExpect(status().isOk())
+                .andReturn();
+        String tabToken = JsonPath.read(switched.getResponse().getContentAsString(), "$.token");
+
+        mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, tabToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(KAIA));
         mvc.perform(get("/api/auth/me").session(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value(DARIO));
+        mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, "expired"))
+                .andExpect(status().isUnauthorized());
     }
 }

@@ -101,6 +101,8 @@ Demo mode is off by default and has a setting on each side. Start the backend wi
 
 With both on, a Demo button in the bottom-right corner of every page, including the login page, signs you in as or switches you to any account without a password. Alt+Shift+D hides or shows it. Keep the backend setting off anywhere real people sign in, because it lets anyone act as any account.
 
+Switching accounts applies only to the tab using the Demo button. Other open tabs keep their current accounts.
+
 ## Development Notes
 
 - The application currently uses an in-memory H2 database. Data resets whenever the backend restarts.

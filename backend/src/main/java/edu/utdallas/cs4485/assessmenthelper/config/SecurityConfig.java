@@ -1,6 +1,7 @@
 package edu.utdallas.cs4485.assessmenthelper.config;
 
 import edu.utdallas.cs4485.assessmenthelper.security.ApiAuthenticationHandler;
+import edu.utdallas.cs4485.assessmenthelper.security.DemoTabAuthenticationFilter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -12,6 +13,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.savedrequest.NullRequestCache;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -55,6 +57,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.spa().ignoringRequestMatchers("/h2-console/**"))
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
                 .cors(Customizer.withDefaults());
+        if (demoEnabled) http.addFilterAfter(new DemoTabAuthenticationFilter(), SecurityContextHolderFilter.class);
         return http.build();
     }
 

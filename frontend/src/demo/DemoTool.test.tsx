@@ -7,6 +7,7 @@ import {
   screen,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { getDemoAccounts } from "../api/demo";
 import { AuthProvider } from "../auth/AuthContext";
 import {
   fakeBackend,
@@ -54,15 +55,19 @@ beforeEach(() => signInAs("ac"));
 afterEach(() => {
   cleanup();
   resetBackend();
-  localStorage.clear();
+  sessionStorage.clear();
 });
 
 test("switches to another account and opens their home page", async () => {
+  const sessionHeaders: (string | null)[] = [];
   fakeBackend({
-    "/api/demo/accounts": () => Response.json(DEMO_ACCOUNTS),
+    "/api/demo/accounts": (init) => {
+      sessionHeaders.push(new Headers(init?.headers).get("X-Demo-Session"));
+      return Response.json(DEMO_ACCOUNTS);
+    },
     "/api/demo/switch": () => {
       signInAs("professor");
-      return Response.json(sessionUser());
+      return Response.json({ user: sessionUser(), token: "tab-token" });
     },
   });
   renderTool();
@@ -71,6 +76,8 @@ test("switches to another account and opens their home page", async () => {
   fireEvent.click(await screen.findByRole("button", { name: /Bob Bob/ }));
 
   expect(await screen.findByText("/faculty")).toBeDefined();
+  await getDemoAccounts();
+  expect(sessionHeaders).toEqual([null, "tab-token"]);
 });
 
 test("shows nothing when the backend has demo mode off", async () => {

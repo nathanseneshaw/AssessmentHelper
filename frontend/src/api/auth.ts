@@ -1,3 +1,9 @@
+import { DEMO_MODE } from "../demo/demoMode";
+import {
+  clearDemoSession,
+  getDemoSession,
+  signOutDemoSession,
+} from "../demo/tabSession";
 import type { Role } from "../navConfig";
 import { ApiError, apiFetch } from "./client";
 
@@ -36,14 +42,18 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 export async function login(email: string, password: string): Promise<User> {
-  return toUser(
-    await apiFetch<CurrentUserResponse>("/api/auth/login", {
-      method: "POST",
-      body: new URLSearchParams({ email, password }),
-    }),
-  );
+  const user = await apiFetch<CurrentUserResponse>("/api/auth/login", {
+    method: "POST",
+    body: new URLSearchParams({ email, password }),
+  });
+  clearDemoSession();
+  return toUser(user);
 }
 
-export function logout(): Promise<void> {
+export async function logout(): Promise<void> {
+  if (DEMO_MODE && getDemoSession() !== null) {
+    signOutDemoSession();
+    return;
+  }
   return apiFetch<void>("/api/auth/logout", { method: "POST" });
 }
