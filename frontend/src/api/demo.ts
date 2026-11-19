@@ -52,6 +52,14 @@ export interface OpenEvaluation {
   observationStatus: string | null;
 }
 
+export interface DemoDate {
+  today: string;
+  daysAhead: number;
+  earliest: string | null;
+  latest: string | null;
+  expiredRequests: number;
+}
+
 function postJson<T>(path: string, body: unknown): Promise<T> {
   return apiFetch<T>(path, {
     method: "POST",
@@ -98,4 +106,16 @@ export function completeEvaluation(
   signupId: number,
 ): Promise<{ observationId: number }> {
   return postJson(`/api/demo/evaluations/${signupId}/complete`, {});
+}
+
+export function getDemoDate(signal?: AbortSignal): Promise<DemoDate> {
+  return apiFetch<DemoDate>("/api/demo/date", { signal });
+}
+
+export function moveDemoDate(date: string): Promise<DemoDate> {
+  return postJson<DemoDate>("/api/demo/date", { date });
+}
+
+export function resetDemo(): Promise<{ signedOut: boolean }> {
+  return postJson("/api/demo/reset", {});
 }
