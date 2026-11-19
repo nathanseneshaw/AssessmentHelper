@@ -1,5 +1,6 @@
 package edu.utdallas.cs4485.assessmenthelper.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -55,29 +56,26 @@ class DemoControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.user.roles").value(contains("AC", "PROFESSOR")))
                 .andReturn();
-        var session = (MockHttpSession) first.getRequest().getSession(false);
+        assertThat(first.getRequest().getSession(false)).isNull();
         String aliceTab = JsonPath.read(first.getResponse().getContentAsString(), "$.token");
 
         var second = mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + dario + "}")
-                        .session(session)
                         .header(DemoTabAuthenticationFilter.HEADER, aliceTab))
                 .andExpect(status().isOk())
                 .andReturn();
         String bobTab = JsonPath.read(second.getResponse().getContentAsString(), "$.token");
 
-        mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, bobTab))
+        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, bobTab))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value(DARIO));
-        mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, aliceTab))
+        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, aliceTab))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value(KAIA));
-        mvc.perform(get("/api/auth/me").session(session)).andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, aliceTab))
-                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
     }
 
     @Test
-    void switchingDoesNotReplaceThePasswordSession() throws Exception {
+    void demoTabSurvivesSigningOutOfThePasswordSession() throws Exception {
         var login = mvc.perform(withCsrf(MockMvcRequestBuilders.post("/api/auth/login")
                         .param("email", DARIO)
                         .param("password", "Faculty123!")))
@@ -100,5 +98,13 @@ class DemoControllerTests {
                 .andExpect(jsonPath("$.email").value(DARIO));
         mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, "expired"))
                 .andExpect(status().isUnauthorized());
+
+        mvc.perform(withCsrf(MockMvcRequestBuilders.post("/api/auth/logout").session(session)))
+                .andExpect(status().isNoContent());
+        assertThat(session.isInvalid()).isTrue();
+        mvc.perform(get("/api/auth/me")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, tabToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(KAIA));
     }
 }

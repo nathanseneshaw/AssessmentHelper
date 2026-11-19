@@ -101,7 +101,7 @@ Demo mode is off by default and has a setting on each side. Start the backend wi
 
 With both on, a Demo button in the bottom-right corner of every page, including the login page, signs you in as or switches you to any account without a password. Alt+Shift+D hides or shows it. Keep the backend setting off anywhere real people sign in, because it lets anyone act as any account.
 
-Switching accounts applies only to the tab using the Demo button. Other open tabs keep their current accounts.
+Switching accounts applies only to the tab using the Demo button. Signing out of a password session leaves demo tabs signed in. Demo sessions expire after 30 minutes of inactivity.
 
 ## Development Notes
 
