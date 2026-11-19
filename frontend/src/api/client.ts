@@ -1,4 +1,8 @@
-import { DEMO_SESSION_HEADER, getDemoSession } from "../demo/tabSession";
+import {
+  DEMO_SESSION_HEADER,
+  getDemoSession,
+  rejectDemoSession,
+} from "../demo/tabSession";
 
 const DEFAULT_API_URL = "http://localhost:8080";
 const CSRF_COOKIE = "XSRF-TOKEN";
@@ -46,6 +50,13 @@ export async function apiFetch<T>(
     credentials: "include",
   });
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      demoSession !== null &&
+      path !== "/api/auth/login"
+    ) {
+      rejectDemoSession(demoSession);
+    }
     throw new ApiError(response.status, await errorMessage(response));
   }
   if (response.status === 204) {

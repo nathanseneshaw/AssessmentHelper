@@ -28,6 +28,7 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 // Gets CSRF tokens the way the frontend does; AuthenticationTests explains why the csrf() helper is not used.
@@ -133,6 +134,46 @@ class DemoControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.locked").value(true));
+    }
+
+    // Reset drops and recreates every table, so it has to commit instead of running in the rolled-back test
+    // transaction.
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void resetRemovesAddedProfessorsAndRevokesTheirTabSessions() throws Exception {
+        MockHttpSession session = signIn(KAIA, "Committee123!");
+        mvc.perform(postJson(
+                                "/api/demo/professors",
+                                "{\"firstName\":\"Jo\",\"lastName\":\"Demo\",\"departmentId\":1,\"rank\":\"ASSISTANT\"}")
+                        .session(session))
+                .andExpect(status().isOk());
+
+        String removedTab = switchTab("jo.demo@example.edu");
+        String seededTab = switchTab(DARIO);
+        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, removedTab))
+                .andExpect(status().isOk());
+
+        mvc.perform(postJson("/api/demo/reset", "{}").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.signedOut").value(false));
+        mvc.perform(get("/api/demo/accounts").session(session))
+                .andExpect(jsonPath("$[?(@.email == 'jo.demo@example.edu')]").isEmpty());
+        mvc.perform(get("/api/auth/me").session(session).header(DemoTabAuthenticationFilter.HEADER, removedTab))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/auth/me").header(DemoTabAuthenticationFilter.HEADER, seededTab))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(DARIO));
+    }
+
+    private String switchTab(String email) throws Exception {
+        int userId = accounts.findByEmailIgnoreCase(email).orElseThrow().userId();
+        return JsonPath.read(
+                mvc.perform(postJson("/api/demo/switch", "{\"userId\":" + userId + "}"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString(),
+                "$.token");
     }
 
     @Test

@@ -3,12 +3,18 @@ package edu.utdallas.cs4485.assessmenthelper.controller;
 import edu.utdallas.cs4485.assessmenthelper.entity.Department;
 import edu.utdallas.cs4485.assessmenthelper.security.AccountPrincipal;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
+import edu.utdallas.cs4485.assessmenthelper.security.DemoTabAuthenticationFilter;
 import edu.utdallas.cs4485.assessmenthelper.security.DemoTabSessions;
 import edu.utdallas.cs4485.assessmenthelper.service.DemoEvaluationService;
 import edu.utdallas.cs4485.assessmenthelper.service.DemoService;
+import edu.utdallas.cs4485.assessmenthelper.service.DemoStateService;
 import edu.utdallas.cs4485.assessmenthelper.service.MissingObservationService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,14 +32,21 @@ public class DemoController {
 
     public record Completed(int observationId) {}
 
+    public record MoveDate(LocalDate date) {}
+
+    public record Reset(boolean signedOut) {}
+
     private final DemoService service;
     private final DemoTabSessions sessions;
     private final DemoEvaluationService evaluations;
+    private final DemoStateService state;
 
-    public DemoController(DemoService service, DemoTabSessions sessions, DemoEvaluationService evaluations) {
+    public DemoController(
+            DemoService service, DemoTabSessions sessions, DemoEvaluationService evaluations, DemoStateService state) {
         this.service = service;
         this.sessions = sessions;
         this.evaluations = evaluations;
+        this.state = state;
     }
 
     @GetMapping("/accounts")
@@ -71,8 +84,29 @@ public class DemoController {
         return new Completed(evaluations.complete(signupId));
     }
 
+    @GetMapping("/date")
+    public DemoStateService.DemoDate date() {
+        return state.date();
+    }
+
+    @PostMapping("/date")
+    public DemoStateService.DemoDate moveDate(@RequestBody MoveDate body) {
+        return state.moveTo(body == null ? null : body.date());
+    }
+
+    @PostMapping("/reset")
+    public synchronized Reset reset(@AuthenticationPrincipal AccountPrincipal principal, HttpServletRequest request) {
+        if (state.reset(principal.user())) return new Reset(false);
+        String token = request.getHeader(DemoTabAuthenticationFilter.HEADER);
+        if (token == null) {
+            HttpSession session = request.getSession(false);
+            if (session != null) session.invalidate();
+        }
+        return new Reset(true);
+    }
+
     @PostMapping("/switch")
-    public SwitchResult switchAccount(@RequestBody SwitchBody body) {
+    public synchronized SwitchResult switchAccount(@RequestBody SwitchBody body) {
         if (body == null || body.userId() == null)
             throw new IllegalArgumentException("Choose an account to switch to.");
         AccountPrincipal principal = service.principal(body.userId());
