@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import {
   type DashboardMetrics,
+  eligibilityAccuracy,
   getDashboardMetrics,
   getObservations,
-  type ObservationTracking,
-  eligibilityAccuracy,
   listSufficiency,
+  type ObservationTracking,
   participationRate,
   rate,
   surveyCompletionRate,

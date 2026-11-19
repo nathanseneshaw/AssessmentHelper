@@ -1,15 +1,13 @@
 package edu.utdallas.cs4485.assessmenthelper.service;
 
-import edu.utdallas.cs4485.assessmenthelper.entity.Semester;
-import edu.utdallas.cs4485.assessmenthelper.repository.SemesterRepository;
+import edu.utdallas.cs4485.assessmenthelper.repository.EvaluationCycleRepository;
 import edu.utdallas.cs4485.assessmenthelper.repository.UserAccountRepository;
 import edu.utdallas.cs4485.assessmenthelper.security.CurrentUser;
 import edu.utdallas.cs4485.assessmenthelper.security.DemoTabSessions;
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.Locale;
+import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
@@ -22,13 +20,10 @@ import org.springframework.stereotype.Service;
 @Service
 @ConditionalOnBooleanProperty("app.demo.enabled")
 public class DemoStateService {
-    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US);
-
     private final DemoTime time;
     private final Clock clock;
     private final ObserverRequestService requests;
-    private final ObserverEligibilityService eligibility;
-    private final SemesterRepository semesters;
+    private final EvaluationCycleRepository cycles;
     private final UserAccountRepository accounts;
     private final DemoTabSessions sessions;
     private final DataSource dataSource;
@@ -38,8 +33,7 @@ public class DemoStateService {
             DemoTime time,
             Clock clock,
             ObserverRequestService requests,
-            ObserverEligibilityService eligibility,
-            SemesterRepository semesters,
+            EvaluationCycleRepository cycles,
             UserAccountRepository accounts,
             DemoTabSessions sessions,
             DataSource dataSource,
@@ -47,50 +41,47 @@ public class DemoStateService {
         this.time = time;
         this.clock = clock;
         this.requests = requests;
-        this.eligibility = eligibility;
-        this.semesters = semesters;
+        this.cycles = cycles;
         this.accounts = accounts;
         this.sessions = sessions;
         this.dataSource = dataSource;
         this.initializer = initializer;
     }
 
-    public record DemoDate(
-            LocalDate today, long daysAhead, LocalDate earliest, LocalDate latest, int expiredRequests) {}
+    public record CycleSemester(String name, LocalDate startDate, LocalDate endDate) {
+        boolean contains(LocalDate date) {
+            return !date.isBefore(startDate) && !date.isAfter(endDate);
+        }
+    }
+
+    public record DemoDate(LocalDate today, long daysAhead, List<CycleSemester> semesters, int expiredRequests) {}
 
     public synchronized DemoDate date() {
         return date(0);
     }
 
-    // Every screen needs an evaluation cycle on the app's date, and the seed data only has an open one this semester.
+    // Every screen needs an evaluation cycle on the app's date. Past cycles are left out because the later
+    // semesters' signups and observations would already exist there.
     public synchronized DemoDate moveTo(LocalDate date) {
         if (date == null) throw new IllegalArgumentException("Choose a date.");
-        LocalDate today = LocalDate.now(clock);
-        long days = ChronoUnit.DAYS.between(today, date);
-        DemoDate current = date(0);
+        long days = ChronoUnit.DAYS.between(LocalDate.now(clock), date);
         boolean realDate = time.daysAhead() + days == 0;
-        if (!realDate
-                && current.earliest() != null
-                && (date.isBefore(current.earliest()) || date.isAfter(current.latest())))
-            throw new IllegalArgumentException("Choose a date this semester, from " + DAY.format(current.earliest())
-                    + " to " + DAY.format(current.latest()) + ".");
+        List<CycleSemester> allowed = semesters();
+        if (!realDate && !allowed.isEmpty() && allowed.stream().noneMatch(s -> s.contains(date)))
+            throw new IllegalArgumentException("Choose a date in a semester that has an evaluation cycle.");
         time.moveBy(days);
         return date(requests.expireOverdue());
     }
 
     private DemoDate date(int expiredRequests) {
-        Semester semester;
-        try {
-            semester = semesters.findById(eligibility.cycle().semesterId()).orElse(null);
-        } catch (ConflictException e) {
-            semester = null;
-        }
-        return new DemoDate(
-                LocalDate.now(clock),
-                time.daysAhead(),
-                semester == null ? null : semester.startDate(),
-                semester == null ? null : semester.endDate(),
-                expiredRequests);
+        return new DemoDate(LocalDate.now(clock), time.daysAhead(), semesters(), expiredRequests);
+    }
+
+    private List<CycleSemester> semesters() {
+        LocalDate realToday = LocalDate.now(clock).minusDays(time.daysAhead());
+        return cycles.findCycleSemestersEndingOnOrAfter(realToday).stream()
+                .map(s -> new CycleSemester(s.term() + " " + s.academicYear(), s.startDate(), s.endDate()))
+                .toList();
     }
 
     /** Returns whether the given account still exists once the seed data is back. */

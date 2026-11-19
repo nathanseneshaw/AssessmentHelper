@@ -53,11 +53,16 @@ export interface OpenEvaluation {
   observationStatus: string | null;
 }
 
+export interface CycleSemester {
+  name: string;
+  startDate: string;
+  endDate: string;
+}
+
 export interface DemoDate {
   today: string;
   daysAhead: number;
-  earliest: string | null;
-  latest: string | null;
+  semesters: CycleSemester[];
   expiredRequests: number;
 }
 

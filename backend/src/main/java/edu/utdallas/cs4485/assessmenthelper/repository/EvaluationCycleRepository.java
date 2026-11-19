@@ -89,6 +89,16 @@ public interface EvaluationCycleRepository extends ListCrudRepository<Evaluation
             """)
     Optional<EligibilityCycleRow> findEligibilityCycle(Integer cycleId);
 
+    record CycleSemesterRow(String term, Integer academicYear, LocalDate startDate, LocalDate endDate) {}
+
+    @Query("""
+            SELECT s.term, s.academic_year, s.start_date, s.end_date FROM evaluation_cycle c
+            JOIN semester s ON s.semester_id=c.semester_id
+            WHERE s.end_date>=:date
+            ORDER BY s.start_date
+            """)
+    List<CycleSemesterRow> findCycleSemestersEndingOnOrAfter(LocalDate date);
+
     @Modifying
     @Query(
             "UPDATE evaluation_cycle SET signup_deadline=:signupDeadline, observation_deadline=:observationDeadline, feedback_deadline=:feedbackDeadline WHERE cycle_id=:cycleId")
