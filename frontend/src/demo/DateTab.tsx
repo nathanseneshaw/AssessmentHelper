@@ -82,8 +82,8 @@ export function DateTab({ onDataChanged }: { onDataChanged: () => void }) {
             type="date"
             required
             value={date}
-            min={current?.earliest ?? undefined}
-            max={current?.latest ?? undefined}
+            min={current?.semesters[0]?.startDate}
+            max={current?.semesters.at(-1)?.endDate}
             onChange={(e) => setDate(e.target.value)}
             className="min-w-0 flex-1 rounded-lg border border-line px-3 py-2 text-sm"
           />
@@ -96,6 +96,17 @@ export function DateTab({ onDataChanged }: { onDataChanged: () => void }) {
           </button>
         </div>
       </form>
+      {current && current.semesters.length > 0 && (
+        <p className="mt-1 text-muted text-xs">
+          Semesters with a cycle:{" "}
+          {current.semesters
+            .map(
+              (s) =>
+                `${s.name} (${formatDate(s.startDate)} to ${formatDate(s.endDate)})`,
+            )
+            .join(", ")}
+        </p>
+      )}
       {current && (
         <div className="mt-2 flex items-center justify-between gap-3">
           <p className="text-muted text-xs">{distance(current.daysAhead)}</p>
